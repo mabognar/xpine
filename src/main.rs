@@ -11,6 +11,8 @@ use lettre::transport::smtp::authentication::Credentials as SmtpCredentials;
 use ropey::Rope;
 use std::io::{stdout, Write};
 use std::fs;
+use std::path::{Path, PathBuf};
+use std::time::{Duration, Instant};
 use chrono::{DateTime, Local, Utc};
 use crossterm::{cursor, event::{self, Event, KeyCode, KeyEventKind, KeyModifiers}, execute, queue, style::{Color, Print, ResetColor, SetBackgroundColor, SetForegroundColor}, terminal, terminal::{Clear, ClearType, size as term_size}};
 use crossterm::terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen};
@@ -29,6 +31,7 @@ struct EmailMeta {
     is_read: bool,
     is_deleted: bool,
     is_flagged: bool,
+    is_answered: bool,
 }
 
 enum AppMode {
@@ -48,6 +51,78 @@ struct Account {
 
 struct AppConfig {
     accounts: Vec<Account>,
+}
+
+#[derive(Clone, Copy)]
+struct UiColors {
+    bg: Color,
+    fg: Color,
+    ui_bg: Color,
+    selected_bg: Color,
+    accent: Color,
+    date_color: Color,
+    flag_n: Color,
+    flag_d: Color,
+    flag_a: Color,
+    flag_star: Color,
+    is_dark: bool,
+}
+
+fn derive_ui_colors(theme: &syntect::highlighting::Theme) -> UiColors {
+    let raw_bg = theme.settings.background.unwrap_or(syntect::highlighting::Color { r: 0, g: 0, b: 0, a: 255 });
+    let raw_fg = theme.settings.foreground.unwrap_or(syntect::highlighting::Color { r: 255, g: 255, b: 255, a: 255 });
+
+    let bg = Color::Rgb { r: raw_bg.r, g: raw_bg.g, b: raw_bg.b };
+    let fg = Color::Rgb { r: raw_fg.r, g: raw_fg.g, b: raw_fg.b };
+    let is_dark = (raw_bg.r as u32 + raw_bg.g as u32 + raw_bg.b as u32) < 384;
+
+    let ui_bg = if is_dark {
+        Color::Rgb { r: raw_bg.r.saturating_add(20), g: raw_bg.g.saturating_add(20), b: raw_bg.b.saturating_add(20) }
+    } else {
+        Color::Rgb { r: raw_bg.r.saturating_sub(20), g: raw_bg.g.saturating_sub(20), b: raw_bg.b.saturating_sub(20) }
+    };
+
+    let selected_bg = if raw_bg.r < 128 {
+        Color::Rgb { r: raw_bg.r.saturating_add(40), g: raw_bg.g.saturating_add(40), b: raw_bg.b.saturating_add(40) }
+    } else {
+        Color::Rgb { r: raw_bg.r.saturating_sub(40), g: raw_bg.g.saturating_sub(40), b: raw_bg.b.saturating_sub(40) }
+    };
+
+    let get_theme_color = |keys: &[&str]| -> Option<Color> {
+        for item in &theme.scopes {
+            let scope_str = format!("{:?}", item.scope).to_lowercase();
+            for key in keys {
+                if scope_str.contains(key) {
+                    if let Some(c) = item.style.foreground {
+                        return Some(Color::Rgb { r: c.r, g: c.g, b: c.b });
+                    }
+                }
+            }
+        }
+        None
+    };
+
+    let flag_a = Color::Green;
+    let flag_d = Color::Magenta;
+    let flag_n = Color::Yellow;
+    let flag_star = Color::Red;
+
+    let accent = get_theme_color(&["entity.name.function", "variable"])
+        .unwrap_or(if is_dark { Color::Rgb { r: 100, g: 200, b: 255 } } else { Color::Rgb { r: 20, g: 100, b: 180 } });
+
+    let date_color = get_theme_color(&["comment", "punctuation.definition.comment"])
+        .unwrap_or(if is_dark { Color::Rgb { r: 120, g: 120, b: 120 } } else { Color::Rgb { r: 140, g: 140, b: 140 } });
+
+    UiColors { bg, fg, ui_bg, selected_bg, accent, date_color, flag_n, flag_d, flag_a, flag_star, is_dark }
+}
+
+fn open_in_default_app(file_path: &Path) {
+    #[cfg(target_os = "windows")]
+    let _ = std::process::Command::new("cmd").args(["/C", "start", "", file_path.to_str().unwrap()]).spawn();
+    #[cfg(target_os = "macos")]
+    let _ = std::process::Command::new("open").arg(file_path).spawn();
+    #[cfg(target_os = "linux")]
+    let _ = std::process::Command::new("xdg-open").arg(file_path).spawn();
 }
 
 fn load_config() -> AppConfig {
@@ -95,8 +170,8 @@ fn load_config() -> AppConfig {
     AppConfig { accounts }
 }
 
-fn file_browser(stdout: &mut std::io::Stdout, rows: u16, cols: u16) -> Option<String> {
-    let mut current_dir = std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from("/"));
+fn file_browser(stdout: &mut std::io::Stdout, rows: u16, cols: u16, colors: &UiColors) -> Option<String> {
+    let mut current_dir = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("/"));
     let mut selected_idx = 0;
 
     loop {
@@ -105,7 +180,7 @@ fn file_browser(stdout: &mut std::io::Stdout, rows: u16, cols: u16) -> Option<St
             entries.push(("..".to_string(), current_dir.parent().unwrap().to_path_buf(), true));
         }
 
-        if let Ok(read_dir) = std::fs::read_dir(&current_dir) {
+        if let Ok(read_dir) = fs::read_dir(&current_dir) {
             let mut dirs = vec![];
             let mut files = vec![];
             for entry in read_dir.flatten() {
@@ -124,18 +199,17 @@ fn file_browser(stdout: &mut std::io::Stdout, rows: u16, cols: u16) -> Option<St
             selected_idx = entries.len().saturating_sub(1);
         }
 
-        execute!(stdout, Clear(ClearType::All), cursor::MoveTo(0, 0)).unwrap();
+        execute!(stdout, SetBackgroundColor(colors.bg), Clear(ClearType::All), cursor::MoveTo(0, 0)).unwrap();
 
-        let ui_bg = Color::Rgb { r: 20, g: 20, b: 20 };
         let title = format!(" --- Browse to Attach: {} ", current_dir.display());
         let pad_len = (cols as usize).saturating_sub(title.chars().count());
 
         queue!(
-            stdout, SetBackgroundColor(ui_bg), SetForegroundColor(Color::White),
+            stdout, SetBackgroundColor(colors.ui_bg), SetForegroundColor(colors.accent),
             Print(title), Print(" ".repeat(pad_len)), ResetColor
         ).unwrap();
 
-        let items_per_page = (rows.saturating_sub(5)) as usize;
+        let items_per_page = (rows.saturating_sub(3) as usize).max(1);
         let start_idx = if selected_idx >= items_per_page { selected_idx - items_per_page + 1 } else { 0 };
 
         for i in 0..items_per_page {
@@ -144,25 +218,23 @@ fn file_browser(stdout: &mut std::io::Stdout, rows: u16, cols: u16) -> Option<St
                 let entry = &entries[actual_idx];
                 let prefix = if entry.2 { "[DIR]  " } else { "       " };
                 let mut display_str = format!("{}{}", prefix, entry.0);
-                if display_str.chars().count() > (cols as usize) {
+                if display_str.chars().count() > cols as usize {
                     display_str = display_str.chars().take((cols as usize).saturating_sub(3)).collect::<String>();
                 }
 
-                execute!(stdout, cursor::MoveTo(0, (i + 2) as u16)).unwrap();
+                execute!(stdout, cursor::MoveTo(0, (i + 1) as u16)).unwrap();
                 if actual_idx == selected_idx {
-                    queue!(stdout, SetBackgroundColor(Color::Rgb { r: 50, g: 50, b: 50 }), Print(display_str), ResetColor).unwrap();
+                    queue!(stdout, SetBackgroundColor(colors.ui_bg), SetForegroundColor(colors.fg), Print(display_str), ResetColor).unwrap();
                 } else {
-                    let fg = if entry.2 { Color::Cyan } else { Color::Reset };
-                    queue!(stdout, SetForegroundColor(fg), Print(display_str), ResetColor).unwrap();
+                    let fg = if entry.2 { colors.accent } else { colors.fg };
+                    queue!(stdout, SetBackgroundColor(colors.bg), SetForegroundColor(fg), Print(display_str), ResetColor).unwrap();
                 }
             }
         }
 
-        let m_col = ((cols as usize) / 6).max(1);
-        Editor::draw_menu_line(stdout, rows - 2, cols, m_col, &[("Up/Dn", " Nav"), ("Enter", " Select"), ("", ""), ("", ""), ("", ""), ("", "")], ui_bg, Color::Cyan, Color::Reset).unwrap();
-        Editor::draw_menu_line(stdout, rows - 1, cols, m_col, &[("^C", " Cancel"), ("", ""), ("", ""), ("", ""), ("", ""), ("", "")], ui_bg, Color::Cyan, Color::Reset).unwrap();
-        // Editor::draw_menu_line(stdout, rows - 2, cols, (cols / 6) as usize, &[(" Up/Dn ", "Nav"), (" Enter ", "Select")], ui_bg, Color::Cyan, Color::Reset).unwrap();
-        // Editor::draw_menu_line(stdout, rows - 1, cols, (cols / 6) as usize, &[(" ^C ", "Cancel")], ui_bg, Color::Cyan, Color::Reset).unwrap();
+        let m_col = (cols as usize / 6).max(1);
+        Editor::draw_menu_line(stdout, rows - 2, cols, m_col, &[("Up/Dn", " Nav"), ("Enter", " Select"), ("", ""), ("", ""), ("", ""), ("", "")], colors.ui_bg, colors.accent, colors.fg).unwrap();
+        Editor::draw_menu_line(stdout, rows - 1, cols, m_col, &[("^C", " Cancel"), ("", ""), ("", ""), ("", ""), ("", ""), ("", "")], colors.ui_bg, colors.accent, colors.fg).unwrap();
         stdout.flush().unwrap();
 
         if let Event::Key(k) = event::read().unwrap() {
@@ -199,21 +271,20 @@ struct ComposeState {
     active_idx: usize,
 }
 
-// Rewritten to use xnano for the body
-pub fn compose_email(account: &Account, default_to: Option<&str>, default_subject: Option<&str>, default_body: Option<&str>) {
+pub fn compose_email(account: &Account, default_to: Option<&str>, default_subject: Option<&str>, default_body: Option<&str>, current_theme: &mut String) -> Option<String> {
     let mut state = ComposeState {
         to: default_to.unwrap_or("").to_string(),
         cc: String::new(),
         bcc: String::new(),
         subject: default_subject.unwrap_or("").to_string(),
         attachments: Vec::new(),
-        // Drops the cursor directly into the body (4) if 'default_to' is populated (Reply Mode)
         active_idx: if default_to.is_some() { 4 } else { 0 },
     };
 
     let mut editor = Editor::new(None);
     editor.menu_state = MenuState::EmailComposer;
     editor.top_margin = 6;
+    editor.current_theme = current_theme.clone();
 
     if let Some(body) = default_body {
         editor.buffer = Rope::from_str(body);
@@ -223,24 +294,17 @@ pub fn compose_email(account: &Account, default_to: Option<&str>, default_subjec
     let mut final_body = String::new();
     let mut cancelled = false;
 
-    // --- UNIFIED DRAWING & INPUT LOOP ---
     loop {
         let (cols, rows) = term_size().unwrap_or((80, 24));
-
         let theme = &editor.theme_set.themes[&editor.current_theme];
-        let raw_bg = theme.settings.background.unwrap_or(syntect::highlighting::Color { r: 0, g: 0, b: 0, a: 255 });
-        let raw_fg = theme.settings.foreground.unwrap_or(syntect::highlighting::Color { r: 255, g: 255, b: 255, a: 255 });
-
-        let header_bg = Color::Rgb { r: raw_bg.r, g: raw_bg.g, b: raw_bg.b };
-        let text_fg = Color::Rgb { r: raw_fg.r, g: raw_fg.g, b: raw_fg.b };
-        let label_color = Color::Rgb { r: 50, g: 150, b: 200 };
+        let colors = derive_ui_colors(theme);
 
         for i in 0..6 {
-            queue!(stdout, cursor::MoveTo(0, i as u16), SetBackgroundColor(header_bg), terminal::Clear(ClearType::UntilNewLine)).unwrap();
+            queue!(stdout, cursor::MoveTo(0, i as u16), SetBackgroundColor(colors.ui_bg), terminal::Clear(ClearType::UntilNewLine)).unwrap();
         }
 
         let header_title = format!("Compose Email ({})", account.email);
-        queue!(stdout, cursor::MoveTo(0, 0), SetForegroundColor(label_color), Print(header_title), ResetColor).unwrap();
+        queue!(stdout, cursor::MoveTo(0, 0), SetForegroundColor(colors.accent), Print(header_title)).unwrap();
 
         let fields = ["To:", "Cc:", "Bcc:", "Subject:"];
         let vals = [&state.to, &state.cc, &state.bcc, &state.subject];
@@ -248,25 +312,31 @@ pub fn compose_email(account: &Account, default_to: Option<&str>, default_subjec
         for i in 0..4 {
             queue!(
                 stdout, cursor::MoveTo(0, (i + 1) as u16),
-                SetBackgroundColor(header_bg), SetForegroundColor(label_color), Print(format!("{:>8}", fields[i])),
-                SetForegroundColor(text_fg), Print(" "), Print(vals[i]), ResetColor
+                SetBackgroundColor(colors.ui_bg), SetForegroundColor(colors.accent), Print(format!("{:>8}", fields[i])),
+                SetForegroundColor(colors.fg), Print(" "), Print(vals[i])
             ).unwrap();
         }
 
-        queue!(stdout, cursor::MoveTo(0, 5), SetBackgroundColor(header_bg), SetForegroundColor(label_color), Print(" Attach: "), SetForegroundColor(text_fg)).unwrap();
+        queue!(stdout, cursor::MoveTo(0, 5), SetBackgroundColor(colors.ui_bg), SetForegroundColor(colors.accent), Print(" Attach: "), SetForegroundColor(colors.fg)).unwrap();
+
         if state.attachments.is_empty() {
-            queue!(stdout, SetForegroundColor(Color::DarkGrey), Print("(Press ^T to attach a file)")).unwrap();
+            let dim_c = if colors.is_dark { Color::DarkGrey } else { Color::Grey };
+            queue!(stdout, SetForegroundColor(dim_c), Print("(Press ^T to attach a file)")).unwrap();
         } else {
-            let att_names: Vec<&str> = state.attachments.iter().map(|p| std::path::Path::new(p).file_name().unwrap_or_default().to_str().unwrap_or_default()).collect();
-            queue!(stdout, Print(att_names.join(", "))).unwrap();
+            let att_names: Vec<String> = state.attachments.iter().enumerate().map(|(i, p)| {
+                let fname = Path::new(p).file_name().unwrap_or_default().to_string_lossy();
+                format!("{}. {}", i + 1, fname)
+            }).collect();
+            queue!(stdout, Print(att_names.join("   "))).unwrap();
         }
+        queue!(stdout, ResetColor).unwrap();
 
         editor.draw_screen().unwrap();
 
         if state.active_idx < 4 {
-            let m_col = ((cols as usize) / 6).max(1);
-            Editor::draw_menu_line(&mut stdout, rows - 2, cols, m_col, &[("^P", " Prev"), ("Tab", " Next"), ("^T", " Attach"), ("", ""), ("", ""), ("", "")], header_bg, Color::Cyan, text_fg).unwrap();
-            Editor::draw_menu_line(&mut stdout, rows - 1, cols, m_col, &[("^C", " Cancel"), ("Enter", " Body"), ("^X", " Send"), ("", ""), ("", ""), ("", "")], header_bg, Color::Cyan, text_fg).unwrap();
+            let m_col = (cols as usize / 6).max(1);
+            Editor::draw_menu_line(&mut stdout, rows - 2, cols, m_col, &[("^P", " Prev"), ("Tab", " Next"), ("^T", " Attach"), ("", ""), ("", ""), ("", "")], colors.ui_bg, colors.accent, colors.fg).unwrap();
+            Editor::draw_menu_line(&mut stdout, rows - 1, cols, m_col, &[("^C", " Cancel"), ("Enter", " Body"), ("^X", " Send"), ("", ""), ("", ""), ("", "")], colors.ui_bg, colors.accent, colors.fg).unwrap();
 
             queue!(stdout, cursor::Show).unwrap();
             let cursor_y = (state.active_idx as u16) + 1;
@@ -278,71 +348,82 @@ pub fn compose_email(account: &Account, default_to: Option<&str>, default_subjec
 
         stdout.flush().unwrap();
 
-        if let Event::Key(key_event) = event::read().unwrap() {
-            if key_event.kind == KeyEventKind::Press {
+        let timeout = if let Some(time) = editor.status_time {
+            let elapsed = time.elapsed();
+            if elapsed >= Duration::from_secs(3) { Duration::from_millis(1) } else { Duration::from_secs(3) - elapsed }
+        } else { Duration::from_secs(3600) };
 
-                // GLOBAL OVERRIDES: Allows sending (^X) or canceling (^C) from anywhere!
-                if key_event.modifiers.contains(KeyModifiers::CONTROL) {
-                    if key_event.code == KeyCode::Char('x') {
-                        final_body = editor.buffer.to_string();
-                        break;
-                    }
-                    if key_event.code == KeyCode::Char('c') {
-                        cancelled = true;
-                        break;
-                    }
-                }
-
-                if state.active_idx == 4 {
-                    // Allows moving back up to headers from the top line of the body
-                    if key_event.code == KeyCode::Up && editor.cursor_y == 0 {
-                        state.active_idx = 3;
-                        continue;
-                    }
-
-                    match editor.handle_keypress(key_event).unwrap() {
-                        EditorResult::Send(content) => { final_body = content; break; }
-                        EditorResult::Cancel => { cancelled = true; break; }
-                        EditorResult::Continue => {}
-                    }
-                } else {
-                    match key_event.code {
-                        KeyCode::Char('t') if key_event.modifiers.contains(KeyModifiers::CONTROL) => {
-                            if let Some(path) = file_browser(&mut stdout, rows, cols) { state.attachments.push(path); }
+        if event::poll(timeout).unwrap() {
+            if let Event::Key(key_event) = event::read().unwrap() {
+                if key_event.kind == KeyEventKind::Press {
+                    if key_event.modifiers.contains(KeyModifiers::CONTROL) {
+                        if key_event.code == KeyCode::Char('x') {
+                            final_body = editor.buffer.to_string();
+                            break;
                         }
-                        KeyCode::Char('p') if key_event.modifiers.contains(KeyModifiers::CONTROL) => state.active_idx = state.active_idx.saturating_sub(1),
-                        KeyCode::Char('n') if key_event.modifiers.contains(KeyModifiers::CONTROL) => state.active_idx = (state.active_idx + 1).min(4),
-                        KeyCode::Up | KeyCode::BackTab => state.active_idx = state.active_idx.saturating_sub(1),
-                        KeyCode::Down | KeyCode::Tab | KeyCode::Enter => { state.active_idx = (state.active_idx + 1).min(4); }
-                        KeyCode::Backspace => {
-                            let target = match state.active_idx { 0 => &mut state.to, 1 => &mut state.cc, 2 => &mut state.bcc, 3 => &mut state.subject, _ => unreachable!() };
-                            target.pop();
+                        if key_event.code == KeyCode::Char('c') {
+                            cancelled = true;
+                            break;
                         }
-                        KeyCode::Char(c) => {
-                            if !key_event.modifiers.contains(KeyModifiers::CONTROL) && !key_event.modifiers.contains(KeyModifiers::ALT) {
-                                let target = match state.active_idx { 0 => &mut state.to, 1 => &mut state.cc, 2 => &mut state.bcc, 3 => &mut state.subject, _ => unreachable!() };
-                                target.push(c);
+                    }
+
+                    if state.active_idx == 4 {
+                        if key_event.code == KeyCode::Up && editor.cursor_y == 0 {
+                            state.active_idx = 3;
+                            continue;
+                        }
+
+                        match editor.handle_keypress(key_event).unwrap() {
+                            EditorResult::Send(content) => { final_body = content; break; }
+                            EditorResult::Cancel => { cancelled = true; break; }
+                            EditorResult::Continue => {}
+                        }
+                    } else {
+                        match key_event.code {
+                            KeyCode::Char('t') if key_event.modifiers.contains(KeyModifiers::CONTROL) => {
+                                if let Some(path) = file_browser(&mut stdout, rows, cols, &colors) { state.attachments.push(path); }
                             }
+                            KeyCode::Char('p') if key_event.modifiers.contains(KeyModifiers::CONTROL) => state.active_idx = state.active_idx.saturating_sub(1),
+                            KeyCode::Char('n') if key_event.modifiers.contains(KeyModifiers::CONTROL) => state.active_idx = (state.active_idx + 1).min(4),
+                            KeyCode::Up | KeyCode::BackTab => state.active_idx = state.active_idx.saturating_sub(1),
+                            KeyCode::Down | KeyCode::Tab | KeyCode::Enter => { state.active_idx = (state.active_idx + 1).min(4); }
+                            KeyCode::Backspace => {
+                                let target = match state.active_idx { 0 => &mut state.to, 1 => &mut state.cc, 2 => &mut state.bcc, 3 => &mut state.subject, _ => unreachable!() };
+                                target.pop();
+                            }
+                            KeyCode::Char(c) => {
+                                if !key_event.modifiers.contains(KeyModifiers::CONTROL) && !key_event.modifiers.contains(KeyModifiers::ALT) {
+                                    let target = match state.active_idx { 0 => &mut state.to, 1 => &mut state.cc, 2 => &mut state.bcc, 3 => &mut state.subject, _ => unreachable!() };
+                                    target.push(c);
+                                }
+                            }
+                            _ => {}
                         }
-                        _ => {}
                     }
                 }
             }
+        } else {
+            editor.clear_status();
         }
     }
 
-    if cancelled { return; }
+    *current_theme = editor.current_theme.clone();
+
+    if cancelled { return None; }
 
     if state.to.trim().is_empty() && state.cc.trim().is_empty() && state.bcc.trim().is_empty() {
         execute!(stdout, Clear(ClearType::All), cursor::MoveTo(0, 0)).unwrap();
         queue!(stdout, Print("No recipients specified. Message cancelled.\r\n\nPress Enter to return...")).unwrap();
         stdout.flush().unwrap();
         while let Ok(Event::Key(k)) = event::read() { if k.code == KeyCode::Enter { break; } }
-        return;
+        return None;
     }
 
-    execute!(stdout, Clear(ClearType::All), cursor::MoveTo(0, 0)).unwrap();
-    queue!(stdout, Print("Sending message...\r\n")).unwrap();
+    // Flash status message instantly to give user feedback before blocking
+    let (_, rows) = term_size().unwrap_or((80, 24));
+    let theme = &editor.theme_set.themes[&editor.current_theme];
+    let colors = derive_ui_colors(theme);
+    queue!(stdout, cursor::MoveTo(0, rows - 1), SetBackgroundColor(colors.selected_bg), terminal::Clear(ClearType::UntilNewLine), SetForegroundColor(colors.accent), Print(" Sending message... Please wait "), ResetColor).unwrap();
     stdout.flush().unwrap();
 
     let mut builder = Message::builder()
@@ -372,8 +453,8 @@ pub fn compose_email(account: &Account, default_to: Option<&str>, default_subjec
 
     for att in &state.attachments {
         if let Ok(file_data) = fs::read(att) {
-            let filename = std::path::Path::new(att).file_name().unwrap_or_default().to_string_lossy().into_owned();
-            let ext = std::path::Path::new(att).extension().unwrap_or_default().to_string_lossy().to_lowercase();
+            let filename = Path::new(att).file_name().unwrap_or_default().to_string_lossy().into_owned();
+            let ext = Path::new(att).extension().unwrap_or_default().to_string_lossy().to_lowercase();
             let mime_str = match ext.as_str() {
                 "txt" | "rs" | "c" | "cpp" | "md" | "toml" | "json" => "text/plain",
                 "html" | "htm" => "text/html",
@@ -396,16 +477,26 @@ pub fn compose_email(account: &Account, default_to: Option<&str>, default_subjec
             let creds = SmtpCredentials::new(account.email.clone(), account.password.clone());
             let mailer = SmtpTransport::relay("smtp.gmail.com").unwrap().credentials(creds).build();
             match mailer.send(&email_msg) {
-                Ok(_) => queue!(stdout, Print("-> Message sent successfully!\r\n")).unwrap(),
-                Err(e) => queue!(stdout, Print(format!("-> Failed to send message: {:?}\r\n", e))).unwrap(),
+                Ok(_) => return Some("Message Sent".to_string()),
+                Err(e) => {
+                    execute!(stdout, Clear(ClearType::All), cursor::MoveTo(0, 0)).unwrap();
+                    queue!(stdout, Print(format!("-> Failed to send message: {:?}\r\n", e))).unwrap();
+                    queue!(stdout, Print("\r\nPress Enter to return to the mailbox...")).unwrap();
+                    stdout.flush().unwrap();
+                    loop { if let Ok(Event::Key(k)) = event::read() { if k.code == KeyCode::Enter { break; } } }
+                    return None;
+                }
             }
         }
-        Err(e) => queue!(stdout, Print(format!("-> Failed to build message: {:?}\r\n", e))).unwrap(),
+        Err(e) => {
+            execute!(stdout, Clear(ClearType::All), cursor::MoveTo(0, 0)).unwrap();
+            queue!(stdout, Print(format!("-> Failed to build message: {:?}\r\n", e))).unwrap();
+            queue!(stdout, Print("\r\nPress Enter to return to the mailbox...")).unwrap();
+            stdout.flush().unwrap();
+            loop { if let Ok(Event::Key(k)) = event::read() { if k.code == KeyCode::Enter { break; } } }
+            return None;
+        }
     }
-
-    queue!(stdout, Print("\r\nPress Enter to return to the mailbox...")).unwrap();
-    stdout.flush().unwrap();
-    loop { if let Ok(Event::Key(k)) = event::read() { if k.code == KeyCode::Enter { break; } } }
 }
 
 fn parse_email_body(body_data: &[u8]) -> (String, Option<String>, Vec<(String, Vec<u8>)>) {
@@ -463,19 +554,6 @@ fn parse_email_body(body_data: &[u8]) -> (String, Option<String>, Vec<(String, V
     (text_body, html_body, attachments)
 }
 
-fn draw_xnano_menu(stdout: &mut std::io::Stdout, rows: u16, cols: u16, items_row1: &[(&str, &str)], items_row2: &[(&str, &str)]) {
-    let ui_bg = Color::Rgb { r: 20, g: 20, b: 20 };
-    let key_fg = Color::Rgb { r: 0, g: 150, b: 200 };
-    let text_fg = Color::Reset;
-
-    // Prevent division by zero if an empty array is passed
-    let col_width = (cols as usize) / items_row1.len().max(1);
-
-    // Route the drawing logic through the integrated xnano UI module
-    let _ = Editor::draw_menu_line(stdout, rows.saturating_sub(2), cols, col_width, items_row1, ui_bg, key_fg, text_fg);
-    let _ = Editor::draw_menu_line(stdout, rows.saturating_sub(1), cols, col_width, items_row2, ui_bg, key_fg, text_fg);
-}
-
 fn main() {
     let config = load_config();
 
@@ -500,30 +578,28 @@ fn main() {
 
     let mut restore_index_from_end: Option<u32> = Some(0);
 
+    let mut list_status = String::new();
+    let mut list_status_time: Option<Instant> = None;
+    let mut list_status_duration = Duration::from_secs(3);
+
+    let mut last_fetch_time = Instant::now();
+    let auto_refresh_interval = Duration::from_secs(60);
+
     enable_raw_mode().expect("Failed to enable raw mode");
     let mut stdout = stdout();
 
     execute!(stdout, EnterAlternateScreen).unwrap();
 
-    // --- EXTRACT THEME ONCE FOR PERFORMANCE ---
-    let theme_provider = Editor::new(None);
-    let theme = &theme_provider.theme_set.themes[&theme_provider.current_theme];
-
-    let raw_bg = theme.settings.background.unwrap_or(syntect::highlighting::Color { r: 0, g: 0, b: 0, a: 255 });
-    let raw_fg = theme.settings.foreground.unwrap_or(syntect::highlighting::Color { r: 255, g: 255, b: 255, a: 255 });
-
-    let bg_color = Color::Rgb { r: raw_bg.r, g: raw_bg.g, b: raw_bg.b };
-    let text_fg = Color::Rgb { r: raw_fg.r, g: raw_fg.g, b: raw_fg.b };
-    let accent_color = Color::Rgb { r: 50, g: 150, b: 200 };
-
-    let selected_bg = if raw_bg.r < 128 {
-        Color::Rgb { r: raw_bg.r.saturating_add(40), g: raw_bg.g.saturating_add(40), b: raw_bg.b.saturating_add(40) }
-    } else {
-        Color::Rgb { r: raw_bg.r.saturating_sub(40), g: raw_bg.g.saturating_sub(40), b: raw_bg.b.saturating_sub(40) }
-    };
+    let mut theme_provider = Editor::new(None);
 
     loop {
         let (cols, rows) = term_size().unwrap_or((80, 24));
+        let theme = &theme_provider.theme_set.themes[&theme_provider.current_theme];
+        let colors = derive_ui_colors(theme);
+
+        if last_fetch_time.elapsed() >= auto_refresh_interval {
+            needs_fetch = true;
+        }
 
         if needs_reconnect {
             execute!(stdout, Clear(ClearType::All), cursor::MoveTo(0, 0)).unwrap();
@@ -537,15 +613,18 @@ fn main() {
             let new_client = imap::connect((domain, 993), domain, &tls).expect("Could not connect to IMAP server");
             session = new_client.login(&active_account.email, &active_account.password).expect("IMAP Login failed");
 
-            mailbox = session.select("INBOX").expect("Could not select INBOX");
-            total_messages = mailbox.exists;
+            match session.select("INBOX") {
+                Ok(m) => total_messages = m.exists,
+                Err(_) => total_messages = 0,
+            }
             current_page = 0;
             selected_index = 0;
             needs_fetch = true;
             needs_reconnect = false;
+            last_fetch_time = Instant::now();
         }
 
-        let items_per_page = (rows.saturating_sub(4) as u32).max(1);
+        let items_per_page = (rows.saturating_sub(3) as u32).max(1);
         let total_pages = if total_messages == 0 { 1 } else { (total_messages + items_per_page - 1) / items_per_page };
 
         if current_page >= total_pages {
@@ -555,6 +634,14 @@ fn main() {
 
         if needs_fetch {
             page_emails.clear();
+
+            match session.select("INBOX") {
+                Ok(m) => total_messages = m.exists,
+                Err(_) => {
+                    needs_reconnect = true;
+                    continue;
+                }
+            }
 
             if total_messages > 0 {
                 let end_idx = total_messages.saturating_sub(current_page * items_per_page);
@@ -567,12 +654,14 @@ fn main() {
                         let mut is_seen = false;
                         let mut is_deleted = false;
                         let mut is_flagged = false;
+                        let mut is_answered = false;
 
                         for flag in message.flags() {
                             match flag {
                                 imap::types::Flag::Seen => is_seen = true,
                                 imap::types::Flag::Deleted => is_deleted = true,
                                 imap::types::Flag::Flagged => is_flagged = true,
+                                imap::types::Flag::Answered => is_answered = true,
                                 _ => {}
                             }
                         }
@@ -614,7 +703,6 @@ fn main() {
                                     from = if !name.is_empty() { format!("{} <{}>", name, email_raw) } else { email_raw };
                                 }
                             }
-                            // ... Parsing logic completes ...
                         }
 
                         if let Some(dt) = parsed_dt {
@@ -629,7 +717,7 @@ fn main() {
                             }
                         }
 
-                        page_emails.push(EmailMeta { id: message.message, subject, from, reply_to, reply_to_display, to_addr, cc, date, size, is_read: is_seen, is_deleted, is_flagged });
+                        page_emails.push(EmailMeta { id: message.message, subject, from, reply_to, reply_to_display, to_addr, cc, date, size, is_read: is_seen, is_deleted, is_flagged, is_answered });
                     }
                 }
 
@@ -646,302 +734,475 @@ fn main() {
                     selected_index = page_emails.len().saturating_sub(1);
                 }
             }
+            last_fetch_time = Instant::now();
             needs_fetch = false;
         }
 
         execute!(stdout, Clear(ClearType::All), cursor::MoveTo(0, 0)).unwrap();
 
-        // ------------------------------------------------------------------
-        // APP MODE: READING (Has its own inner loop)
-        // ------------------------------------------------------------------
-        if let AppMode::Reading { text_body, attachments, .. } = &mode {
-            let current = &page_emails[selected_index];
+        if let AppMode::Reading { text_body, html_body, attachments } = &mode {
+            let email_from = page_emails[selected_index].from.clone();
+            let email_to = page_emails[selected_index].to_addr.clone();
+            let email_cc = page_emails[selected_index].cc.clone();
+            let email_subject = page_emails[selected_index].subject.clone();
+            let email_reply_to = page_emails[selected_index].reply_to.clone();
+            let email_id = page_emails[selected_index].id.to_string();
+            let email_date = page_emails[selected_index].date.clone();
+
             let mut reader = Editor::new(None);
             reader.menu_state = MenuState::EmailReader;
             reader.top_margin = 6;
             reader.buffer = Rope::from_str(text_body.as_str());
 
-            let soft_yellow = Color::Rgb { r: 255, g: 255, b: 150 };
+            reader.current_theme = theme_provider.current_theme.clone();
 
             loop {
-                for i in 0..7 { queue!(stdout, cursor::MoveTo(0, i as u16), SetBackgroundColor(bg_color), terminal::Clear(ClearType::UntilNewLine)).unwrap(); }
+                let r_theme = &reader.theme_set.themes[&reader.current_theme];
+                let r_colors = derive_ui_colors(r_theme);
+
+                for i in 0..6 { queue!(stdout, cursor::MoveTo(0, i as u16), SetBackgroundColor(r_colors.ui_bg), terminal::Clear(ClearType::UntilNewLine)).unwrap(); }
 
                 let header_title = format!("View Email ({})", active_account.email);
-                queue!(stdout, cursor::MoveTo(0, 0), SetForegroundColor(accent_color), Print(header_title), ResetColor).unwrap();
+                queue!(stdout, cursor::MoveTo(0, 0), SetForegroundColor(r_colors.accent), Print(header_title)).unwrap();
 
                 let fields = ["From:", "To:", "Cc:", "Subject:"];
-                let vals = [&current.from, &current.to_addr, &current.cc, &current.subject];
+                let vals = [&email_from, &email_to, &email_cc, &email_subject];
 
                 for i in 0..4 {
                     queue!(
                         stdout, cursor::MoveTo(0, (i + 1) as u16),
-                        SetBackgroundColor(bg_color), SetForegroundColor(accent_color), Print(format!("{:>8}", fields[i])),
-                        SetForegroundColor(text_fg), Print(" "), Print(vals[i]), ResetColor
+                        SetBackgroundColor(r_colors.ui_bg), SetForegroundColor(r_colors.accent), Print(format!("{:>8}", fields[i])),
+                        SetForegroundColor(r_colors.fg), Print(" "), Print(vals[i])
                     ).unwrap();
                 }
 
-                queue!(stdout, cursor::MoveTo(0, 5), SetBackgroundColor(bg_color), SetForegroundColor(accent_color), Print(" Attach: "), ResetColor).unwrap();
+                queue!(stdout, cursor::MoveTo(0, 5), SetBackgroundColor(r_colors.ui_bg), SetForegroundColor(r_colors.accent), Print(" Attach: ")).unwrap();
+
                 if attachments.is_empty() {
-                    queue!(stdout, SetForegroundColor(Color::DarkGrey), Print("None"), ResetColor).unwrap();
+                    let dim_c = if r_colors.is_dark { Color::DarkGrey } else { Color::Grey };
+                    queue!(stdout, SetForegroundColor(dim_c), Print("None")).unwrap();
                 } else {
-                    let att_names: Vec<&str> = attachments.iter().map(|(n, _)| n.as_str()).collect();
-                    queue!(stdout, SetForegroundColor(soft_yellow), Print(att_names.join(", ")), ResetColor).unwrap();
+                    let att_names: Vec<String> = attachments.iter().enumerate().map(|(i, (n, _))| format!("{}. {}", i + 1, n)).collect();
+                    queue!(stdout, SetForegroundColor(r_colors.flag_n), Print(att_names.join("   "))).unwrap();
                 }
+                queue!(stdout, ResetColor).unwrap();
 
                 reader.draw_screen().unwrap();
 
-                if let Event::Key(key) = event::read().unwrap() {
-                    if key.kind == KeyEventKind::Press {
-                        match reader.handle_keypress(key).unwrap() {
-                            EditorResult::Cancel => break,
-                            EditorResult::Send(action) if action == "REPLY" => {
-                                let subject = if current.subject.to_lowercase().starts_with("re:") { current.subject.clone() } else { format!("Re: {}", current.subject) };
-                                compose_email(&active_account, Some(&current.reply_to), Some(&subject), None);
-                                break;
+                let m_col = (cols as usize / 6).max(1);
+                Editor::draw_menu_line(&mut stdout, rows - 2, cols, m_col, &[
+                    ("Up/Dn", " Scroll"), ("Esc", " Mailbox"), (">", " Browser"), ("R", " Reply"), ("F", " Forward"), ("V", " Save Atts")
+                ], r_colors.ui_bg, r_colors.accent, r_colors.fg).unwrap();
+                Editor::draw_menu_line(&mut stdout, rows - 1, cols, m_col, &[
+                    ("PgUp/Dn", " Page"), ("1-9", " Open Att"), ("", ""), ("", ""), ("", ""), ("", "")
+                ], r_colors.ui_bg, r_colors.accent, r_colors.fg).unwrap();
+                stdout.flush().unwrap();
+
+                let timeout = if let Some(time) = reader.status_time {
+                    let elapsed = time.elapsed();
+                    if elapsed >= Duration::from_secs(3) { Duration::from_millis(1) } else { Duration::from_secs(3) - elapsed }
+                } else { Duration::from_secs(3600) };
+
+                if event::poll(timeout).unwrap() {
+                    if let Event::Key(mut key) = event::read().unwrap() {
+                        if key.kind == KeyEventKind::Press {
+
+                            if !key.modifiers.contains(KeyModifiers::CONTROL) && !key.modifiers.contains(KeyModifiers::ALT) {
+                                if let KeyCode::Char(c) = key.code {
+                                    if c.is_ascii_digit() && c != '0' {
+                                        let idx = c.to_digit(10).unwrap() as usize - 1;
+                                        if idx < attachments.len() {
+                                            let (filename, data) = &attachments[idx];
+                                            let temp_dir = std::env::temp_dir();
+                                            let safe_name = filename.replace(|ch: char| !ch.is_ascii_alphanumeric() && ch != '.' && ch != '-', "_");
+                                            let file_path = temp_dir.join(&safe_name);
+
+                                            if fs::write(&file_path, data).is_ok() {
+                                                open_in_default_app(&file_path);
+                                                reader.set_status(format!("Opened '{}' in default program.", safe_name));
+                                            } else {
+                                                reader.set_status(format!("Failed to open '{}'.", safe_name));
+                                            }
+                                            continue;
+                                        }
+                                    }
+                                }
                             }
-                            EditorResult::Send(action) if action == "FORWARD" => {
-                                let subject = if current.subject.to_lowercase().starts_with("fwd:") { current.subject.clone() } else { format!("Fwd: {}", current.subject) };
-                                let fwd_body = format!("\n\n--- Forwarded message ---\nFrom: {}\nDate: {}\nSubject: {}\n\n{}", current.from, current.date, current.subject, text_body);
-                                compose_email(&active_account, None, Some(&subject), Some(&fwd_body));
-                                break;
+
+                            if key.modifiers.contains(KeyModifiers::CONTROL) {
+                                if key.code == KeyCode::Char('y') || key.code == KeyCode::Char('Y') {
+                                    key.code = KeyCode::PageUp;
+                                    key.modifiers = KeyModifiers::empty();
+                                } else if key.code == KeyCode::Char('v') || key.code == KeyCode::Char('V') {
+                                    key.code = KeyCode::PageDown;
+                                    key.modifiers = KeyModifiers::empty();
+                                }
+                            } else {
+                                if key.code == KeyCode::Char('>') {
+                                    if let Some(html) = &html_body {
+                                        let temp_dir = std::env::temp_dir();
+                                        let file_path = temp_dir.join("xpine_email.html");
+                                        if fs::write(&file_path, html).is_ok() {
+                                            open_in_default_app(&file_path);
+                                            reader.set_status(String::from("Opened HTML version in default browser."));
+                                        }
+                                    } else {
+                                        reader.set_status(String::from("No HTML body found for this email."));
+                                    }
+                                    continue;
+                                }
+
+                                if key.code == KeyCode::Char('v') || key.code == KeyCode::Char('V') {
+                                    if !attachments.is_empty() {
+                                        execute!(stdout, Clear(ClearType::All), cursor::MoveTo(0, 0)).unwrap();
+                                        queue!(stdout, Print("Saving attachments...\r\n")).unwrap();
+                                        for (filename, data) in attachments {
+                                            let safe_name = filename.replace(|c: char| !c.is_ascii_alphanumeric() && c != '.' && c != '-', "_");
+                                            let filepath = Path::new(&safe_name);
+                                            match fs::write(filepath, data) {
+                                                Ok(_) => queue!(stdout, Print(format!("Saved: {}\r\n", safe_name))).unwrap(),
+                                                Err(e) => queue!(stdout, Print(format!("Failed to save {}: {}\r\n", safe_name, e))).unwrap(),
+                                            }
+                                        }
+                                        queue!(stdout, Print("\r\nPress Enter to return...")).unwrap();
+                                        stdout.flush().unwrap();
+                                        loop { if let Ok(Event::Key(k)) = event::read() { if k.code == KeyCode::Enter { break; } } }
+                                        reader.set_status(String::from("Attachments saved."));
+                                    } else {
+                                        reader.set_status(String::from("No attachments found."));
+                                    }
+                                    continue;
+                                }
                             }
-                            _ => {}
+
+                            match reader.handle_keypress(key).unwrap() {
+                                EditorResult::Cancel => break,
+                                EditorResult::Send(action) if action == "REPLY" => {
+                                    if session.store(&email_id, "+FLAGS (\\Answered)").is_ok() {
+                                        page_emails[selected_index].is_answered = true;
+                                    }
+                                    let subject = if email_subject.to_lowercase().starts_with("re:") { email_subject.clone() } else { format!("Re: {}", email_subject) };
+                                    if let Some(msg) = compose_email(&active_account, Some(&email_reply_to), Some(&subject), None, &mut reader.current_theme) {
+                                        list_status = msg;
+                                        list_status_time = Some(Instant::now());
+                                        list_status_duration = Duration::from_millis(1500);
+                                    }
+                                    break;
+                                }
+                                EditorResult::Send(action) if action == "FORWARD" => {
+                                    let subject = if email_subject.to_lowercase().starts_with("fwd:") { email_subject.clone() } else { format!("Fwd: {}", email_subject) };
+                                    let fwd_body = format!("\n\n--- Forwarded message ---\nFrom: {}\nDate: {}\nSubject: {}\n\n{}", email_from, email_date, email_subject, text_body);
+                                    if let Some(msg) = compose_email(&active_account, None, Some(&subject), Some(&fwd_body), &mut reader.current_theme) {
+                                        list_status = msg;
+                                        list_status_time = Some(Instant::now());
+                                        list_status_duration = Duration::from_millis(1500);
+                                    }
+                                    break;
+                                }
+                                _ => {}
+                            }
+
+                            theme_provider.current_theme = reader.current_theme.clone();
                         }
                     }
+                } else {
+                    reader.clear_status();
                 }
             }
-            // Once broken out of the reading view, instantly revert to list mode
             mode = AppMode::List;
-            needs_fetch = true;
             continue;
         }
 
-        // ------------------------------------------------------------------
-        // APP MODE: LIST (Draws the List View)
-        // ------------------------------------------------------------------
-        queue!(stdout, SetBackgroundColor(bg_color), Clear(ClearType::All)).unwrap();
+        queue!(stdout, SetBackgroundColor(colors.bg), Clear(ClearType::All)).unwrap();
 
         let header_title = format!("xpine - Inbox ({})", active_account.email);
-        queue!(stdout, cursor::MoveTo(0, 0), SetBackgroundColor(bg_color), SetForegroundColor(accent_color), Print(header_title), ResetColor).unwrap();
+        queue!(stdout, cursor::MoveTo(0, 0), SetBackgroundColor(colors.ui_bg), terminal::Clear(ClearType::UntilNewLine), cursor::MoveTo(0, 0), SetForegroundColor(colors.accent), Print(header_title), ResetColor).unwrap();
 
-        let list_start_y = 2;
-        let visible_capacity = rows.saturating_sub(6) as usize;
+        let list_start_y = 1;
+        let visible_capacity = rows.saturating_sub(3) as usize;
 
         for (i, email) in page_emails.iter().enumerate() {
             if i >= visible_capacity { break; }
 
             let row_y = (i + list_start_y) as u16;
-            let row_bg = if i == selected_index { selected_bg } else { bg_color };
+            let row_bg = if i == selected_index { colors.selected_bg } else { colors.bg };
 
             queue!(stdout, cursor::MoveTo(0, row_y), SetBackgroundColor(row_bg), Clear(ClearType::UntilNewLine)).unwrap();
 
-            // 1. Status & ID Logic
             let flag_char = if email.is_flagged { "*" } else { " " };
-            let status_char = if email.is_deleted { "D" } else if !email.is_read { "N" } else { " " };
-            let email_num = format!("{:>4}", email.id);
+            let status_char = if email.is_deleted { "D" } else if !email.is_read { "N" } else if email.is_answered { "A" } else { " " };
 
-            // 2. Log-Scale Size Coloring
             let size_kb = (email.size / 1024).max(1) as f32;
-            let size_display = if size_kb < 1024.0 { format!("{:>4}K", size_kb as u32) } else { format!("{:>4}M", (size_kb / 1024.0) as u32) };
+            let size_str = if size_kb < 1024.0 {
+                format!("({}K)", size_kb as u32)
+            } else {
+                format!("({}M)", (size_kb / 1024.0) as u32)
+            };
+            let size_display = format!("{:>6}", size_str);
             let heat = (size_kb.log2() / 12.3).min(1.0).max(0.0);
-            let size_color = Color::Rgb {
-                r: (180.0 + (75.0 * heat)) as u8,
-                g: (180.0 * (1.0 - heat)) as u8,
-                b: (180.0 * (1.0 - heat)) as u8
+
+            let (base_r, base_g, base_b) = match colors.fg {
+                Color::Rgb { r, g, b } => (r as f32, g as f32, b as f32),
+                _ => (255.0, 255.0, 255.0),
             };
 
-            // 3. Truncation
+            let hot_r = if colors.is_dark { 255.0 } else { 220.0 };
+            let hot_g = if colors.is_dark { 80.0 } else { 0.0 };
+            let hot_b = if colors.is_dark { 80.0 } else { 0.0 };
+
+            let size_color = Color::Rgb {
+                r: (base_r + (hot_r - base_r) * heat) as u8,
+                g: (base_g + (hot_g - base_g) * heat) as u8,
+                b: (base_b + (hot_b - base_b) * heat) as u8,
+            };
+
             let from_width = 22;
             let from_str = format!("{:<width$}", email.from.chars().take(from_width).collect::<String>(), width = from_width);
 
-            let date_width = 12;
-            let date_str = format!("{:width$}", email.date, width = date_width);
+            let date_width = 9;
+            let date_str = format!("{:<width$}", email.date, width = date_width);
 
-            let fixed_width = 51;
+            let fixed_width = 47;
             let subject_width = (cols as usize).saturating_sub(fixed_width);
             let subj_truncated = email.subject.chars().take(subject_width).collect::<String>();
             let padded_subj = format!("{:<width$}", subj_truncated, width = subject_width);
 
-            // 4. Render Row
             let _ = queue!(stdout, SetBackgroundColor(row_bg));
 
-            // * (Bright Red) and N/D (Yellow/Purple)
-            let _ = queue!(stdout, SetForegroundColor(Color::Red), Print(flag_char));
+            let _ = queue!(stdout, SetForegroundColor(colors.flag_star), Print(flag_char));
+            let _ = queue!(stdout, Print(" "));
 
             let status_color = match status_char {
-                "N" => Color::Yellow,
-                "D" => Color::Magenta,
-                _ => text_fg,
+                "N" => colors.flag_n,
+                "D" => colors.flag_d,
+                "A" => colors.flag_a,
+                _ => colors.fg,
             };
+
             let _ = queue!(stdout, SetForegroundColor(status_color), Print(status_char));
+            let _ = queue!(stdout, Print(" "));
 
-            // Email Number (Theme text_fg)
-            let _ = queue!(stdout, SetForegroundColor(text_fg), Print(format!(" {} ", email_num)));
+            let _ = queue!(stdout, SetForegroundColor(colors.date_color), Print(date_str));
+            let _ = queue!(stdout, Print("  "));
 
-            // Date (Themed Accent Color) + 1 space
-            let _ = queue!(stdout, SetForegroundColor(accent_color), Print(format!("{} ", date_str)));
+            let _ = queue!(stdout, SetForegroundColor(colors.fg), Print(from_str));
+            let _ = queue!(stdout, Print("  "));
 
-            // Sender (Theme text_fg) + 1 space
-            let _ = queue!(stdout, SetForegroundColor(text_fg), Print(format!("{} ", from_str)));
+            let _ = queue!(stdout, Print(padded_subj));
+            let _ = queue!(stdout, Print("  "));
 
-            // Subject + 2 spaces
-            let _ = queue!(stdout, Print(format!("{}  ", padded_subj)));
-
-            // Size (Heat map color)
             let _ = queue!(stdout, SetForegroundColor(size_color), Print(size_display));
         }
 
-        // Standardized 12-item menu logic
-        let r_col = ((cols as usize) / 6).max(1);
+        let r_col = (cols as usize / 6).max(1);
         Editor::draw_menu_line(&mut stdout, rows - 2, cols, r_col, &[
             ("Enter", " Read"), ("C", " Compose"), ("R", " Reply"), ("F", " Forward"), ("D", " Delete"), ("*", " Flag")
-        ], bg_color, accent_color, text_fg).unwrap();
+        ], colors.ui_bg, colors.accent, colors.fg).unwrap();
 
         Editor::draw_menu_line(&mut stdout, rows - 1, cols, r_col, &[
             ("Q/Esc", " Quit"), ("Arrows", " Nav"), ("Tab", " Acct"), ("M", " Mark Read"), ("X", " Expunge"), ("", "")
-        ], bg_color, accent_color, text_fg).unwrap();
+        ], colors.ui_bg, colors.accent, colors.fg).unwrap();
+
+        if let Some(time) = list_status_time {
+            if time.elapsed() >= list_status_duration {
+                list_status.clear();
+                list_status_time = None;
+            } else if !list_status.is_empty() {
+                queue!(stdout, cursor::MoveTo(0, rows - 3), SetBackgroundColor(colors.selected_bg), terminal::Clear(ClearType::UntilNewLine), SetForegroundColor(colors.accent), Print(format!(" {} ", list_status)), ResetColor).unwrap();
+            }
+        }
 
         stdout.flush().unwrap();
 
-        // ------------------------------------------------------------------
-        // APP MODE: LIST (Handles events exclusively for the List View)
-        // ------------------------------------------------------------------
-        match event::read().expect("Failed to read event") {
-            Event::Key(key_event) => {
-                if key_event.kind == KeyEventKind::Press {
-                    match key_event.code {
-                        KeyCode::Tab => {
-                            if config.accounts.len() > 1 {
-                                current_account_idx = (current_account_idx + 1) % config.accounts.len();
-                                needs_reconnect = true;
-                                restore_index_from_end = Some(0);
+        let mut timeout = if last_fetch_time.elapsed() >= auto_refresh_interval {
+            Duration::from_millis(1)
+        } else {
+            auto_refresh_interval - last_fetch_time.elapsed()
+        };
+
+        if let Some(time) = list_status_time {
+            let elapsed = time.elapsed();
+            if elapsed >= list_status_duration {
+                timeout = Duration::from_millis(1);
+            } else {
+                let status_timeout = list_status_duration - elapsed;
+                if status_timeout < timeout {
+                    timeout = status_timeout;
+                }
+            }
+        }
+
+        if event::poll(timeout).unwrap() {
+            match event::read().expect("Failed to read event") {
+                Event::Key(key_event) => {
+                    if key_event.kind == KeyEventKind::Press {
+                        match key_event.code {
+                            KeyCode::Char('t') | KeyCode::Char('T') if key_event.modifiers.contains(KeyModifiers::ALT) => {
+                                let mut themes: Vec<_> = theme_provider.theme_set.themes.keys().cloned().collect();
+                                themes.sort();
+                                if let Some(pos) = themes.iter().position(|t| t == &theme_provider.current_theme) {
+                                    let next = (pos + 1) % themes.len();
+                                    theme_provider.current_theme = themes[next].clone();
+                                    list_status = format!("Theme: {}", theme_provider.current_theme);
+                                    list_status_time = Some(Instant::now());
+                                    list_status_duration = Duration::from_secs(3);
+                                }
                             }
-                        }
-                        KeyCode::Char(c) if c.is_ascii_digit() => {
-                            if let Some(digit) = c.to_digit(10) {
-                                let idx = (digit as usize).saturating_sub(1);
-                                if idx < config.accounts.len() && idx != current_account_idx {
-                                    current_account_idx = idx;
+                            KeyCode::Tab => {
+                                if config.accounts.len() > 1 {
+                                    current_account_idx = (current_account_idx + 1) % config.accounts.len();
                                     needs_reconnect = true;
                                     restore_index_from_end = Some(0);
                                 }
                             }
-                        }
-                        KeyCode::Up | KeyCode::Char('p') | KeyCode::Char('P') => {
-                            if selected_index > 0 { selected_index -= 1; }
-                            else if current_page + 1 < total_pages { current_page += 1; needs_fetch = true; selected_index = (items_per_page - 1) as usize; }
-                        }
-                        KeyCode::Down | KeyCode::Char('n') | KeyCode::Char('N') => {
-                            if !page_emails.is_empty() {
-                                if selected_index + 1 < page_emails.len() { selected_index += 1; }
-                                else if current_page > 0 { current_page -= 1; needs_fetch = true; selected_index = 0; }
-                            }
-                        }
-                        KeyCode::Char('*') => {
-                            if !page_emails.is_empty() {
-                                let seq_id = page_emails[selected_index].id.to_string();
-                                if page_emails[selected_index].is_flagged {
-                                    if session.store(&seq_id, "-FLAGS (\\Flagged)").is_ok() { page_emails[selected_index].is_flagged = false; }
-                                } else {
-                                    if session.store(&seq_id, "+FLAGS (\\Flagged)").is_ok() { page_emails[selected_index].is_flagged = true; }
-                                }
-                            }
-                        }
-                        KeyCode::Char('c') | KeyCode::Char('C') => {
-                            compose_email(&active_account, None, None, None);
-                        }
-                        KeyCode::Char('d') | KeyCode::Char('D') => {
-                            if !page_emails.is_empty() {
-                                let seq_id = page_emails[selected_index].id.to_string();
-                                if page_emails[selected_index].is_deleted {
-                                    if session.store(&seq_id, "-FLAGS (\\Deleted)").is_ok() { page_emails[selected_index].is_deleted = false; }
-                                } else {
-                                    if session.store(&seq_id, "+FLAGS (\\Deleted)").is_ok() { page_emails[selected_index].is_deleted = true; }
-                                }
-                            }
-                        }
-                        KeyCode::Char('m') | KeyCode::Char('M') => {
-                            if !page_emails.is_empty() {
-                                let seq_id = page_emails[selected_index].id.to_string();
-                                if page_emails[selected_index].is_read {
-                                    if session.store(&seq_id, "-FLAGS (\\Seen)").is_ok() { page_emails[selected_index].is_read = false; }
-                                } else {
-                                    if session.store(&seq_id, "+FLAGS (\\Seen)").is_ok() { page_emails[selected_index].is_read = true; }
-                                }
-                            }
-                        }
-                        KeyCode::Char('x') | KeyCode::Char('X') => {
-                            if !page_emails.is_empty() {
-                                let offset = current_page * items_per_page + (page_emails.len().saturating_sub(1).saturating_sub(selected_index)) as u32;
-
-                                if session.expunge().is_ok() {
-                                    if let Ok(m) = session.select("Inbox") {
-                                        total_messages = m.exists;
-                                        let safe_offset = offset.min(total_messages.saturating_sub(1));
-                                        current_page = safe_offset / items_per_page;
-                                        restore_index_from_end = Some(safe_offset % items_per_page);
-                                        needs_fetch = true;
+                            KeyCode::Char(c) if c.is_ascii_digit() => {
+                                if let Some(digit) = c.to_digit(10) {
+                                    let idx = (digit as usize).saturating_sub(1);
+                                    if idx < config.accounts.len() && idx != current_account_idx {
+                                        current_account_idx = idx;
+                                        needs_reconnect = true;
+                                        restore_index_from_end = Some(0);
                                     }
                                 }
                             }
-                        }
-                        KeyCode::Char('f') | KeyCode::Char('F') => {
-                            if !page_emails.is_empty() {
-                                let current = &page_emails[selected_index];
-                                let fetch_seq = current.id.to_string();
-                                let mut t_body = String::from("Could not load email body.");
+                            KeyCode::Up | KeyCode::Char('p') | KeyCode::Char('P') => {
+                                if selected_index > 0 { selected_index -= 1; }
+                                else if current_page + 1 < total_pages { current_page += 1; needs_fetch = true; selected_index = (items_per_page - 1) as usize; }
+                            }
+                            KeyCode::Down | KeyCode::Char('n') | KeyCode::Char('N') => {
+                                if !page_emails.is_empty() {
+                                    let max_visible = page_emails.len().min(rows.saturating_sub(3) as usize);
+                                    if selected_index + 1 < max_visible { selected_index += 1; }
+                                    else if current_page > 0 { current_page -= 1; needs_fetch = true; selected_index = 0; }
+                                }
+                            }
+                            KeyCode::Char('*') => {
+                                if !page_emails.is_empty() {
+                                    let seq_id = page_emails[selected_index].id.to_string();
+                                    if page_emails[selected_index].is_flagged {
+                                        if session.store(&seq_id, "-FLAGS (\\Flagged)").is_ok() { page_emails[selected_index].is_flagged = false; }
+                                    } else {
+                                        if session.store(&seq_id, "+FLAGS (\\Flagged)").is_ok() { page_emails[selected_index].is_flagged = true; }
+                                    }
+                                }
+                            }
+                            KeyCode::Char('c') | KeyCode::Char('C') => {
+                                if let Some(msg) = compose_email(&active_account, None, None, None, &mut theme_provider.current_theme) {
+                                    list_status = msg;
+                                    list_status_time = Some(Instant::now());
+                                    list_status_duration = Duration::from_millis(1500);
+                                }
+                            }
+                            KeyCode::Char('d') | KeyCode::Char('D') => {
+                                if !page_emails.is_empty() {
+                                    let seq_id = page_emails[selected_index].id.to_string();
+                                    if page_emails[selected_index].is_deleted {
+                                        if session.store(&seq_id, "-FLAGS (\\Deleted)").is_ok() { page_emails[selected_index].is_deleted = false; }
+                                    } else {
+                                        if session.store(&seq_id, "+FLAGS (\\Deleted)").is_ok() { page_emails[selected_index].is_deleted = true; }
+                                    }
+                                }
+                            }
+                            KeyCode::Char('m') | KeyCode::Char('M') => {
+                                if !page_emails.is_empty() {
+                                    let seq_id = page_emails[selected_index].id.to_string();
+                                    if page_emails[selected_index].is_read {
+                                        if session.store(&seq_id, "-FLAGS (\\Seen)").is_ok() { page_emails[selected_index].is_read = false; }
+                                    } else {
+                                        if session.store(&seq_id, "+FLAGS (\\Seen)").is_ok() { page_emails[selected_index].is_read = true; }
+                                    }
+                                }
+                            }
+                            KeyCode::Char('x') | KeyCode::Char('X') => {
+                                if !page_emails.is_empty() {
+                                    let offset = current_page * items_per_page + (page_emails.len().saturating_sub(1).saturating_sub(selected_index)) as u32;
 
-                                if let Ok(full_msgs) = session.fetch(&fetch_seq, "RFC822") {
-                                    if let Some(full_msg) = full_msgs.iter().next() {
-                                        if let Some(body_data) = full_msg.body() {
-                                            let (t, _, _) = parse_email_body(body_data);
-                                            t_body = t;
+                                    if session.expunge().is_ok() {
+                                        if let Ok(m) = session.select("INBOX") {
+                                            total_messages = m.exists;
+                                            let safe_offset = offset.min(total_messages.saturating_sub(1));
+                                            current_page = safe_offset / items_per_page;
+                                            restore_index_from_end = Some(safe_offset % items_per_page);
+                                            needs_fetch = true;
                                         }
                                     }
                                 }
-
-                                let subject = if current.subject.to_lowercase().starts_with("fwd:") { current.subject.clone() } else { format!("Fwd: {}", current.subject) };
-                                let fwd_body = format!("\n\n--- Forwarded message ---\nFrom: {}\nDate: {}\nSubject: {}\n\n{}", current.from, current.date, current.subject, t_body);
-                                compose_email(&active_account, None, Some(&subject), Some(&fwd_body));
                             }
-                        }
-                        KeyCode::Char('r') | KeyCode::Char('R') => {
-                            if !page_emails.is_empty() {
-                                let current = &page_emails[selected_index];
-                                let subject = if current.subject.to_lowercase().starts_with("re:") { current.subject.clone() } else { format!("Re: {}", current.subject) };
-                                compose_email(&active_account, Some(&current.reply_to), Some(&subject), None);
-                            }
-                        }
-                        KeyCode::Enter | KeyCode::Right | KeyCode::Char('>') => {
-                            if !page_emails.is_empty() {
-                                let fetch_seq = page_emails[selected_index].id.to_string();
-                                let mut t_body = String::from("Could not load email body.");
-                                let mut h_body = None;
-                                let mut atts = Vec::new();
+                            KeyCode::Char('f') | KeyCode::Char('F') => {
+                                if !page_emails.is_empty() {
+                                    let current = &page_emails[selected_index];
+                                    let fetch_seq = current.id.to_string();
+                                    let mut t_body = String::from("Could not load email body.");
 
-                                if let Ok(full_msgs) = session.fetch(&fetch_seq, "RFC822") {
-                                    if let Some(full_msg) = full_msgs.iter().next() {
-                                        if let Some(body_data) = full_msg.body() {
-                                            let (t, h, a) = parse_email_body(body_data);
-                                            t_body = t;
-                                            h_body = h;
-                                            atts = a;
+                                    if let Ok(full_msgs) = session.fetch(&fetch_seq, "RFC822") {
+                                        if let Some(full_msg) = full_msgs.iter().next() {
+                                            if let Some(body_data) = full_msg.body() {
+                                                let (t, _, _) = parse_email_body(body_data);
+                                                t_body = t;
+                                            }
                                         }
                                     }
-                                    page_emails[selected_index].is_read = true;
+
+                                    let subject = if current.subject.to_lowercase().starts_with("fwd:") { current.subject.clone() } else { format!("Fwd: {}", current.subject) };
+                                    let fwd_body = format!("\n\n--- Forwarded message ---\nFrom: {}\nDate: {}\nSubject: {}\n\n{}", current.from, current.date, current.subject, t_body);
+                                    if let Some(msg) = compose_email(&active_account, None, Some(&subject), Some(&fwd_body), &mut theme_provider.current_theme) {
+                                        list_status = msg;
+                                        list_status_time = Some(Instant::now());
+                                        list_status_duration = Duration::from_millis(1500);
+                                    }
                                 }
-                                mode = AppMode::Reading { text_body: t_body, html_body: h_body, attachments: atts };
                             }
+                            KeyCode::Char('r') | KeyCode::Char('R') => {
+                                if !page_emails.is_empty() {
+                                    let seq_id = page_emails[selected_index].id.to_string();
+                                    let reply_to = page_emails[selected_index].reply_to.clone();
+                                    let mut subject = page_emails[selected_index].subject.clone();
+
+                                    if session.store(&seq_id, "+FLAGS (\\Answered)").is_ok() {
+                                        page_emails[selected_index].is_answered = true;
+                                    }
+
+                                    if !subject.to_lowercase().starts_with("re:") {
+                                        subject = format!("Re: {}", subject);
+                                    }
+                                    if let Some(msg) = compose_email(&active_account, Some(&reply_to), Some(&subject), None, &mut theme_provider.current_theme) {
+                                        list_status = msg;
+                                        list_status_time = Some(Instant::now());
+                                        list_status_duration = Duration::from_millis(1500);
+                                    }
+                                }
+                            }
+                            KeyCode::Enter | KeyCode::Right => {
+                                if !page_emails.is_empty() {
+                                    let fetch_seq = page_emails[selected_index].id.to_string();
+                                    let mut t_body = String::from("Could not load email body.");
+                                    let mut h_body = None;
+                                    let mut atts = Vec::new();
+
+                                    if let Ok(full_msgs) = session.fetch(&fetch_seq, "RFC822") {
+                                        if let Some(full_msg) = full_msgs.iter().next() {
+                                            if let Some(body_data) = full_msg.body() {
+                                                let (t, h, a) = parse_email_body(body_data);
+                                                t_body = t;
+                                                h_body = h;
+                                                atts = a;
+                                            }
+                                        }
+                                        page_emails[selected_index].is_read = true;
+                                    }
+                                    mode = AppMode::Reading { text_body: t_body, html_body: h_body, attachments: atts };
+                                }
+                            }
+                            KeyCode::Char('q') | KeyCode::Esc => break,
+                            _ => {}
                         }
-                        KeyCode::Char('q') | KeyCode::Esc => break,
-                        _ => {}
                     }
                 }
+                Event::Resize(_, _) => {
+                    needs_fetch = true;
+                }
+                _ => {}
             }
-            Event::Resize(_, _) => {
-                needs_fetch = true;
-            }
-            _ => {}
         }
     }
 
