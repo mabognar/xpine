@@ -6,7 +6,125 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use include_dir::{include_dir, Dir};
 
-static BUNDLED_THEMES: Dir<'_> = include_dir!("$CARGO_MANIFEST_DIR/src/themes");
+static BUNDLED_THEMES: Dir<'_> = include_dir!("$CARGO_MANIFEST_DIR/themes");
+
+#[derive(Clone)]
+pub struct Account {
+    pub email: String,
+    pub password: String,
+}
+
+pub struct AppConfig {
+    pub accounts: Vec<Account>,
+}
+
+#[derive(Clone, Copy)]
+pub struct UiColors {
+    pub bg: Color,
+    pub fg: Color,
+    pub ui_bg: Color,
+    pub selected_bg: Color,
+    pub accent: Color,
+    pub date_color: Color,
+    pub flag_n: Color,
+    pub flag_d: Color,
+    pub flag_a: Color,
+    pub flag_star: Color,
+    pub is_dark: bool,
+}
+
+pub fn derive_ui_colors(theme: &Theme) -> UiColors {
+    let raw_bg = theme.settings.background.unwrap_or(syntect::highlighting::Color { r: 0, g: 0, b: 0, a: 255 });
+    let raw_fg = theme.settings.foreground.unwrap_or(syntect::highlighting::Color { r: 255, g: 255, b: 255, a: 255 });
+
+    let bg = Color::Rgb { r: raw_bg.r, g: raw_bg.g, b: raw_bg.b };
+    let fg = Color::Rgb { r: raw_fg.r, g: raw_fg.g, b: raw_fg.b };
+    let is_dark = (raw_bg.r as u32 + raw_bg.g as u32 + raw_bg.b as u32) < 384;
+
+    let ui_bg = if is_dark {
+        Color::Rgb { r: raw_bg.r.saturating_add(20), g: raw_bg.g.saturating_add(20), b: raw_bg.b.saturating_add(20) }
+    } else {
+        Color::Rgb { r: raw_bg.r.saturating_sub(20), g: raw_bg.g.saturating_sub(20), b: raw_bg.b.saturating_sub(20) }
+    };
+
+    let selected_bg = if raw_bg.r < 128 {
+        Color::Rgb { r: raw_bg.r.saturating_add(40), g: raw_bg.g.saturating_add(40), b: raw_bg.b.saturating_add(40) }
+    } else {
+        Color::Rgb { r: raw_bg.r.saturating_sub(40), g: raw_bg.g.saturating_sub(40), b: raw_bg.b.saturating_sub(40) }
+    };
+
+    let get_theme_color = |keys: &[&str]| -> Option<Color> {
+        for item in &theme.scopes {
+            let scope_str = format!("{:?}", item.scope).to_lowercase();
+            for key in keys {
+                if scope_str.contains(key) {
+                    if let Some(c) = item.style.foreground {
+                        return Some(Color::Rgb { r: c.r, g: c.g, b: c.b });
+                    }
+                }
+            }
+        }
+        None
+    };
+
+    let flag_a = Color::Green;
+    let flag_d = Color::Magenta;
+    let flag_n = Color::Yellow;
+    let flag_star = Color::Red;
+
+    let accent = get_theme_color(&["entity.name.function", "variable"])
+        .unwrap_or(if is_dark { Color::Rgb { r: 100, g: 200, b: 255 } } else { Color::Rgb { r: 20, g: 100, b: 180 } });
+
+    let date_color = get_theme_color(&["comment", "punctuation.definition.comment"])
+        .unwrap_or(if is_dark { Color::Rgb { r: 120, g: 120, b: 120 } } else { Color::Rgb { r: 140, g: 140, b: 140 } });
+
+    UiColors { bg, fg, ui_bg, selected_bg, accent, date_color, flag_n, flag_d, flag_a, flag_star, is_dark }
+}
+
+pub fn load_config() -> AppConfig {
+    let home = dirs::home_dir().expect("Could not find home directory.");
+    let config_dir = home.join(".email");
+    let config_path = config_dir.join(".emailrc");
+
+    if !config_path.exists() {
+        fs::create_dir_all(&config_dir).expect("Failed to create .email directory.");
+        let template = "# Account 1\nEMAIL=statgod@gmail.com\nPASSWORD=your_16_char_app_password\n\n# Account 2\nEMAIL=second@gmail.com\nPASSWORD=app_password\n";
+        fs::write(&config_path, template).expect("Failed to write .emailrc template.");
+
+        println!("No configuration found.");
+        println!("Created a new config template at: {:?}", config_path);
+        println!("Please edit this file with your actual App Password(s) and run the program again.");
+        std::process::exit(0);
+    }
+
+    let contents = fs::read_to_string(&config_path).expect("Failed to read .emailrc");
+    let mut accounts = Vec::new();
+    let mut current_email = String::new();
+
+    for line in contents.lines() {
+        if line.trim().is_empty() || line.starts_with('#') { continue; }
+        if let Some((key, value)) = line.split_once('=') {
+            let val = value.trim().to_string();
+            match key.trim().to_uppercase().as_str() {
+                "EMAIL" => current_email = val,
+                "PASSWORD" => {
+                    if !current_email.is_empty() && !val.is_empty() {
+                        accounts.push(Account { email: current_email.clone(), password: val });
+                        current_email.clear();
+                    }
+                }
+                _ => {}
+            }
+        }
+    }
+
+    if accounts.is_empty() || accounts[0].password == "your_16_char_app_password" {
+        println!("Invalid or default credentials found in {:?}", config_path);
+        std::process::exit(1);
+    }
+
+    AppConfig { accounts }
+}
 
 pub trait ConfigExt {
     fn get_base_dir() -> Option<PathBuf>;
@@ -118,7 +236,6 @@ impl ConfigExt for Editor {
             self.status_message = format!("Theme changed to: {}", self.current_theme);
             self.status_time = Some(std::time::Instant::now());
 
-            // Trigger the cursor color update whenever the theme changes
             self.update_cursor_color();
         }
     }

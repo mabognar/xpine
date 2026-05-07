@@ -1,16 +1,79 @@
+use crate::app::{App, AppMode};
 use crate::editor::{Editor, MenuState};
-use crate::config::ConfigExt;
 use crossterm::{
     cursor,
     event::{self, Event, KeyCode, KeyModifiers},
     queue,
-    style::{Color, Print, SetBackgroundColor, SetForegroundColor},
-    terminal::{self, ClearType},
+    style::{Color, Print, ResetColor, SetBackgroundColor, SetForegroundColor},
+    terminal::{self, ClearType, size as term_size},
 };
 use syntect::easy::HighlightLines;
-use syntect::highlighting::Style;
 use std::io::{self, stdout, Write};
 use std::env;
+use crate::config::ConfigExt;
+
+#[derive(Clone, Copy)]
+pub struct UiColors {
+    pub bg: Color,
+    pub fg: Color,
+    pub ui_bg: Color,
+    pub selected_bg: Color,
+    pub accent: Color,
+    pub date_color: Color,
+    pub flag_n: Color,
+    pub flag_d: Color,
+    pub flag_a: Color,
+    pub flag_star: Color,
+    pub is_dark: bool,
+}
+
+pub fn derive_ui_colors(theme: &syntect::highlighting::Theme) -> UiColors {
+    let raw_bg = theme.settings.background.unwrap_or(syntect::highlighting::Color { r: 0, g: 0, b: 0, a: 255 });
+    let raw_fg = theme.settings.foreground.unwrap_or(syntect::highlighting::Color { r: 255, g: 255, b: 255, a: 255 });
+
+    let bg = Color::Rgb { r: raw_bg.r, g: raw_bg.g, b: raw_bg.b };
+    let fg = Color::Rgb { r: raw_fg.r, g: raw_fg.g, b: raw_fg.b };
+    let is_dark = (raw_bg.r as u32 + raw_bg.g as u32 + raw_bg.b as u32) < 384;
+
+    let ui_bg = if is_dark {
+        Color::Rgb { r: raw_bg.r.saturating_add(20), g: raw_bg.g.saturating_add(20), b: raw_bg.b.saturating_add(20) }
+    } else {
+        Color::Rgb { r: raw_bg.r.saturating_sub(20), g: raw_bg.g.saturating_sub(20), b: raw_bg.b.saturating_sub(20) }
+    };
+
+    let selected_bg = if raw_bg.r < 128 {
+        Color::Rgb { r: raw_bg.r.saturating_add(40), g: raw_bg.g.saturating_add(40), b: raw_bg.b.saturating_add(40) }
+    } else {
+        Color::Rgb { r: raw_bg.r.saturating_sub(40), g: raw_bg.g.saturating_sub(40), b: raw_bg.b.saturating_sub(40) }
+    };
+
+    let get_theme_color = |keys: &[&str]| -> Option<Color> {
+        for item in &theme.scopes {
+            let scope_str = format!("{:?}", item.scope).to_lowercase();
+            for key in keys {
+                if scope_str.contains(key) {
+                    if let Some(c) = item.style.foreground {
+                        return Some(Color::Rgb { r: c.r, g: c.g, b: c.b });
+                    }
+                }
+            }
+        }
+        None
+    };
+
+    let flag_a = Color::Green;
+    let flag_d = Color::Magenta;
+    let flag_n = Color::Yellow;
+    let flag_star = Color::Red;
+
+    let accent = get_theme_color(&["entity.name.function", "variable"])
+        .unwrap_or(if is_dark { Color::Rgb { r: 100, g: 200, b: 255 } } else { Color::Rgb { r: 20, g: 100, b: 180 } });
+
+    let date_color = get_theme_color(&["comment", "punctuation.definition.comment"])
+        .unwrap_or(if is_dark { Color::Rgb { r: 120, g: 120, b: 120 } } else { Color::Rgb { r: 140, g: 140, b: 140 } });
+
+    UiColors { bg, fg, ui_bg, selected_bg, accent, date_color, flag_n, flag_d, flag_a, flag_star, is_dark }
+}
 
 pub trait UiExt {
     fn draw_menu_line(writer: &mut io::Stdout, row: u16, cols: u16, col_width: usize, items: &[(&str, &str)], ui_bg: Color, key_fg: Color, text_fg: Color) -> io::Result<()>;
@@ -33,7 +96,6 @@ impl UiExt for Editor {
             let desc_chars = desc.chars().count();
             let total_chars = cmd_chars + desc_chars;
 
-            // Prevent division/layout panic if width is super tiny
             let safe_col_width = col_width.max(1);
 
             if total_chars <= safe_col_width {
@@ -51,7 +113,6 @@ impl UiExt for Editor {
         let mut stdout = stdout();
         let (cols, rows) = terminal::size()?;
 
-        // Calculate visible rows factoring in the reserved top margin
         let visible_rows = rows.saturating_sub((4 + self.top_margin) as u16) as usize;
 
         let theme = &self.theme_set.themes[&self.current_theme];
@@ -66,12 +127,9 @@ impl UiExt for Editor {
         let dollar_bg = if is_dark { Color::Rgb { r: 180, g: 180, b: 180 } } else { Color::Rgb { r: 80, g: 80, b: 80 } };
         let dollar_fg = if is_dark { Color::Black } else { Color::White };
 
-        // --- TITLE BAR LOGIC ---
-        // Hide the top title bar natively if acting as an email composer or reader
         if self.menu_state == MenuState::EmailComposer || self.menu_state == MenuState::EmailReader {
             queue!(stdout, cursor::MoveTo(0, self.top_margin), SetBackgroundColor(default_cross_bg), terminal::Clear(ClearType::CurrentLine))?;
         } else {
-            // Standard title bar rendering
             queue!(stdout, cursor::MoveTo(0, self.top_margin), SetBackgroundColor(ui_bg))?;
 
             let title = "   xnano";
@@ -106,7 +164,6 @@ impl UiExt for Editor {
             }
         }
 
-        // --- SYNTAX HIGHLIGHTING & LINE RENDERING ---
         let syntax = if let Some(ref name) = self.filename {
             let path = std::path::Path::new(name);
             if let Some(ext) = path.extension().and_then(|s| s.to_str()) { self.syntax_set.find_syntax_by_extension(ext).unwrap_or_else(|| self.syntax_set.find_syntax_plain_text()) } else { self.syntax_set.find_syntax_plain_text() }
@@ -129,11 +186,8 @@ impl UiExt for Editor {
             if file_y < self.buffer.len_lines() {
                 if !self.highlight_cache.contains_key(&file_y) {
                     if fallback_highlighter.is_none() { fallback_highlighter = Some(HighlightLines::new(syntax, theme)); }
-
-                    // Fixed Lifetime Issue: Bind the string to a variable before passing it to the highlighter
                     let line_str = self.buffer.line(file_y).to_string();
                     let ranges = fallback_highlighter.as_mut().unwrap().highlight_line(&line_str, &self.syntax_set).unwrap();
-
                     self.highlight_cache.insert(file_y, ranges.into_iter().map(|(s, t)| (s, t.to_string())).collect());
                 }
 
@@ -142,7 +196,6 @@ impl UiExt for Editor {
                 let mut line_char_idx = 0;
                 let line_has_search_highlight = self.highlight_match.map_or(false, |(h_y, _, _)| h_y == file_y);
 
-                // Add top_margin to all visual line positioning
                 queue!(stdout, cursor::MoveTo(0, terminal_y as u16 + self.top_margin + 1))?;
                 if self.show_line_numbers {
                     if last_bg != Some(default_cross_bg) { queue!(stdout, SetBackgroundColor(default_cross_bg))?; last_bg = Some(default_cross_bg); }
@@ -177,7 +230,6 @@ impl UiExt for Editor {
                                     terminal_y += 1;
                                     if terminal_y >= visible_rows { break 'char_loop; }
 
-                                    // Offset Top margin on wrapped lines
                                     queue!(stdout, cursor::MoveTo(0, terminal_y as u16 + self.top_margin + 1))?;
                                     if self.show_line_numbers { queue!(stdout, Print(" ".repeat(gutter_width)))?; }
                                     if last_fg != Some(cross_color) { queue!(stdout, SetForegroundColor(cross_color))?; last_fg = Some(cross_color); }
@@ -234,7 +286,6 @@ impl UiExt for Editor {
                 if last_fg != Some(Color::Reset) { queue!(stdout, SetForegroundColor(Color::Reset))?; last_fg = Some(Color::Reset); }
 
             } else {
-                // Top margin for empty EOF lines
                 queue!(stdout, cursor::MoveTo(0, terminal_y as u16 + self.top_margin + 1))?;
                 if self.show_line_numbers {
                     if last_bg != Some(default_cross_bg) { queue!(stdout, SetBackgroundColor(default_cross_bg))?; last_bg = Some(default_cross_bg); }
@@ -246,7 +297,6 @@ impl UiExt for Editor {
             terminal_y += 1; file_y += 1;
         }
 
-        // --- STATUS BAR ---
         queue!(stdout, cursor::MoveTo(0, rows - 3))?;
         if !self.status_message.is_empty() {
             queue!(stdout, SetBackgroundColor(ui_bg), SetForegroundColor(title_fg))?;
@@ -270,7 +320,6 @@ impl UiExt for Editor {
             queue!(stdout, SetBackgroundColor(default_cross_bg), terminal::Clear(ClearType::CurrentLine))?;
         }
 
-        // --- DYNAMIC MENUS (Standardized 12-Item Grid) ---
         let col_width = ((cols as usize) / 6).max(1);
 
         match self.menu_state {
@@ -316,7 +365,6 @@ impl UiExt for Editor {
         let display_x = visual_x.saturating_sub(self.col_offset);
         let final_cursor_x = if self.soft_wrap { gutter_width as u16 + display_x as u16 % available_width as u16 } else { gutter_width as u16 + display_x as u16 };
 
-        // Final cursor placement calculation factoring in top_margin
         let final_cursor_y = if self.soft_wrap {
             let mut virtual_y = 0;
             for i in self.row_offset..self.cursor_y {
@@ -329,7 +377,6 @@ impl UiExt for Editor {
             self.cursor_y.saturating_sub(self.row_offset) as u16 + self.top_margin + 1
         };
 
-        // Hide cursor completely in EmailReader mode
         if self.menu_state == MenuState::EmailReader {
             queue!(stdout, cursor::Hide)?;
         } else {
@@ -362,7 +409,6 @@ impl UiExt for Editor {
                         self.menu_state = MenuState::PromptWithBrowser;
                     }
                 } else {
-                    // Properly nested match block to fix E0369
                     match key.code {
                         KeyCode::Enter => {
                             self.clear_status();
@@ -424,7 +470,6 @@ impl UiExt for Editor {
     }
 
     fn run_file_browser(&mut self) -> io::Result<Option<String>> {
-        // File browser for xnano is currently disabled in favor of the email app's attachment browser
         Ok(None)
     }
 
@@ -461,4 +506,145 @@ impl UiExt for Editor {
         self.status_message.clear();
         self.status_time = None;
     }
+}
+
+pub fn draw_app(stdout: &mut std::io::Stdout, app: &App, theme_provider: &Editor) -> io::Result<()> {
+    let (cols, rows) = term_size().unwrap_or((80, 24));
+    let theme = &theme_provider.theme_set.themes[&theme_provider.current_theme];
+    let colors = derive_ui_colors(theme);
+
+    queue!(stdout, SetBackgroundColor(colors.bg), terminal::Clear(ClearType::All))?;
+
+    match &app.mode {
+        AppMode::MainMenu { selected_idx } => {
+            // "I" added as the primary index option.
+            let menu_options = [
+                ("I", "INBOX", "Go to the default Inbox"),
+                ("S", "SETTINGS", "Configure xpine Options"),
+                ("F", "FOLDER LIST", "Select a different folder"),
+                ("H", "HELP", "Get help using xpine"),
+                ("Q", "QUIT", "Leave the xpine program"),
+            ];
+
+            let header_title = format!("xpine - Main Menu ({})", app.active_account.email);
+            queue!(stdout, cursor::MoveTo(0, 0), SetBackgroundColor(colors.ui_bg), terminal::Clear(ClearType::UntilNewLine), SetForegroundColor(colors.accent), Print(header_title), ResetColor)?;
+
+            for (i, (key, title, desc)) in menu_options.iter().enumerate() {
+                let y = (rows / 2).saturating_sub(menu_options.len() as u16) + (i * 2) as u16;
+                let x = (cols / 2).saturating_sub(25);
+                let row_bg = if i == *selected_idx { colors.selected_bg } else { colors.bg };
+
+                queue!(stdout, cursor::MoveTo(x, y), SetBackgroundColor(row_bg), SetForegroundColor(colors.accent), Print(format!(" {:>2} ", key)), SetForegroundColor(colors.fg), Print(format!("{:<15} - {}", title, desc)), ResetColor)?;
+            }
+
+            let m_col = (cols as usize / 6).max(1);
+            Editor::draw_menu_line(stdout, rows - 2, cols, m_col, &[("Up/Dn", " Nav"), ("Enter", " Select"), ("Esc", " Close"), ("", ""), ("", ""), ("", "")], colors.ui_bg, colors.accent, colors.fg)?;
+            Editor::draw_menu_line(stdout, rows - 1, cols, m_col, &[("I", " Inbox"), ("S", " Settings"), ("F", " Folders"), ("H", " Help"), ("Q", " Quit"), ("", "")], colors.ui_bg, colors.accent, colors.fg)?;
+        }
+        AppMode::Settings { selected_idx } => {
+            let header_title = format!("xpine - Settings ({})", app.active_account.email);
+            queue!(stdout, cursor::MoveTo(0, 0), SetBackgroundColor(colors.ui_bg), terminal::Clear(ClearType::UntilNewLine), SetForegroundColor(colors.accent), Print(header_title), ResetColor)?;
+
+            let menu_options = [("W", "SOFT WRAP", theme_provider.soft_wrap), ("L", "LINE NUMBERS", theme_provider.show_line_numbers)];
+
+            for (i, (key, title, state)) in menu_options.iter().enumerate() {
+                let y = (rows / 2).saturating_sub(menu_options.len() as u16) + (i * 2) as u16;
+                let x = (cols / 2).saturating_sub(20);
+                let row_bg = if i == *selected_idx { colors.selected_bg } else { colors.bg };
+                let state_str = if *state { "ON " } else { "OFF" };
+
+                queue!(stdout, cursor::MoveTo(x, y), SetBackgroundColor(row_bg), SetForegroundColor(colors.accent), Print(format!(" {:>2} ", key)), SetForegroundColor(colors.fg), Print(format!("{:<15} : {}", title, state_str)), ResetColor)?;
+            }
+
+            let m_col = (cols as usize / 6).max(1);
+            Editor::draw_menu_line(stdout, rows - 2, cols, m_col, &[("Up/Dn", " Nav"), ("Enter", " Toggle"), ("Esc", " Back"), ("", ""), ("", ""), ("", "")], colors.ui_bg, colors.accent, colors.fg)?;
+            Editor::draw_menu_line(stdout, rows - 1, cols, m_col, &[("W", " Soft Wrap"), ("L", " Line Nums"), ("", ""), ("", ""), ("", ""), ("", "")], colors.ui_bg, colors.accent, colors.fg)?;
+        }
+        AppMode::FolderList { step, selected_idx, folders } => {
+            let header_title = if *step == 0 { "xpine - Select Account".to_string() } else { format!("xpine - Folders ({})", app.active_account.email) };
+            queue!(stdout, cursor::MoveTo(0, 0), SetBackgroundColor(colors.ui_bg), terminal::Clear(ClearType::UntilNewLine), SetForegroundColor(colors.accent), Print(header_title), ResetColor)?;
+
+            let items_count = if *step == 0 { app.accounts.len() } else { folders.len() };
+            let visible_items = (rows.saturating_sub(6)) as usize;
+            let start_idx = if *selected_idx >= visible_items { *selected_idx - visible_items + 1 } else { 0 };
+
+            for i in 0..visible_items {
+                let actual_idx = start_idx + i;
+                if actual_idx < items_count {
+                    let text = if *step == 0 { app.accounts[actual_idx].email.clone() } else { folders[actual_idx].clone() };
+                    let y = 3 + i as u16;
+                    let x = (cols / 2).saturating_sub(20);
+                    let row_bg = if actual_idx == *selected_idx { colors.selected_bg } else { colors.bg };
+
+                    queue!(stdout, cursor::MoveTo(x, y), SetBackgroundColor(row_bg), SetForegroundColor(colors.fg), Print(format!("{:<40}", text)), ResetColor)?;
+                }
+            }
+
+            // "M" Key added to the list of hint options at the bottom of the Folder viewer
+            let m_col = (cols as usize / 6).max(1);
+            Editor::draw_menu_line(stdout, rows - 2, cols, m_col, &[("Up/Dn", " Nav"), ("Enter", " Select"), ("Esc", " Back"), ("M", " Main Menu"), ("", ""), ("", "")], colors.ui_bg, colors.accent, colors.fg)?;
+            Editor::draw_menu_line(stdout, rows - 1, cols, m_col, &[("", ""), ("", ""), ("", ""), ("", ""), ("", ""), ("", "")], colors.ui_bg, colors.accent, colors.fg)?;
+        }
+        AppMode::List => {
+            let header_title = format!("xpine - {} ({})", app.current_folder, app.active_account.email);
+            queue!(stdout, cursor::MoveTo(0, 0), SetBackgroundColor(colors.ui_bg), terminal::Clear(ClearType::UntilNewLine), cursor::MoveTo(0, 0), SetForegroundColor(colors.accent), Print(header_title), ResetColor)?;
+
+            let list_start_y = 1;
+            let visible_capacity = rows.saturating_sub(3) as usize;
+
+            for (i, email) in app.page_emails.iter().enumerate() {
+                if i >= visible_capacity { break; }
+
+                let row_y = (i + list_start_y) as u16;
+                let row_bg = if i == app.selected_index { colors.selected_bg } else { colors.bg };
+
+                queue!(stdout, cursor::MoveTo(0, row_y), SetBackgroundColor(row_bg), terminal::Clear(ClearType::UntilNewLine))?;
+
+                let flag_char = if email.is_flagged { "*" } else { " " };
+                let status_char = if email.is_deleted { "D" } else if !email.is_read { "N" } else if email.is_answered { "A" } else { " " };
+
+                let size_kb = (email.size / 1024).max(1) as f32;
+                let size_str = if size_kb < 1024.0 { format!("({}K)", size_kb as u32) } else { format!("({}M)", (size_kb / 1024.0) as u32) };
+                let size_display = format!("{:>6}", size_str);
+                let heat = (size_kb.log2() / 12.3).min(1.0).max(0.0);
+
+                let (base_r, base_g, base_b) = match colors.fg { Color::Rgb { r, g, b } => (r as f32, g as f32, b as f32), _ => (255.0, 255.0, 255.0) };
+                let hot_r = if colors.is_dark { 255.0 } else { 220.0 }; let hot_g = if colors.is_dark { 80.0 } else { 0.0 }; let hot_b = if colors.is_dark { 80.0 } else { 0.0 };
+
+                let size_color = Color::Rgb { r: (base_r + (hot_r - base_r) * heat) as u8, g: (base_g + (hot_g - base_g) * heat) as u8, b: (base_b + (hot_b - base_b) * heat) as u8 };
+                let from_width = 22; let from_str = format!("{:<width$}", email.from.chars().take(from_width).collect::<String>(), width = from_width);
+                let date_width = 9; let date_str = format!("{:<width$}", email.date, width = date_width);
+                let fixed_width = 47; let subject_width = (cols as usize).saturating_sub(fixed_width);
+                let subj_truncated = email.subject.chars().take(subject_width).collect::<String>();
+                let padded_subj = format!("{:<width$}", subj_truncated, width = subject_width);
+
+                let status_color = match status_char { "N" => colors.flag_n, "D" => colors.flag_d, "A" => colors.flag_a, _ => colors.fg };
+
+                queue!(
+                    stdout, SetBackgroundColor(row_bg),
+                    SetForegroundColor(colors.flag_star), Print(flag_char), Print(" "),
+                    SetForegroundColor(status_color), Print(status_char), Print(" "),
+                    SetForegroundColor(colors.date_color), Print(date_str), Print("  "),
+                    SetForegroundColor(colors.fg), Print(from_str), Print("  "),
+                    Print(padded_subj), Print("  "),
+                    SetForegroundColor(size_color), Print(size_display)
+                )?;
+            }
+
+            let r_col = (cols as usize / 6).max(1);
+            Editor::draw_menu_line(stdout, rows - 2, cols, r_col, &[("Enter", " Read"), ("C", " Compose"), ("R", " Reply"), ("F", " Forward"), ("D", " Delete"), ("*", " Flag")], colors.ui_bg, colors.accent, colors.fg)?;
+            Editor::draw_menu_line(stdout, rows - 1, cols, r_col, &[("Q/Esc", " Quit"), ("<", " Folders"), ("M", " Main Menu"), ("Tab", " Acct"), ("U", " Toggle Read"), ("X", " Expunge")], colors.ui_bg, colors.accent, colors.fg)?;
+
+            if let Some(time) = app.list_status_time {
+                if time.elapsed() >= app.list_status_duration {
+                    // Timeout handled in main loop logic
+                } else if !app.list_status.is_empty() {
+                    queue!(stdout, cursor::MoveTo(0, rows - 3), SetBackgroundColor(colors.selected_bg), terminal::Clear(ClearType::UntilNewLine), SetForegroundColor(colors.accent), Print(format!(" {} ", app.list_status)), ResetColor)?;
+                }
+            }
+        }
+        _ => {}
+    }
+    stdout.flush()?;
+    Ok(())
 }
