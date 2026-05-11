@@ -118,6 +118,22 @@ fn file_browser(stdout: &mut std::io::Stdout, rows: u16, cols: u16, colors: &UiC
     }
 }
 
+fn find_suggestion(input: &str, address_book: &[String]) -> Option<String> {
+    if input.is_empty() { return None; }
+
+    // Support autocomplete even if they are typing the second/third address (after a comma)
+    let last_part = input.split(',').last().unwrap_or("").trim_start();
+    if last_part.is_empty() { return None; }
+
+    for addr in address_book {
+        if addr.to_lowercase().starts_with(&last_part.to_lowercase()) {
+            // Return only the remaining ghost text
+            return Some(addr[last_part.len()..].to_string());
+        }
+    }
+    None
+}
+
 pub fn compose_email(account: &Account, default_to: Option<&str>, default_subject: Option<&str>, default_body: Option<&str>, current_theme: &mut String) -> Option<String> {
     let mut state = ComposeState {
         to: default_to.unwrap_or("").to_string(),
@@ -141,6 +157,9 @@ pub fn compose_email(account: &Account, default_to: Option<&str>, default_subjec
     let mut final_body = String::new();
     let mut cancelled = false;
 
+    // Load the address book prior to rendering the compose loop
+    let address_book = crate::config::load_address_book();
+
     loop {
         let (cols, rows) = term_size().unwrap_or((80, 24));
         let theme = &editor.theme_set.themes[&editor.current_theme];
@@ -162,6 +181,14 @@ pub fn compose_email(account: &Account, default_to: Option<&str>, default_subjec
                 SetBackgroundColor(colors.ui_bg), SetForegroundColor(colors.accent), Print(format!("{:>8}", fields[i])),
                 SetForegroundColor(colors.fg), Print(" "), Print(vals[i])
             ).unwrap();
+
+            // --- AUTOCOMPLETE SUGGESTION HIGHLIGHT ---
+            if i < 3 && i == state.active_idx {
+                if let Some(suggestion) = find_suggestion(vals[i], &address_book) {
+                    let dim_c = if colors.is_dark { Color::DarkGrey } else { Color::Grey };
+                    queue!(stdout, SetForegroundColor(dim_c), Print(suggestion)).unwrap();
+                }
+            }
         }
 
         queue!(stdout, cursor::MoveTo(0, 5), SetBackgroundColor(colors.ui_bg), SetForegroundColor(colors.accent), Print(" Attach: "), SetForegroundColor(colors.fg)).unwrap();
@@ -233,7 +260,26 @@ pub fn compose_email(account: &Account, default_to: Option<&str>, default_subjec
                             KeyCode::Char('p') if key_event.modifiers.contains(KeyModifiers::CONTROL) => state.active_idx = state.active_idx.saturating_sub(1),
                             KeyCode::Char('n') if key_event.modifiers.contains(KeyModifiers::CONTROL) => state.active_idx = (state.active_idx + 1).min(4),
                             KeyCode::Up | KeyCode::BackTab => state.active_idx = state.active_idx.saturating_sub(1),
-                            KeyCode::Down | KeyCode::Tab | KeyCode::Enter => { state.active_idx = (state.active_idx + 1).min(4); }
+
+                            // Make sure Down arrow only navigates fields
+                            KeyCode::Down => { state.active_idx = (state.active_idx + 1).min(4); }
+
+                            // Let Tab / Enter intercept the text completion
+                            KeyCode::Tab | KeyCode::Enter => {
+                                if state.active_idx < 3 {
+                                    let target = match state.active_idx {
+                                        0 => &mut state.to, 1 => &mut state.cc, 2 => &mut state.bcc, _ => unreachable!()
+                                    };
+
+                                    // If a valid suggestion exists, complete it and stay on the current line
+                                    if let Some(suggestion) = find_suggestion(target, &address_book) {
+                                        target.push_str(&suggestion);
+                                        continue;
+                                    }
+                                }
+                                state.active_idx = (state.active_idx + 1).min(4);
+                            }
+
                             KeyCode::Backspace => {
                                 let target = match state.active_idx { 0 => &mut state.to, 1 => &mut state.cc, 2 => &mut state.bcc, 3 => &mut state.subject, _ => unreachable!() };
                                 target.pop();

@@ -3,10 +3,11 @@ use crate::net::{self, ImapSession};
 use crate::compose::compose_email;
 use crate::editor::Editor;
 use crate::config::ConfigExt;
+use crate::ui::UiExt;
 use crossterm::event::{Event, KeyCode, KeyEventKind, KeyModifiers};
 use crossterm::terminal::size as term_size;
 
-pub fn handle_event(event: Event, app: &mut App, session: &mut ImapSession, theme_provider: &mut Editor, _stdout: &mut std::io::Stdout) -> bool {
+pub fn handle_event(event: Event, app: &mut App, session: &mut ImapSession, theme_provider: &mut Editor, stdout: &mut std::io::Stdout) -> bool {
     let mut quit = false;
 
     if let Event::Key(k) = event {
@@ -14,22 +15,58 @@ pub fn handle_event(event: Event, app: &mut App, session: &mut ImapSession, them
             match &mut app.mode {
                 AppMode::Settings { selected_idx } => {
                     match k.code {
-                        KeyCode::Up => *selected_idx = selected_idx.saturating_sub(1),
-                        KeyCode::Down => *selected_idx = (*selected_idx + 1).min(1),
-                        KeyCode::Esc | KeyCode::Char('q') | KeyCode::Char('Q') | KeyCode::Char('s') | KeyCode::Char('S') => app.mode = AppMode::MainMenu { selected_idx: 1 },
-                        KeyCode::Enter => {
+                        KeyCode::Up | KeyCode::Char('p') | KeyCode::Char('P') => *selected_idx = selected_idx.saturating_sub(1),
+                        KeyCode::Down | KeyCode::Char('n') | KeyCode::Char('N') => *selected_idx = (*selected_idx + 1).min(1),
+
+                        // Use Left or '<' to go back, replacing Esc
+                        KeyCode::Left | KeyCode::Char('<') | KeyCode::Char('q') | KeyCode::Char('Q') | KeyCode::Char('s') | KeyCode::Char('S') => app.mode = AppMode::MainMenu { selected_idx: 3 },
+
+                        // Right arrow or Enter to toggle
+                        KeyCode::Right | KeyCode::Enter => {
                             if *selected_idx == 0 { theme_provider.soft_wrap = !theme_provider.soft_wrap; theme_provider.save_config(); }
                             else if *selected_idx == 1 { theme_provider.show_line_numbers = !theme_provider.show_line_numbers; theme_provider.save_config(); }
                         }
+
                         KeyCode::Char('w') | KeyCode::Char('W') => { theme_provider.soft_wrap = !theme_provider.soft_wrap; theme_provider.save_config(); }
                         KeyCode::Char('l') | KeyCode::Char('L') => { theme_provider.show_line_numbers = !theme_provider.show_line_numbers; theme_provider.save_config(); }
+                        _ => {}
+                    }
+                }
+                AppMode::AddressBook { selected_idx, addresses } => {
+                    match k.code {
+                        KeyCode::Up => *selected_idx = selected_idx.saturating_sub(1),
+                        KeyCode::Down => if *selected_idx + 1 < addresses.len() { *selected_idx += 1; },
+                        KeyCode::Esc => app.mode = AppMode::MainMenu { selected_idx: 1 },
+                        KeyCode::Char('d') | KeyCode::Char('D') => {
+                            if !addresses.is_empty() {
+                                let prompt_msg = format!("Delete '{}'? (y/n)", addresses[*selected_idx]);
+                                if let Ok(Some(true)) = theme_provider.prompt_yn(&prompt_msg) {
+                                    addresses.remove(*selected_idx);
+                                    let _ = crate::config::save_address_book(addresses);
+                                    if *selected_idx >= addresses.len() {
+                                        *selected_idx = addresses.len().saturating_sub(1);
+                                    }
+                                }
+                            }
+                        }
+                        KeyCode::Char('e') | KeyCode::Char('E') => {
+                            if !addresses.is_empty() {
+                                let prompt_msg = format!("Replace '{}' with: ", addresses[*selected_idx]);
+                                if let Ok(Some(new_val)) = theme_provider.prompt(&prompt_msg, false) {
+                                    if !new_val.trim().is_empty() {
+                                        addresses[*selected_idx] = new_val.trim().to_string();
+                                        let _ = crate::config::save_address_book(addresses);
+                                    }
+                                }
+                            }
+                        }
                         _ => {}
                     }
                 }
                 AppMode::MainMenu { selected_idx } => {
                     match k.code {
                         KeyCode::Up => *selected_idx = selected_idx.saturating_sub(1),
-                        KeyCode::Down => *selected_idx = (*selected_idx + 1).min(4), // Updated to max 4
+                        KeyCode::Down => *selected_idx = (*selected_idx + 1).min(5),
                         KeyCode::Esc | KeyCode::Char('m') | KeyCode::Char('M') => app.mode = AppMode::List,
                         KeyCode::Char('q') | KeyCode::Char('Q') => quit = true,
                         KeyCode::Enter => {
@@ -39,10 +76,11 @@ pub fn handle_event(event: Event, app: &mut App, session: &mut ImapSession, them
                                     app.current_page = 0; app.selected_index = 0; app.needs_fetch = true;
                                     app.mode = AppMode::List;
                                 }
-                                1 => app.mode = AppMode::Settings { selected_idx: 0 },
+                                1 => app.mode = AppMode::AddressBook { selected_idx: 0, addresses: crate::config::load_address_book() },
                                 2 => app.mode = AppMode::FolderList { step: 0, selected_idx: app.current_account_idx, folders: Vec::new() },
-                                3 => { app.update_status("Help not yet implemented.".to_string()); app.mode = AppMode::List; },
-                                4 => quit = true,
+                                3 => app.mode = AppMode::Settings { selected_idx: 0 },
+                                4 => { app.update_status("Help not yet implemented.".to_string()); app.mode = AppMode::List; },
+                                5 => quit = true,
                                 _ => {}
                             }
                         }
@@ -51,8 +89,9 @@ pub fn handle_event(event: Event, app: &mut App, session: &mut ImapSession, them
                             app.current_page = 0; app.selected_index = 0; app.needs_fetch = true;
                             app.mode = AppMode::List;
                         }
-                        KeyCode::Char('s') | KeyCode::Char('S') => app.mode = AppMode::Settings { selected_idx: 0 },
+                        KeyCode::Char('a') | KeyCode::Char('A') => app.mode = AppMode::AddressBook { selected_idx: 0, addresses: crate::config::load_address_book() },
                         KeyCode::Char('f') | KeyCode::Char('F') => app.mode = AppMode::FolderList { step: 0, selected_idx: app.current_account_idx, folders: Vec::new() },
+                        KeyCode::Char('s') | KeyCode::Char('S') => app.mode = AppMode::Settings { selected_idx: 0 },
                         KeyCode::Char('h') | KeyCode::Char('H') => { app.update_status("Help not yet implemented.".to_string()); app.mode = AppMode::List; },
                         _ => {}
                     }
@@ -67,7 +106,7 @@ pub fn handle_event(event: Event, app: &mut App, session: &mut ImapSession, them
                         }
                         KeyCode::Esc | KeyCode::Char('q') | KeyCode::Char('Q') => {
                             if *step == 1 { *step = 0; *selected_idx = app.current_account_idx; }
-                            else { app.mode = AppMode::MainMenu { selected_idx: 2 }; } // Return to Folder select option in Main Menu
+                            else { app.mode = AppMode::MainMenu { selected_idx: 2 }; }
                         }
                         KeyCode::Enter => {
                             if *step == 0 {
@@ -112,27 +151,51 @@ pub fn handle_event(event: Event, app: &mut App, session: &mut ImapSession, them
                             }
                         }
                         KeyCode::Char('<') => {
-                            let mut fetched = Vec::new();
-                            if let Ok(mailboxes) = session.list(Some(""), Some("*")) {
-                                for mb in mailboxes.iter() { fetched.push(mb.name().to_string()); }
+                            if app.current_folder.eq_ignore_ascii_case("INBOX") {
+                                app.mode = AppMode::MainMenu { selected_idx: 0 };
+                            } else {
+                                let separator = if app.current_folder.contains('/') { '/' }
+                                else if app.current_folder.contains('.') { '.' }
+                                else { '\0' };
+
+                                if separator != '\0' {
+                                    let mut parts: Vec<&str> = app.current_folder.split(separator).collect();
+                                    parts.pop();
+                                    if parts.is_empty() || (parts.len() == 1 && parts[0] == "") {
+                                        app.mode = AppMode::MainMenu { selected_idx: 0 };
+                                    } else {
+                                        app.current_folder = parts.join(&separator.to_string());
+                                        app.current_page = 0;
+                                        app.selected_index = 0;
+                                        app.needs_fetch = true;
+                                    }
+                                } else {
+                                    app.mode = AppMode::MainMenu { selected_idx: 0 };
+                                }
                             }
-                            if fetched.is_empty() { fetched.push("INBOX".to_string()); }
-                            fetched.sort();
-                            let idx = fetched.iter().position(|f| f == &app.current_folder).unwrap_or(0);
-                            app.mode = AppMode::FolderList { step: 1, selected_idx: idx, folders: fetched };
                         }
                         KeyCode::Tab => {
                             if app.accounts.len() > 1 {
                                 app.current_account_idx = (app.current_account_idx + 1) % app.accounts.len();
                                 app.needs_reconnect = true;
                                 app.restore_index_from_end = Some(0);
+
+                                let email = &app.accounts[app.current_account_idx].email;
+                                app.update_status(format!("Switching to {}...", email));
+                                let _ = crate::ui::draw_app(stdout, app, theme_provider);
                             }
                         }
                         KeyCode::Char(c) if c.is_ascii_digit() => {
                             if let Some(digit) = c.to_digit(10) {
                                 let idx = (digit as usize).saturating_sub(1);
                                 if idx < app.accounts.len() && idx != app.current_account_idx {
-                                    app.current_account_idx = idx; app.needs_reconnect = true; app.restore_index_from_end = Some(0);
+                                    app.current_account_idx = idx;
+                                    app.needs_reconnect = true;
+                                    app.restore_index_from_end = Some(0);
+
+                                    let email = &app.accounts[app.current_account_idx].email;
+                                    app.update_status(format!("Switching to {}...", email));
+                                    let _ = crate::ui::draw_app(stdout, app, theme_provider);
                                 }
                             }
                         }

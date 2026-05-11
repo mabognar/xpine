@@ -5,6 +5,7 @@ use std::env;
 use std::fs;
 use std::path::{Path, PathBuf};
 use include_dir::{include_dir, Dir};
+use std::io::{BufRead, Write};
 
 static BUNDLED_THEMES: Dir<'_> = include_dir!("$CARGO_MANIFEST_DIR/themes");
 
@@ -244,4 +245,63 @@ impl ConfigExt for Editor {
         print!("\x1b]12;#888888\x07");
         let _ = std::io::Write::flush(&mut std::io::stdout());
     }
+}
+
+pub fn get_address_book_path() -> PathBuf {
+    let home = dirs::home_dir().expect("Could not find home directory.");
+    let xpine_dir = home.join(".xpine");
+    if !xpine_dir.exists() {
+        let _ = fs::create_dir_all(&xpine_dir);
+    }
+    xpine_dir.join("addressbook")
+}
+
+pub fn load_address_book() -> Vec<String> {
+    let path = get_address_book_path();
+    let mut addresses = Vec::new();
+    if let Ok(file) = fs::File::open(path) {
+        let reader = std::io::BufReader::new(file);
+        for line in reader.lines() {
+            if let Ok(addr) = line {
+                let trimmed = addr.trim().to_string();
+                if !trimmed.is_empty() {
+                    addresses.push(trimmed);
+                }
+            }
+        }
+    }
+    addresses
+}
+
+pub fn add_to_address_book(address: &str) -> std::io::Result<bool> {
+    let addresses = load_address_book();
+
+    // Check if the address already exists (ignoring whitespace differences)
+    if addresses.iter().any(|a| a.trim() == address.trim()) {
+        return Ok(false); // Return false indicating it's a duplicate
+    }
+
+    let path = get_address_book_path();
+    let mut file = std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(path)?;
+
+    use std::io::Write;
+    writeln!(file, "{}", address.trim())?;
+
+    Ok(true) // Return true indicating it was added
+}
+
+pub fn save_address_book(addresses: &[String]) -> std::io::Result<()> {
+    use std::io::Write;
+    let path = get_address_book_path();
+    let mut file = std::fs::File::create(path)?;
+    for addr in addresses {
+        let trimmed = addr.trim();
+        if !trimmed.is_empty() {
+            writeln!(file, "{}", trimmed)?;
+        }
+    }
+    Ok(())
 }

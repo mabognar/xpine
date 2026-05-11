@@ -20,6 +20,10 @@ pub enum AppMode {
         selected_idx: usize,
         folders: Vec<String>,
     },
+    AddressBook {
+        selected_idx: usize,
+        addresses: Vec<String>,
+    },
 }
 
 pub struct App {

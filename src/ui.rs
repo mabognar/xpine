@@ -330,8 +330,8 @@ impl UiExt for Editor {
                 Self::draw_menu_line(&mut stdout, rows - 1, cols, col_width, &menu2, ui_bg, menu_key_fg, menu_text_fg)?;
             }
             MenuState::EmailReader => {
-                let menu1 = [("<", " Back"), ("R", " Reply"), ("F", " Forward"), ("^Y", " Prev Pg"), ("^V", " Next Pg"), ("", "")];
-                let menu2 = [("P", " Prev"), ("N", " Next"), ("Home", " Top"), ("End", " Bottom"), ("", ""), ("", "")];
+                let menu1 = [("<", " Back"), ("R", " Reply"),   ("P", " Prev"), ("^Y", " Prev Pg"), ("Home", " Top"),   ("", "")];
+                let menu2 = [("", ""),       ("F", " Forward"), ("N", " Next"), ("^V", " Next Pg"), ("End", " Bottom"), ("", "")];
                 Self::draw_menu_line(&mut stdout, rows - 2, cols, col_width, &menu1, ui_bg, menu_key_fg, menu_text_fg)?;
                 Self::draw_menu_line(&mut stdout, rows - 1, cols, col_width, &menu2, ui_bg, menu_key_fg, menu_text_fg)?;
             }
@@ -517,11 +517,11 @@ pub fn draw_app(stdout: &mut std::io::Stdout, app: &App, theme_provider: &Editor
 
     match &app.mode {
         AppMode::MainMenu { selected_idx } => {
-            // "I" added as the primary index option.
             let menu_options = [
                 ("I", "INBOX", "Go to the default Inbox"),
-                ("S", "SETTINGS", "Configure xpine Options"),
+                ("A", "ADDRESS BOOK", "Update your address book"),
                 ("F", "FOLDER LIST", "Select a different folder"),
+                ("S", "SETTINGS", "Configure xpine Options"),
                 ("H", "HELP", "Get help using xpine"),
                 ("Q", "QUIT", "Leave the xpine program"),
             ];
@@ -539,7 +539,32 @@ pub fn draw_app(stdout: &mut std::io::Stdout, app: &App, theme_provider: &Editor
 
             let m_col = (cols as usize / 6).max(1);
             Editor::draw_menu_line(stdout, rows - 2, cols, m_col, &[("Up/Dn", " Nav"), ("Enter", " Select"), ("Esc", " Close"), ("", ""), ("", ""), ("", "")], colors.ui_bg, colors.accent, colors.fg)?;
-            Editor::draw_menu_line(stdout, rows - 1, cols, m_col, &[("I", " Inbox"), ("S", " Settings"), ("F", " Folders"), ("H", " Help"), ("Q", " Quit"), ("", "")], colors.ui_bg, colors.accent, colors.fg)?;
+            Editor::draw_menu_line(stdout, rows - 1, cols, m_col, &[("", ""), ("", ""), ("", ""), ("", ""), ("", ""), ("", ""), ], colors.ui_bg, colors.accent, colors.fg)?;
+        }
+        AppMode::AddressBook { selected_idx, addresses } => {
+            let title = " --- Address Book --- ";
+            queue!(stdout, cursor::MoveTo(0, 0), SetBackgroundColor(colors.ui_bg), SetForegroundColor(colors.accent), Print(title), Print(" ".repeat((cols as usize).saturating_sub(title.chars().count()))), ResetColor)?;
+
+            let items_per_page = (rows.saturating_sub(3) as usize).max(1);
+            let start_idx = if *selected_idx >= items_per_page { selected_idx - items_per_page + 1 } else { 0 };
+
+            for i in 0..items_per_page {
+                let actual_idx = start_idx + i;
+                queue!(stdout, cursor::MoveTo(0, (i + 1) as u16), SetBackgroundColor(colors.bg), terminal::Clear(ClearType::UntilNewLine))?;
+
+                if actual_idx < addresses.len() {
+                    let display_str = format!("  {}", addresses[actual_idx]);
+                    if actual_idx == *selected_idx {
+                        queue!(stdout, SetBackgroundColor(colors.selected_bg), SetForegroundColor(colors.fg), Print(display_str), ResetColor)?;
+                    } else {
+                        queue!(stdout, SetBackgroundColor(colors.bg), SetForegroundColor(colors.fg), Print(display_str), ResetColor)?;
+                    }
+                }
+            }
+
+            let m_col = (cols as usize / 6).max(1);
+            Editor::draw_menu_line(stdout, rows - 2, cols, m_col, &[("Up/Dn", " Nav"), ("E", " Edit"), ("D", " Delete"), ("", ""), ("", ""), ("", "")], colors.ui_bg, colors.accent, colors.fg)?;
+            Editor::draw_menu_line(stdout, rows - 1, cols, m_col, &[("Esc", " Back"), ("", ""), ("", ""), ("", ""), ("", ""), ("", "")], colors.ui_bg, colors.accent, colors.fg)?;
         }
         AppMode::Settings { selected_idx } => {
             let header_title = format!("xpine - Settings ({})", app.active_account.email);
@@ -557,8 +582,9 @@ pub fn draw_app(stdout: &mut std::io::Stdout, app: &App, theme_provider: &Editor
             }
 
             let m_col = (cols as usize / 6).max(1);
-            Editor::draw_menu_line(stdout, rows - 2, cols, m_col, &[("Up/Dn", " Nav"), ("Enter", " Toggle"), ("Esc", " Back"), ("", ""), ("", ""), ("", "")], colors.ui_bg, colors.accent, colors.fg)?;
-            Editor::draw_menu_line(stdout, rows - 1, cols, m_col, &[("W", " Soft Wrap"), ("L", " Line Nums"), ("", ""), ("", ""), ("", ""), ("", "")], colors.ui_bg, colors.accent, colors.fg)?;
+            // Updating the Hint keys for the settings menu
+            Editor::draw_menu_line(stdout, rows - 2, cols, m_col, &[("<", " Back"), ("P", " Prev"), ("", ""), ("", ""), ("", ""), ("", "")], colors.ui_bg, colors.accent, colors.fg)?;
+            Editor::draw_menu_line(stdout, rows - 1, cols, m_col, &[("Ent", " Toggle"), ("N", " Next"), ("", ""), ("", "")], colors.ui_bg, colors.accent, colors.fg)?;
         }
         AppMode::FolderList { step, selected_idx, folders } => {
             let header_title = if *step == 0 { "xpine - Select Account".to_string() } else { format!("xpine - Folders ({})", app.active_account.email) };
@@ -580,7 +606,6 @@ pub fn draw_app(stdout: &mut std::io::Stdout, app: &App, theme_provider: &Editor
                 }
             }
 
-            // "M" Key added to the list of hint options at the bottom of the Folder viewer
             let m_col = (cols as usize / 6).max(1);
             Editor::draw_menu_line(stdout, rows - 2, cols, m_col, &[("Up/Dn", " Nav"), ("Enter", " Select"), ("Esc", " Back"), ("M", " Main Menu"), ("", ""), ("", "")], colors.ui_bg, colors.accent, colors.fg)?;
             Editor::draw_menu_line(stdout, rows - 1, cols, m_col, &[("", ""), ("", ""), ("", ""), ("", ""), ("", ""), ("", "")], colors.ui_bg, colors.accent, colors.fg)?;
@@ -632,8 +657,8 @@ pub fn draw_app(stdout: &mut std::io::Stdout, app: &App, theme_provider: &Editor
             }
 
             let r_col = (cols as usize / 6).max(1);
-            Editor::draw_menu_line(stdout, rows - 2, cols, r_col, &[("Enter", " Read"), ("C", " Compose"), ("R", " Reply"), ("F", " Forward"), ("D", " Delete"), ("*", " Flag")], colors.ui_bg, colors.accent, colors.fg)?;
-            Editor::draw_menu_line(stdout, rows - 1, cols, r_col, &[("Q/Esc", " Quit"), ("<", " Folders"), ("M", " Main Menu"), ("Tab", " Acct"), ("U", " Toggle Read"), ("X", " Expunge")], colors.ui_bg, colors.accent, colors.fg)?;
+            Editor::draw_menu_line(stdout, rows - 2, cols, r_col, &[(">", " View"), ("C", " Compose"), ("R", " Reply"),   ("D", " Delete"), ("U", " (Un)Read"), ("*", " Flag")], colors.ui_bg, colors.accent, colors.fg)?;
+            Editor::draw_menu_line(stdout, rows - 1, cols, r_col, &[("Q", " Quit"), ("<", " Back"),    ("F", " Forward"), ("M", " Menu"),   ("Tab", " Acct"),  ("X", " Expunge")], colors.ui_bg, colors.accent, colors.fg)?;
 
             if let Some(time) = app.list_status_time {
                 if time.elapsed() >= app.list_status_duration {

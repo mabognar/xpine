@@ -75,6 +75,11 @@ fn main() {
             let email_subject = app.page_emails[app.selected_index].subject.clone();
             let active_email = app.active_account.email.clone();
 
+            // Metadata needed for replies and forwards
+            let reply_to = app.page_emails[app.selected_index].reply_to.clone();
+            let date = app.page_emails[app.selected_index].date.clone();
+            let fetch_seq = app.page_emails[app.selected_index].id.to_string();
+
             loop {
                 let r_theme = &reader.theme_set.themes[&reader.current_theme];
                 let r_colors = ui::derive_ui_colors(r_theme);
@@ -114,9 +119,51 @@ fn main() {
                     let ev = event::read().unwrap();
 
                     if let event::Event::Key(mut key) = ev {
+                        // Copy to clipboard binding
                         if key.modifiers.contains(event::KeyModifiers::CONTROL) && key.code == event::KeyCode::Char('y') {
                             reader.set_status("Text copied to clipboard".to_string());
                             continue;
+                        }
+
+                        // Add to address book, Reply, Forward bindings
+                        if !key.modifiers.contains(event::KeyModifiers::CONTROL) && !key.modifiers.contains(event::KeyModifiers::ALT) {
+
+                            // Instant Add to Address Book
+                            if key.code == event::KeyCode::Char('a') || key.code == event::KeyCode::Char('A') {
+                                if let Ok(added) = crate::config::add_to_address_book(&email_from) {
+                                    if added {
+                                        reader.set_status(format!("Added {} to address book.", email_from));
+                                    } else {
+                                        reader.set_status("Address already in address book".to_string());
+                                    }
+                                }
+                                continue;
+                            }
+                            // if key.code == event::KeyCode::Char('a') || key.code == event::KeyCode::Char('A') {
+                            //     let _ = crate::config::add_to_address_book(&email_from);
+                            //     reader.set_status(format!("Added {} to address book.", email_from));
+                            //     continue;
+                            // }
+
+                            if key.code == event::KeyCode::Char('r') || key.code == event::KeyCode::Char('R') {
+                                let _ = session.store(&fetch_seq, "+FLAGS (\\Answered)");
+                                app.page_emails[app.selected_index].is_answered = true;
+
+                                let sub = if email_subject.to_lowercase().starts_with("re:") { email_subject.clone() } else { format!("Re: {}", email_subject) };
+                                if let Some(s) = compose::compose_email(&app.active_account, Some(&reply_to), Some(&sub), None, &mut reader.current_theme) {
+                                    reader.set_status(s);
+                                }
+                                continue;
+                            }
+
+                            if key.code == event::KeyCode::Char('f') || key.code == event::KeyCode::Char('F') {
+                                let sub = if email_subject.to_lowercase().starts_with("fwd:") { email_subject.clone() } else { format!("Fwd: {}", email_subject) };
+                                let fwd_body = format!("\n\n--- Forwarded message ---\nFrom: {}\nDate: {}\nSubject: {}\n\n{}", email_from, date, email_subject, text_body);
+                                if let Some(s) = compose::compose_email(&app.active_account, None, Some(&sub), Some(&fwd_body), &mut reader.current_theme) {
+                                    reader.set_status(s);
+                                }
+                                continue;
+                            }
                         }
 
                         match reader.handle_keypress(key).unwrap() {
