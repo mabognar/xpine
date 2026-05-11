@@ -330,8 +330,8 @@ impl UiExt for Editor {
                 Self::draw_menu_line(&mut stdout, rows - 1, cols, col_width, &menu2, ui_bg, menu_key_fg, menu_text_fg)?;
             }
             MenuState::EmailReader => {
-                let menu1 = [("<", " Back"), ("R", " Reply"),   ("P", " Prev"), ("^Y", " Prev Pg"), ("Home", " Top"),   ("", "")];
-                let menu2 = [("", ""),       ("F", " Forward"), ("N", " Next"), ("^V", " Next Pg"), ("End", " Bottom"), ("", "")];
+                let menu1 = [("<", " Back"),  ("R", " Reply"),    ("P", " Prev"),    ("^Y", " Prev Pg"),    ("Home", " Top"), ("", "")];
+                let menu2 = [("", ""),  ("F", " Forward"), ("N", " Next"), ("^V", " Next Pg"), ("End", " Bottom"), ("1-9", " Open Att")];
                 Self::draw_menu_line(&mut stdout, rows - 2, cols, col_width, &menu1, ui_bg, menu_key_fg, menu_text_fg)?;
                 Self::draw_menu_line(&mut stdout, rows - 1, cols, col_width, &menu2, ui_bg, menu_key_fg, menu_text_fg)?;
             }
@@ -539,7 +539,7 @@ pub fn draw_app(stdout: &mut std::io::Stdout, app: &App, theme_provider: &Editor
 
             let m_col = (cols as usize / 6).max(1);
             Editor::draw_menu_line(stdout, rows - 2, cols, m_col, &[("Up/Dn", " Nav"), ("Enter", " Select"), ("Esc", " Close"), ("", ""), ("", ""), ("", "")], colors.ui_bg, colors.accent, colors.fg)?;
-            Editor::draw_menu_line(stdout, rows - 1, cols, m_col, &[("", ""), ("", ""), ("", ""), ("", ""), ("", ""), ("", ""), ], colors.ui_bg, colors.accent, colors.fg)?;
+            Editor::draw_menu_line(stdout, rows - 1, cols, m_col, &[("I", " Inbox"), ("A", " Address Bk"), ("F", " Folders"), ("S", " Setup"), ("H", " Help"), ("Q", " Quit")], colors.ui_bg, colors.accent, colors.fg)?;
         }
         AppMode::AddressBook { selected_idx, addresses } => {
             let title = " --- Address Book --- ";
@@ -582,9 +582,8 @@ pub fn draw_app(stdout: &mut std::io::Stdout, app: &App, theme_provider: &Editor
             }
 
             let m_col = (cols as usize / 6).max(1);
-            // Updating the Hint keys for the settings menu
-            Editor::draw_menu_line(stdout, rows - 2, cols, m_col, &[("<", " Back"), ("P", " Prev"), ("", ""), ("", ""), ("", ""), ("", "")], colors.ui_bg, colors.accent, colors.fg)?;
-            Editor::draw_menu_line(stdout, rows - 1, cols, m_col, &[("Ent", " Toggle"), ("N", " Next"), ("", ""), ("", "")], colors.ui_bg, colors.accent, colors.fg)?;
+            Editor::draw_menu_line(stdout, rows - 2, cols, m_col, &[("Up/Dn/P/N", " Nav"), ("Right/Ent", " Toggle"), ("</Left", " Back"), ("", ""), ("", ""), ("", "")], colors.ui_bg, colors.accent, colors.fg)?;
+            Editor::draw_menu_line(stdout, rows - 1, cols, m_col, &[("W", " Soft Wrap"), ("L", " Line Nums"), ("", ""), ("", ""), ("", ""), ("", "")], colors.ui_bg, colors.accent, colors.fg)?;
         }
         AppMode::FolderList { step, selected_idx, folders } => {
             let header_title = if *step == 0 { "xpine - Select Account".to_string() } else { format!("xpine - Folders ({})", app.active_account.email) };
@@ -657,8 +656,8 @@ pub fn draw_app(stdout: &mut std::io::Stdout, app: &App, theme_provider: &Editor
             }
 
             let r_col = (cols as usize / 6).max(1);
-            Editor::draw_menu_line(stdout, rows - 2, cols, r_col, &[(">", " View"), ("C", " Compose"), ("R", " Reply"),   ("D", " Delete"), ("U", " (Un)Read"), ("*", " Flag")], colors.ui_bg, colors.accent, colors.fg)?;
-            Editor::draw_menu_line(stdout, rows - 1, cols, r_col, &[("Q", " Quit"), ("<", " Back"),    ("F", " Forward"), ("M", " Menu"),   ("Tab", " Acct"),  ("X", " Expunge")], colors.ui_bg, colors.accent, colors.fg)?;
+            Editor::draw_menu_line(stdout, rows - 2, cols, r_col, &[(">", " View"), ("M", " Menu"), ("C", " Compose"), ("R", " Reply"),   ("D", " Delete"), ("*", " Flag")], colors.ui_bg, colors.accent, colors.fg)?;
+            Editor::draw_menu_line(stdout, rows - 1, cols, r_col, &[("Q", " Quit"), ("<", " Back"), ("Tab", " Acct"),  ("F", " Forward"), ("X", " Expunge"), ("U", " Toggle Read"), ], colors.ui_bg, colors.accent, colors.fg)?;
 
             if let Some(time) = app.list_status_time {
                 if time.elapsed() >= app.list_status_duration {

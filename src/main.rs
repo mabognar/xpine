@@ -65,7 +65,11 @@ fn main() {
         if let AppMode::Reading { text_body, html_body: _, attachments } = &app.mode {
             let mut reader = Editor::new(None);
             reader.menu_state = MenuState::EmailReader;
-            reader.top_margin = 6;
+
+            // Dynamically adjust the top margin based on the number of vertically listed attachments
+            let attach_lines = if attachments.is_empty() { 1 } else { attachments.len() };
+            reader.top_margin = (5 + attach_lines) as u16;
+
             reader.buffer = Rope::from_str(text_body.as_str());
             reader.current_theme = theme_provider.current_theme.clone();
 
@@ -84,7 +88,7 @@ fn main() {
                 let r_theme = &reader.theme_set.themes[&reader.current_theme];
                 let r_colors = ui::derive_ui_colors(r_theme);
 
-                for i in 0..6 {
+                for i in 0..(5 + attach_lines) {
                     queue!(stdout, cursor::MoveTo(0, i as u16), SetBackgroundColor(r_colors.ui_bg), Clear(ClearType::UntilNewLine)).unwrap();
                 }
 
@@ -108,8 +112,13 @@ fn main() {
                     let dim_c = if r_colors.is_dark { Color::DarkGrey } else { Color::Grey };
                     queue!(stdout, SetForegroundColor(dim_c), Print("None")).unwrap();
                 } else {
-                    let att_names: Vec<String> = attachments.iter().enumerate().map(|(i, (n, _))| format!("{}. {}", i + 1, n)).collect();
-                    queue!(stdout, SetForegroundColor(r_colors.flag_n), Print(att_names.join("   "))).unwrap();
+                    for (i, (n, data)) in attachments.iter().enumerate() {
+                        let size_kb = (data.len() as f32 / 1024.0).max(1.0);
+                        let size_str = if size_kb < 1024.0 { format!("{:.0}K", size_kb) } else { format!("{:.1}M", size_kb / 1024.0) };
+                        let att_str = format!("{}. {} ({})", i + 1, n, size_str);
+
+                        queue!(stdout, cursor::MoveTo(9, (5 + i) as u16), SetBackgroundColor(r_colors.ui_bg), SetForegroundColor(r_colors.flag_n), Print(att_str)).unwrap();
+                    }
                 }
                 queue!(stdout, ResetColor).unwrap();
 
@@ -139,11 +148,6 @@ fn main() {
                                 }
                                 continue;
                             }
-                            // if key.code == event::KeyCode::Char('a') || key.code == event::KeyCode::Char('A') {
-                            //     let _ = crate::config::add_to_address_book(&email_from);
-                            //     reader.set_status(format!("Added {} to address book.", email_from));
-                            //     continue;
-                            // }
 
                             if key.code == event::KeyCode::Char('r') || key.code == event::KeyCode::Char('R') {
                                 let _ = session.store(&fetch_seq, "+FLAGS (\\Answered)");
@@ -163,6 +167,29 @@ fn main() {
                                     reader.set_status(s);
                                 }
                                 continue;
+                            }
+
+                            // Open attachment via numbering
+                            if let event::KeyCode::Char(c) = key.code {
+                                if c.is_ascii_digit() && c != '0' {
+                                    let idx = (c.to_digit(10).unwrap() as usize).saturating_sub(1);
+                                    if idx < attachments.len() {
+                                        let (filename, data) = &attachments[idx];
+                                        let temp_dir = std::env::temp_dir().join("xpine_attachments");
+                                        let _ = std::fs::create_dir_all(&temp_dir);
+                                        let file_path = temp_dir.join(filename);
+                                        if std::fs::write(&file_path, data).is_ok() {
+                                            if webbrowser::open(file_path.to_str().unwrap()).is_ok() {
+                                                reader.set_status(format!("Opened {}", filename));
+                                            } else {
+                                                reader.set_status(format!("Failed to open {}", filename));
+                                            }
+                                        } else {
+                                            reader.set_status(format!("Failed to save {}", filename));
+                                        }
+                                        continue;
+                                    }
+                                }
                             }
                         }
 
