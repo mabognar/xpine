@@ -6,6 +6,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use include_dir::{include_dir, Dir};
 use std::io::{BufRead, Write};
+use crate::syntax::SyntaxExt;
 
 static BUNDLED_THEMES: Dir<'_> = include_dir!("$CARGO_MANIFEST_DIR/themes");
 

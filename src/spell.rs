@@ -1,9 +1,10 @@
+use std::collections::HashSet;
+use std::fs::{File, OpenOptions};
+use std::io::{self, BufRead, BufReader, Write};
 use crate::editor::{Editor, MenuState};
 use crate::ui::UiExt;
-use crate::config::ConfigExt; // Added so we can find the ~/.xnano/ directory
-use std::collections::HashSet;
-use std::fs::{File, OpenOptions}; // Added OpenOptions for appending to files
-use std::io::{self, BufRead, BufReader, Write}; // Added Write for writeln!
+use crate::config::ConfigExt;
+use crate::syntax::SyntaxExt; // Provides access to self.mark_modified()
 
 pub trait SpellExt {
     fn load_dictionary() -> HashSet<String>;
@@ -16,7 +17,6 @@ impl SpellExt for Editor {
     fn load_dictionary() -> HashSet<String> {
         let mut dict = HashSet::new();
 
-        // 1. Load standard system dictionary
         let dict_paths = ["/usr/share/dict/words", "/usr/dict/words"];
         for path in dict_paths {
             if let Ok(file) = File::open(path) {
@@ -28,7 +28,6 @@ impl SpellExt for Editor {
             }
         }
 
-        // 2. Load custom persistent dictionary (if it exists)
         if let Some(mut custom_path) = Self::get_base_dir() {
             custom_path.push("custom_dict.txt");
             if let Ok(file) = File::open(&custom_path) {
@@ -117,13 +116,10 @@ impl SpellExt for Editor {
                     self.ignored_words.insert(lower_word);
                     current_idx = end;
                 } else if choice_clean == "a" {
-                    // Add to the active session dictionary
                     self.dictionary.as_mut().unwrap().insert(lower_word.clone());
 
-                    // Add to the persistent file
                     if let Some(mut custom_path) = Self::get_base_dir() {
                         custom_path.push("custom_dict.txt");
-                        // OpenOptions allows us to append to the file, or create it if it doesn't exist
                         if let Ok(mut file) = OpenOptions::new().create(true).append(true).open(custom_path) {
                             let _ = writeln!(file, "{}", lower_word);
                         }

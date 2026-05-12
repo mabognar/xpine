@@ -8,6 +8,10 @@ mod net;
 mod spell;
 mod ui;
 
+pub mod theme;
+pub mod syntax;
+pub mod search;
+
 use app::{App, AppMode};
 use config::load_config;
 use editor::{Editor, MenuState, EditorResult};
