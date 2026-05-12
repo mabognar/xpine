@@ -150,7 +150,7 @@ pub fn handle_event(event: Event, app: &mut App, session: &mut ImapSession, them
                                 app.update_status(format!("Theme: {}", theme_provider.current_theme));
                             }
                         }
-                        KeyCode::Char('<') => {
+                        KeyCode::Char('<') | KeyCode::Left => {
                             if app.current_folder.eq_ignore_ascii_case("INBOX") {
                                 app.mode = AppMode::MainMenu { selected_idx: 0 };
                             } else {
@@ -259,7 +259,7 @@ pub fn handle_event(event: Event, app: &mut App, session: &mut ImapSession, them
                                 }
                             }
                         }
-                        KeyCode::Enter | KeyCode::Right => {
+                        KeyCode::Char('>') | KeyCode::Enter | KeyCode::Right => {
                             if !app.page_emails.is_empty() {
                                 let fetch_seq = app.page_emails[app.selected_index].id.to_string();
                                 let (t_body, h_body, atts) = net::fetch_email_body(session, &fetch_seq);

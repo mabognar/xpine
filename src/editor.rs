@@ -339,7 +339,7 @@ impl Editor {
             match key.code {
                 // Modified to map Esc, Left Arrow, and < (Shift + ,)
                 KeyCode::Esc | KeyCode::Left | KeyCode::Char('<') => return Ok(EditorResult::Cancel),
-                KeyCode::Char('c') if is_ctrl => return Ok(EditorResult::Cancel),
+                // KeyCode::Char('c') if is_ctrl => return Ok(EditorResult::Cancel),
 
                 KeyCode::Char('r') | KeyCode::Char('R') => return Ok(EditorResult::Send("REPLY".to_string())),
                 KeyCode::Char('f') | KeyCode::Char('F') => return Ok(EditorResult::Send("FORWARD".to_string())),

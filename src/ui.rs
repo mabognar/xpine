@@ -330,7 +330,7 @@ impl UiExt for Editor {
                 Self::draw_menu_line(&mut stdout, rows - 1, cols, col_width, &menu2, ui_bg, menu_key_fg, menu_text_fg)?;
             }
             MenuState::EmailReader => {
-                let menu1 = [("<", " Back"),  ("R", " Reply"),    ("P", " Prev"),    ("^Y", " Prev Pg"),    ("Home", " Top"), ("", "")];
+                let menu1 = [("<", " Back"),  ("R", " Reply"),    ("P", " Prev"),    ("^Y", " Prev Pg"),    ("Home", " Top"), ("A", " Add Address")];
                 let menu2 = [("", ""),  ("F", " Forward"), ("N", " Next"), ("^V", " Next Pg"), ("End", " Bottom"), ("1-9", " Open Att")];
                 Self::draw_menu_line(&mut stdout, rows - 2, cols, col_width, &menu1, ui_bg, menu_key_fg, menu_text_fg)?;
                 Self::draw_menu_line(&mut stdout, rows - 1, cols, col_width, &menu2, ui_bg, menu_key_fg, menu_text_fg)?;
