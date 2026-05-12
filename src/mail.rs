@@ -203,7 +203,7 @@ pub fn parse_email_body(body_data: &[u8]) -> (String, Option<String>, Vec<(Strin
         walk(&parsed, &mut text_body, &mut html_body, &mut attachments);
 
         if text_body.is_empty() && html_body.is_some() {
-            text_body = "[This message only contains an HTML body. Press ^B to view it in your browser.]\r\n".to_string();
+            text_body = "[This message contains an HTML body. Press V to view in browser.]\r\n".to_string();
         } else if !text_body.is_empty() {
             text_body = text_body.replace('\n', "\r\n");
         } else {

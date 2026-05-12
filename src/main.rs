@@ -42,7 +42,7 @@ fn main() {
             app.active_account = app.accounts[app.current_account_idx].clone();
             let _ = session.logout();
             // session = net::connect(&app.active_account.email, &app.active_account.password).expect("IMAP Login failed");
-            let mut session = net::connect(&app.active_account).expect("IMAP Login failed");
+            session = net::connect(&app.active_account).expect("IMAP Login failed");
             app.needs_fetch = true;
             app.needs_reconnect = false;
             app.last_fetch_time = Instant::now();
@@ -68,7 +68,7 @@ fn main() {
             app.needs_fetch = false;
         }
 
-        if let AppMode::Reading { text_body, html_body: _, attachments } = &app.mode {
+        if let AppMode::Reading { text_body, html_body, attachments } = &app.mode {
             let mut reader = Editor::new(None);
             reader.menu_state = MenuState::EmailReader;
 
@@ -183,6 +183,34 @@ fn main() {
                                 let fwd_body = format!("\n\n--- Forwarded message ---\nFrom: {}\nDate: {}\nSubject: {}\n\n{}", email_from, date, email_subject, text_body);
                                 if let Some(s) = compose::compose_email(&app.active_account, None, Some(&sub), Some(&fwd_body), &mut reader.current_theme) {
                                     reader.set_status(s);
+                                }
+                                continue;
+                            }
+
+                            // Open HTML version in the browser
+                            if key.code == event::KeyCode::Char('v') || key.code == event::KeyCode::Char('V') {
+                                // Extract the string from the Option
+                                if let Some(html) = html_body {
+                                    if !html.is_empty() {
+                                        let temp_dir = std::env::temp_dir().join("xpine_attachments");
+                                        let _ = std::fs::create_dir_all(&temp_dir);
+                                        let file_path = temp_dir.join("email_view.html");
+
+                                        // Write the unwrapped 'html' string
+                                        if std::fs::write(&file_path, html).is_ok() {
+                                            if webbrowser::open(file_path.to_str().unwrap()).is_ok() {
+                                                reader.set_status("Opened HTML version in browser.".to_string());
+                                            } else {
+                                                reader.set_status("Failed to open browser.".to_string());
+                                            }
+                                        } else {
+                                            reader.set_status("Failed to save HTML file.".to_string());
+                                        }
+                                    } else {
+                                        reader.set_status("No HTML version available for this email.".to_string());
+                                    }
+                                } else {
+                                    reader.set_status("No HTML version available for this email.".to_string());
                                 }
                                 continue;
                             }
