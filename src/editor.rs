@@ -124,7 +124,8 @@ impl Editor {
 
             let timeout = if let Some(time) = self.status_time {
                 let elapsed = time.elapsed();
-                if elapsed >= Duration::from_secs(3) { Duration::from_millis(1) } else { Duration::from_secs(3) - elapsed }
+                if elapsed >= Duration::from_secs(3) { Duration::from_millis(1) }
+                else { Duration::from_secs(3) - elapsed }
             } else { Duration::from_secs(3600) };
 
             if event::poll(timeout)? {

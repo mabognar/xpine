@@ -34,9 +34,9 @@ pub fn handle_event(event: Event, app: &mut App, session: &mut ImapSession, them
                 }
                 AppMode::AddressBook { selected_idx, addresses } => {
                     match k.code {
-                        KeyCode::Up => *selected_idx = selected_idx.saturating_sub(1),
-                        KeyCode::Down => if *selected_idx + 1 < addresses.len() { *selected_idx += 1; },
-                        KeyCode::Esc => app.mode = AppMode::MainMenu { selected_idx: 1 },
+                        KeyCode::Up | KeyCode::Char('p') | KeyCode::Char('P') => *selected_idx = selected_idx.saturating_sub(1),
+                        KeyCode::Down  | KeyCode::Char('n') | KeyCode::Char('N') => if *selected_idx + 1 < addresses.len() { *selected_idx += 1; },
+                        KeyCode::Char('<') | KeyCode::Left => app.mode = AppMode::MainMenu { selected_idx: 1 },
                         KeyCode::Char('d') | KeyCode::Char('D') => {
                             if !addresses.is_empty() {
                                 let prompt_msg = format!("Delete '{}'? (y/n)", addresses[*selected_idx]);
@@ -65,11 +65,10 @@ pub fn handle_event(event: Event, app: &mut App, session: &mut ImapSession, them
                 }
                 AppMode::MainMenu { selected_idx } => {
                     match k.code {
-                        KeyCode::Up => *selected_idx = selected_idx.saturating_sub(1),
-                        KeyCode::Down => *selected_idx = (*selected_idx + 1).min(5),
-                        KeyCode::Esc | KeyCode::Char('m') | KeyCode::Char('M') => app.mode = AppMode::List,
-                        KeyCode::Char('q') | KeyCode::Char('Q') => quit = true,
-                        KeyCode::Enter => {
+                        KeyCode::Up | KeyCode::Char('p') | KeyCode::Char('P') => *selected_idx = selected_idx.saturating_sub(1),
+                        KeyCode::Down | KeyCode::Char('n') | KeyCode::Char('N') => *selected_idx = (*selected_idx + 1).min(5),
+                        KeyCode::Char('m') | KeyCode::Char('M') => app.mode = AppMode::List,
+                        KeyCode::Enter | KeyCode::Char('>') | KeyCode::Right => {
                             match *selected_idx {
                                 0 => { // Inbox
                                     app.current_folder = "INBOX".to_string();
@@ -93,6 +92,7 @@ pub fn handle_event(event: Event, app: &mut App, session: &mut ImapSession, them
                         KeyCode::Char('f') | KeyCode::Char('F') => app.mode = AppMode::FolderList { step: 0, selected_idx: app.current_account_idx, folders: Vec::new() },
                         KeyCode::Char('s') | KeyCode::Char('S') => app.mode = AppMode::Settings { selected_idx: 0 },
                         KeyCode::Char('h') | KeyCode::Char('H') => { app.update_status("Help not yet implemented.".to_string()); app.mode = AppMode::List; },
+                        KeyCode::Char('q') | KeyCode::Char('Q') => quit = true,
                         _ => {}
                     }
                 }
