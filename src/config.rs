@@ -10,10 +10,18 @@ use crate::syntax::SyntaxExt;
 
 static BUNDLED_THEMES: Dir<'_> = include_dir!("$CARGO_MANIFEST_DIR/themes");
 
+// #[derive(Clone)]
+// pub struct Account {
+//     pub email: String,
+//     pub password: String,
+// }
 #[derive(Clone)]
 pub struct Account {
     pub email: String,
     pub password: String,
+    pub imap_server: String,
+    pub imap_port: u16,
+    pub smtp_server: String,
 }
 
 pub struct AppConfig {
@@ -85,39 +93,66 @@ pub fn derive_ui_colors(theme: &Theme) -> UiColors {
 
 pub fn load_config() -> AppConfig {
     let home = dirs::home_dir().expect("Could not find home directory.");
-    let config_dir = home.join(".email");
-    let config_path = config_dir.join(".emailrc");
-
+    let config_dir = home.join(".xpine");
+    let config_path = config_dir.join("xpinerc");
+    
     if !config_path.exists() {
         fs::create_dir_all(&config_dir).expect("Failed to create .email directory.");
-        let template = "# Account 1\nEMAIL=statgod@gmail.com\nPASSWORD=your_16_char_app_password\n\n# Account 2\nEMAIL=second@gmail.com\nPASSWORD=app_password\n";
+        // Add the new variables to the template
+        let template = "# Account 1\nEMAIL=statgod@gmail.com\nPASSWORD=your_16_char_app_password\nIMAP_SERVER=imap.gmail.com\nIMAP_PORT=993\nSMTP_SERVER=smtp.gmail.com\n\n# Account 2\nEMAIL=second@gmail.com\nPASSWORD=app_password\nIMAP_SERVER=imap.gmail.com\nIMAP_PORT=993\nSMTP_SERVER=smtp.gmail.com\n";
         fs::write(&config_path, template).expect("Failed to write .emailrc template.");
 
         println!("No configuration found.");
         println!("Created a new config template at: {:?}", config_path);
-        println!("Please edit this file with your actual App Password(s) and run the program again.");
+        println!("Please edit this file with your actual credentials and run the program again.");
         std::process::exit(0);
     }
 
     let contents = fs::read_to_string(&config_path).expect("Failed to read .emailrc");
     let mut accounts = Vec::new();
+
+    // Set fallback defaults in case an existing user's file is missing these fields
     let mut current_email = String::new();
+    let mut current_password = String::new();
+    let mut current_imap_server = String::from("imap.gmail.com");
+    let mut current_imap_port = 993;
+    let mut current_smtp_server = String::from("smtp.gmail.com");
 
     for line in contents.lines() {
         if line.trim().is_empty() || line.starts_with('#') { continue; }
         if let Some((key, value)) = line.split_once('=') {
             let val = value.trim().to_string();
             match key.trim().to_uppercase().as_str() {
-                "EMAIL" => current_email = val,
-                "PASSWORD" => {
-                    if !current_email.is_empty() && !val.is_empty() {
-                        accounts.push(Account { email: current_email.clone(), password: val });
-                        current_email.clear();
+                "EMAIL" => {
+                    // Push the previous account when we hit a new EMAIL line
+                    if !current_email.is_empty() && !current_password.is_empty() {
+                        accounts.push(Account {
+                            email: current_email.clone(), password: current_password.clone(),
+                            imap_server: current_imap_server.clone(), imap_port: current_imap_port, smtp_server: current_smtp_server.clone(),
+                        });
+                        // Reset defaults for the next account block
+                        current_password.clear();
+                        current_imap_server = String::from("imap.gmail.com");
+                        current_imap_port = 993;
+                        current_smtp_server = String::from("smtp.gmail.com");
                     }
+                    current_email = val;
                 }
+                "PASSWORD" => current_password = val,
+                "IMAP_SERVER" => current_imap_server = val,
+                "IMAP_PORT" => if let Ok(p) = val.parse() { current_imap_port = p },
+                "SMTP_SERVER" => current_smtp_server = val,
                 _ => {}
             }
         }
+    }
+
+    // Push the final account at the end of the file
+    if !current_email.is_empty() && !current_password.is_empty() {
+        accounts.push(Account {
+            email: current_email, password: current_password,
+            imap_server: current_imap_server, imap_port: current_imap_port, smtp_server: current_smtp_server,
+        });
     }
 
     if accounts.is_empty() || accounts[0].password == "your_16_char_app_password" {
@@ -133,7 +168,7 @@ pub trait ConfigExt {
     fn initialize_themes() -> std::io::Result<()>;
     fn get_config_path() -> Option<PathBuf>;
     fn get_theme_dir() -> Option<PathBuf>;
-    fn load_config() -> (String, bool, bool);
+    fn load_config() -> (String, bool, bool, bool);
     fn save_config(&self);
     fn is_dark_theme(theme: &Theme) -> bool;
     fn derive_ui_color(bg: syntect::highlighting::Color, is_dark: bool) -> Color;
@@ -177,10 +212,11 @@ impl ConfigExt for Editor {
         })
     }
 
-    fn load_config() -> (String, bool, bool) {
+    fn load_config() -> (String, bool, bool, bool) {
         let mut theme = String::from("base16-ocean.dark");
         let mut line_numbers = false;
         let mut soft_wrap = false;
+        let mut sort_newest_first = false; // New variable
 
         if let Some(path) = Self::get_config_path() {
             if let Ok(content) = fs::read_to_string(path) {
@@ -191,20 +227,21 @@ impl ConfigExt for Editor {
                             "theme" => theme = parts[1].to_string(),
                             "line_numbers" => line_numbers = parts[1] == "true",
                             "soft_wrap" => soft_wrap = parts[1] == "true",
+                            "sort_newest_first" => sort_newest_first = parts[1] == "true", // Parse setting
                             _ => {}
                         }
                     }
                 }
             }
         }
-        (theme, line_numbers, soft_wrap)
+        (theme, line_numbers, soft_wrap, sort_newest_first)
     }
 
     fn save_config(&self) {
         if let Some(path) = Self::get_config_path() {
             let content = format!(
-                "theme={}\nline_numbers={}\nsoft_wrap={}\n",
-                self.current_theme, self.show_line_numbers, self.soft_wrap
+                "theme={}\nline_numbers={}\nsoft_wrap={}\nsort_newest_first={}\n",
+                self.current_theme, self.show_line_numbers, self.soft_wrap, self.sort_newest_first
             );
             let _ = fs::write(path, content);
         }

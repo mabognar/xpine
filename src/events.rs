@@ -13,22 +13,52 @@ pub fn handle_event(event: Event, app: &mut App, session: &mut ImapSession, them
     if let Event::Key(k) = event {
         if k.kind == KeyEventKind::Press {
             match &mut app.mode {
+                // AppMode::Settings { selected_idx } => {
+                //     match k.code {
+                //         KeyCode::Up | KeyCode::Char('p') | KeyCode::Char('P') => *selected_idx = selected_idx.saturating_sub(1),
+                //         KeyCode::Down | KeyCode::Char('n') | KeyCode::Char('N') => *selected_idx = (*selected_idx + 1).min(1),
+                //
+                //         // Use Left or '<' to go back, replacing Esc
+                //         KeyCode::Left | KeyCode::Char('<') | KeyCode::Char('q') | KeyCode::Char('Q') | KeyCode::Char('s') | KeyCode::Char('S') => app.mode = AppMode::MainMenu { selected_idx: 3 },
+                //
+                //         // Right arrow or Enter to toggle
+                //         KeyCode::Right | KeyCode::Enter => {
+                //             if *selected_idx == 0 { theme_provider.soft_wrap = !theme_provider.soft_wrap; theme_provider.save_config(); }
+                //             else if *selected_idx == 1 { theme_provider.show_line_numbers = !theme_provider.show_line_numbers; theme_provider.save_config(); }
+                //         }
+                //
+                //         KeyCode::Char('w') | KeyCode::Char('W') => { theme_provider.soft_wrap = !theme_provider.soft_wrap; theme_provider.save_config(); }
+                //         KeyCode::Char('l') | KeyCode::Char('L') => { theme_provider.show_line_numbers = !theme_provider.show_line_numbers; theme_provider.save_config(); }
+                //         _ => {}
+                //     }
+                // }
                 AppMode::Settings { selected_idx } => {
                     match k.code {
                         KeyCode::Up | KeyCode::Char('p') | KeyCode::Char('P') => *selected_idx = selected_idx.saturating_sub(1),
-                        KeyCode::Down | KeyCode::Char('n') | KeyCode::Char('N') => *selected_idx = (*selected_idx + 1).min(1),
+                        // Change the .min(1) constraint to .min(2) to allow a third menu item
+                        KeyCode::Down | KeyCode::Char('n') | KeyCode::Char('N') => *selected_idx = (*selected_idx + 1).min(2),
 
-                        // Use Left or '<' to go back, replacing Esc
                         KeyCode::Left | KeyCode::Char('<') | KeyCode::Char('q') | KeyCode::Char('Q') | KeyCode::Char('s') | KeyCode::Char('S') => app.mode = AppMode::MainMenu { selected_idx: 3 },
 
-                        // Right arrow or Enter to toggle
-                        KeyCode::Right | KeyCode::Enter => {
+                        KeyCode::Char('x') | KeyCode::Char('X') | KeyCode::Right | KeyCode::Enter => {
                             if *selected_idx == 0 { theme_provider.soft_wrap = !theme_provider.soft_wrap; theme_provider.save_config(); }
                             else if *selected_idx == 1 { theme_provider.show_line_numbers = !theme_provider.show_line_numbers; theme_provider.save_config(); }
+                            // Add the toggle for the new setting
+                            else if *selected_idx == 2 {
+                                theme_provider.sort_newest_first = !theme_provider.sort_newest_first;
+                                theme_provider.save_config();
+                                app.needs_fetch = true; // Trigger fetch to re-order the list
+                            }
                         }
 
                         KeyCode::Char('w') | KeyCode::Char('W') => { theme_provider.soft_wrap = !theme_provider.soft_wrap; theme_provider.save_config(); }
                         KeyCode::Char('l') | KeyCode::Char('L') => { theme_provider.show_line_numbers = !theme_provider.show_line_numbers; theme_provider.save_config(); }
+                        // Add a shortcut (e.g. 'O' for Order/Sort)
+                        KeyCode::Char('o') | KeyCode::Char('O') => {
+                            theme_provider.sort_newest_first = !theme_provider.sort_newest_first;
+                            theme_provider.save_config();
+                            app.needs_fetch = true;
+                        }
                         _ => {}
                     }
                 }
@@ -72,7 +102,9 @@ pub fn handle_event(event: Event, app: &mut App, session: &mut ImapSession, them
                             match *selected_idx {
                                 0 => { // Inbox
                                     app.current_folder = "INBOX".to_string();
-                                    app.current_page = 0; app.selected_index = 0; app.needs_fetch = true;
+                                    app.current_page = 0;
+                                    app.restore_index_from_end = Some(0); // Updated line
+                                    app.needs_fetch = true;
                                     app.mode = AppMode::List;
                                 }
                                 1 => app.mode = AppMode::AddressBook { selected_idx: 0, addresses: crate::config::load_address_book() },
@@ -85,7 +117,9 @@ pub fn handle_event(event: Event, app: &mut App, session: &mut ImapSession, them
                         }
                         KeyCode::Char('i') | KeyCode::Char('I') => {
                             app.current_folder = "INBOX".to_string();
-                            app.current_page = 0; app.selected_index = 0; app.needs_fetch = true;
+                            app.current_page = 0;
+                            app.restore_index_from_end = Some(0); // Updated line
+                            app.needs_fetch = true;
                             app.mode = AppMode::List;
                         }
                         KeyCode::Char('a') | KeyCode::Char('A') => app.mode = AppMode::AddressBook { selected_idx: 0, addresses: crate::config::load_address_book() },
@@ -115,7 +149,8 @@ pub fn handle_event(event: Event, app: &mut App, session: &mut ImapSession, them
                                     app.current_account_idx = new_idx;
                                     app.active_account = app.accounts[app.current_account_idx].clone();
                                     let _ = session.logout();
-                                    *session = net::connect(&app.active_account.email, &app.active_account.password).unwrap();
+                                    *session = net::connect(&app.active_account).unwrap();
+                                    // *session = net::connect(&app.active_account.email, &app.active_account.password).unwrap();
                                 }
 
                                 let mut fetched = Vec::new();
@@ -129,7 +164,9 @@ pub fn handle_event(event: Event, app: &mut App, session: &mut ImapSession, them
                                 *selected_idx = 0;
                             } else {
                                 app.current_folder = folders[*selected_idx].clone();
-                                app.current_page = 0; app.selected_index = 0; app.needs_fetch = true;
+                                app.current_page = 0;
+                                app.restore_index_from_end = Some(0); // Updated line
+                                app.needs_fetch = true;
                                 app.mode = AppMode::List;
                             }
                         }
@@ -166,7 +203,7 @@ pub fn handle_event(event: Event, app: &mut App, session: &mut ImapSession, them
                                     } else {
                                         app.current_folder = parts.join(&separator.to_string());
                                         app.current_page = 0;
-                                        app.selected_index = 0;
+                                        app.restore_index_from_end = Some(0); // Updated line
                                         app.needs_fetch = true;
                                     }
                                 } else {
@@ -199,15 +236,38 @@ pub fn handle_event(event: Event, app: &mut App, session: &mut ImapSession, them
                                 }
                             }
                         }
+                        // KeyCode::Up | KeyCode::Char('p') | KeyCode::Char('P') => {
+                        //     if app.selected_index > 0 { app.selected_index -= 1; }
+                        //     else if app.current_page + 1 < total_pages { app.current_page += 1; app.needs_fetch = true; app.selected_index = (items_per_page - 1) as usize; }
+                        // }
+                        // KeyCode::Down | KeyCode::Char('n') | KeyCode::Char('N') => {
+                        //     if !app.page_emails.is_empty() {
+                        //         let max_visible = app.page_emails.len().min(rows.saturating_sub(3) as usize);
+                        //         if app.selected_index + 1 < max_visible { app.selected_index += 1; }
+                        //         else if app.current_page > 0 { app.current_page -= 1; app.needs_fetch = true; app.selected_index = 0; }
+                        //     }
+                        // }
                         KeyCode::Up | KeyCode::Char('p') | KeyCode::Char('P') => {
                             if app.selected_index > 0 { app.selected_index -= 1; }
-                            else if app.current_page + 1 < total_pages { app.current_page += 1; app.needs_fetch = true; app.selected_index = (items_per_page - 1) as usize; }
+                            else {
+                                if theme_provider.sort_newest_first {
+                                    if app.current_page > 0 { app.current_page -= 1; app.needs_fetch = true; app.selected_index = (items_per_page - 1) as usize; }
+                                } else {
+                                    if app.current_page + 1 < total_pages { app.current_page += 1; app.needs_fetch = true; app.selected_index = (items_per_page - 1) as usize; }
+                                }
+                            }
                         }
                         KeyCode::Down | KeyCode::Char('n') | KeyCode::Char('N') => {
                             if !app.page_emails.is_empty() {
                                 let max_visible = app.page_emails.len().min(rows.saturating_sub(3) as usize);
                                 if app.selected_index + 1 < max_visible { app.selected_index += 1; }
-                                else if app.current_page > 0 { app.current_page -= 1; app.needs_fetch = true; app.selected_index = 0; }
+                                else {
+                                    if theme_provider.sort_newest_first {
+                                        if app.current_page + 1 < total_pages { app.current_page += 1; app.needs_fetch = true; app.selected_index = 0; }
+                                    } else {
+                                        if app.current_page > 0 { app.current_page -= 1; app.needs_fetch = true; app.selected_index = 0; }
+                                    }
+                                }
                             }
                         }
                         KeyCode::Char('m') | KeyCode::Char('M') => app.mode = AppMode::MainMenu { selected_idx: 0 },
@@ -221,9 +281,26 @@ pub fn handle_event(event: Event, app: &mut App, session: &mut ImapSession, them
                                 app.update_status(status);
                             }
                         }
+                        // KeyCode::Char('x') | KeyCode::Char('X') => {
+                        //     if !app.page_emails.is_empty() && session.expunge().is_ok() {
+                        //         let offset = app.current_page * items_per_page + app.page_emails.len().saturating_sub(1).saturating_sub(app.selected_index) as u32;
+                        //         if let Ok(m) = session.select(&app.current_folder) {
+                        //             app.total_messages = m.exists;
+                        //             let safe_offset = offset.min(app.total_messages.saturating_sub(1));
+                        //             app.current_page = safe_offset / items_per_page;
+                        //             app.restore_index_from_end = Some(safe_offset % items_per_page);
+                        //             app.needs_fetch = true;
+                        //         }
+                        //     }
+                        // }
                         KeyCode::Char('x') | KeyCode::Char('X') => {
                             if !app.page_emails.is_empty() && session.expunge().is_ok() {
-                                let offset = app.current_page * items_per_page + app.page_emails.len().saturating_sub(1).saturating_sub(app.selected_index) as u32;
+                                let offset = if theme_provider.sort_newest_first {
+                                    app.current_page * items_per_page + app.selected_index as u32
+                                } else {
+                                    app.current_page * items_per_page + app.page_emails.len().saturating_sub(1).saturating_sub(app.selected_index) as u32
+                                };
+
                                 if let Ok(m) = session.select(&app.current_folder) {
                                     app.total_messages = m.exists;
                                     let safe_offset = offset.min(app.total_messages.saturating_sub(1));

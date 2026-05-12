@@ -4,17 +4,28 @@ use chrono::{DateTime, Local, Utc};
 use native_tls::TlsConnector;
 use imap::Session;
 use std::net::TcpStream;
+use crate::config::Account; // Or crate::mail::Account depending on your imports
 
 pub type ImapSession = Session<native_tls::TlsStream<TcpStream>>;
 
-pub fn connect(email: &str, password: &str) -> Result<ImapSession, imap::Error> {
-    let domain = "imap.gmail.com";
+// pub fn connect(email: &str, password: &str) -> Result<ImapSession, imap::Error> {
+//     let domain = "imap.gmail.com";
+//     let tls = TlsConnector::builder().build().unwrap();
+//     let client = imap::connect((domain, 993), domain, &tls).unwrap();
+//     client.login(email, password).map_err(|(e, _)| e)
+// }
+
+pub fn connect(account: &Account) -> Result<ImapSession, imap::Error> {
+    let domain = account.imap_server.as_str();
+    let port = account.imap_port;
     let tls = TlsConnector::builder().build().unwrap();
-    let client = imap::connect((domain, 993), domain, &tls).unwrap();
-    client.login(email, password).map_err(|(e, _)| e)
+
+    // Connect using the dynamic domain and port
+    let client = imap::connect((domain, port), domain, &tls).unwrap();
+    client.login(&account.email, &account.password).map_err(|(e, _)| e)
 }
 
-pub fn fetch_emails(session: &mut ImapSession, app: &mut App, items_per_page: u32) {
+pub fn fetch_emails(session: &mut ImapSession, app: &mut App, items_per_page: u32, sort_newest_first: bool) {
     app.page_emails.clear();
 
     match session.select(&app.current_folder) {
@@ -78,8 +89,18 @@ pub fn fetch_emails(session: &mut ImapSession, app: &mut App, items_per_page: u3
         }
         app.page_emails.sort_by(|a, b| a.id.cmp(&b.id));
 
+        if sort_newest_first {
+            app.page_emails.sort_by(|a, b| b.id.cmp(&a.id));
+        } else {
+            app.page_emails.sort_by(|a, b| a.id.cmp(&b.id));
+        }
+
         if let Some(idx_from_end) = app.restore_index_from_end {
-            app.selected_index = if !app.page_emails.is_empty() { app.page_emails.len().saturating_sub(1).saturating_sub(idx_from_end as usize) } else { 0 };
+            if sort_newest_first {
+                app.selected_index = if !app.page_emails.is_empty() { idx_from_end as usize } else { 0 };
+            } else {
+                app.selected_index = if !app.page_emails.is_empty() { app.page_emails.len().saturating_sub(1).saturating_sub(idx_from_end as usize) } else { 0 };
+            }
             app.restore_index_from_end = None;
         } else if app.selected_index >= app.page_emails.len() {
             app.selected_index = app.page_emails.len().saturating_sub(1);

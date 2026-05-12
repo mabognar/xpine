@@ -299,7 +299,7 @@ impl UiExt for Editor {
 
         queue!(stdout, cursor::MoveTo(0, rows - 3))?;
         if !self.status_message.is_empty() {
-            queue!(stdout, SetBackgroundColor(ui_bg), SetForegroundColor(title_fg))?;
+            queue!(stdout, SetBackgroundColor(ui_bg), SetForegroundColor(menu_key_fg))?;
             let mut printed_len = 0;
 
             if self.menu_state == MenuState::SpellCheck {
@@ -566,24 +566,56 @@ pub fn draw_app(stdout: &mut std::io::Stdout, app: &App, theme_provider: &Editor
             Editor::draw_menu_line(stdout, rows - 2, cols, m_col, &[("<", " Back"), ("D", " Delete"), ("P", " Prev"), ("", ""), ("", "")], colors.ui_bg, colors.accent, colors.fg)?;
             Editor::draw_menu_line(stdout, rows - 1, cols, m_col, &[("", ""), ("E", " Edit"), ("N", " Next"), ("", ""), ("", ""), ("", "")], colors.ui_bg, colors.accent, colors.fg)?;
         }
+        // AppMode::Settings { selected_idx } => {
+        //     let header_title = format!("xpine - Settings ({})", app.active_account.email);
+        //     queue!(stdout, cursor::MoveTo(0, 0), SetBackgroundColor(colors.ui_bg), terminal::Clear(ClearType::UntilNewLine), SetForegroundColor(colors.accent), Print(header_title), ResetColor)?;
+        //
+        //     let menu_options = [
+        //         ("W", "SOFT WRAP", theme_provider.soft_wrap),
+        //         ("L", "LINE NUMBERS", theme_provider.show_line_numbers),
+        //         ("O", "NEWEST EMAIL FIRST", theme_provider.sort_newest_first)
+        //     ];
+        //
+        //     for (i, (key, title, state)) in menu_options.iter().enumerate() {
+        //         let y = (rows / 2).saturating_sub(menu_options.len() as u16) + (i * 2) as u16;
+        //         let x = (cols / 2).saturating_sub(20);
+        //         let row_bg = if i == *selected_idx { colors.selected_bg } else { colors.bg };
+        //         let state_str = if *state { "ON " } else { "OFF" };
+        //
+        //         queue!(stdout, cursor::MoveTo(x, y), SetBackgroundColor(row_bg), SetForegroundColor(colors.accent), Print(format!(" {:>2} ", key)), SetForegroundColor(colors.fg), Print(format!("{:<15} : {}", title, state_str)), ResetColor)?;
+        //     }
+        //
+        //     let m_col = (cols as usize / 6).max(1);
+        //     Editor::draw_menu_line(stdout, rows - 2, cols, m_col, &[("Up/Dn/P/N", " Nav"), ("Right/Ent", " Toggle"), ("</Left", " Back"), ("", ""), ("", ""), ("", "")], colors.ui_bg, colors.accent, colors.fg)?;
+        //     Editor::draw_menu_line(stdout, rows - 1, cols, m_col, &[("W", " Soft Wrap"), ("L", " Line Nums"), ("O", " Sort Order"), ("", ""), ("", ""), ("", "")], colors.ui_bg, colors.accent, colors.fg)?;
+        // }
         AppMode::Settings { selected_idx } => {
-            let header_title = format!("xpine - Settings ({})", app.active_account.email);
-            queue!(stdout, cursor::MoveTo(0, 0), SetBackgroundColor(colors.ui_bg), terminal::Clear(ClearType::UntilNewLine), SetForegroundColor(colors.accent), Print(header_title), ResetColor)?;
+            let header_title = "xpine - Settings";
+            queue!(stdout, cursor::MoveTo(0, 0), SetBackgroundColor(colors.ui_bg), terminal::Clear(ClearType::CurrentLine), SetForegroundColor(colors.accent), Print("   "), Print(header_title), SetBackgroundColor(colors.bg), SetForegroundColor(colors.fg))?;
 
-            let menu_options = [("W", "SOFT WRAP", theme_provider.soft_wrap), ("L", "LINE NUMBERS", theme_provider.show_line_numbers)];
+            // Add the third option "Sort Newest First"
+            let options = [
+                ("Soft Wrap", theme_provider.soft_wrap),
+                ("Show Line Numbers", theme_provider.show_line_numbers),
+                ("Sort Newest First", theme_provider.sort_newest_first), // Added this line
+            ];
 
-            for (i, (key, title, state)) in menu_options.iter().enumerate() {
-                let y = (rows / 2).saturating_sub(menu_options.len() as u16) + (i * 2) as u16;
-                let x = (cols / 2).saturating_sub(20);
-                let row_bg = if i == *selected_idx { colors.selected_bg } else { colors.bg };
-                let state_str = if *state { "ON " } else { "OFF" };
-
-                queue!(stdout, cursor::MoveTo(x, y), SetBackgroundColor(row_bg), SetForegroundColor(colors.accent), Print(format!(" {:>2} ", key)), SetForegroundColor(colors.fg), Print(format!("{:<15} : {}", title, state_str)), ResetColor)?;
+            for (i, (title, is_enabled)) in options.iter().enumerate() {
+                let y = 2 + i as u16;
+                if i == *selected_idx {
+                    queue!(stdout, cursor::MoveTo(2, y), SetBackgroundColor(colors.selected_bg))?;
+                } else {
+                    queue!(stdout, cursor::MoveTo(2, y))?;
+                }
+                let checkbox = if *is_enabled { "[X]" } else { "[ ]" };
+                queue!(stdout, Print(format!(" {} {:<20} ", checkbox, title)), ResetColor)?;
             }
 
             let m_col = (cols as usize / 6).max(1);
-            Editor::draw_menu_line(stdout, rows - 2, cols, m_col, &[("Up/Dn/P/N", " Nav"), ("Right/Ent", " Toggle"), ("</Left", " Back"), ("", ""), ("", ""), ("", "")], colors.ui_bg, colors.accent, colors.fg)?;
-            Editor::draw_menu_line(stdout, rows - 1, cols, m_col, &[("W", " Soft Wrap"), ("L", " Line Nums"), ("", ""), ("", ""), ("", ""), ("", "")], colors.ui_bg, colors.accent, colors.fg)?;
+
+            // Add the "O" (Order) hotkey to the menu bar description
+            Editor::draw_menu_line(stdout, rows - 2, cols, m_col, &[("", ""),       ("P", " Prev"), ("X", " Select"), ("", ""), ("", ""), ("", "")], colors.ui_bg, colors.accent, colors.fg)?;
+            Editor::draw_menu_line(stdout, rows - 1, cols, m_col, &[("<", " Back"), ("N", " Next"), ("", ""), ("", ""), ("", ""), ("", "")], colors.ui_bg, colors.accent, colors.fg)?;
         }
         AppMode::FolderList { step, selected_idx, folders } => {
             let header_title = if *step == 0 { "xpine - Select Account".to_string() } else { format!("xpine - Folders ({})", app.active_account.email) };

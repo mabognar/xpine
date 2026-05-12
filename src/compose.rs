@@ -367,7 +367,8 @@ pub fn compose_email(account: &Account, default_to: Option<&str>, default_subjec
     match builder.multipart(multipart) {
         Ok(email_msg) => {
             let creds = SmtpCredentials::new(account.email.clone(), account.password.clone());
-            let mailer = SmtpTransport::relay("smtp.gmail.com").unwrap().credentials(creds).build();
+            let mailer = SmtpTransport::relay(&account.smtp_server).unwrap().credentials(creds).build();
+            // let mailer = SmtpTransport::relay("smtp.gmail.com").unwrap().credentials(creds).build();
             match mailer.send(&email_msg) {
                 Ok(_) => Some("Message Sent".to_string()),
                 Err(e) => {

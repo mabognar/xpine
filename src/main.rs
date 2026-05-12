@@ -35,13 +35,14 @@ fn main() {
     execute!(stdout, EnterAlternateScreen).unwrap();
 
     let mut theme_provider = Editor::new(None);
-    let mut session = net::connect(&app.active_account.email, &app.active_account.password).expect("Initial IMAP Login failed");
-
+    // let mut session = net::connect(&app.active_account.email, &app.active_account.password).expect("Initial IMAP Login failed");
+    let mut session = net::connect(&app.active_account).unwrap();
     loop {
         if app.needs_reconnect {
             app.active_account = app.accounts[app.current_account_idx].clone();
             let _ = session.logout();
-            session = net::connect(&app.active_account.email, &app.active_account.password).expect("IMAP Login failed");
+            // session = net::connect(&app.active_account.email, &app.active_account.password).expect("IMAP Login failed");
+            let mut session = net::connect(&app.active_account).expect("IMAP Login failed");
             app.needs_fetch = true;
             app.needs_reconnect = false;
             app.last_fetch_time = Instant::now();
@@ -61,7 +62,8 @@ fn main() {
         }
 
         if app.needs_fetch && matches!(app.mode, AppMode::List) {
-            net::fetch_emails(&mut session, &mut app, items_per_page);
+            // Pass the sort order directly to fetch_emails and remove the .reverse()
+            net::fetch_emails(&mut session, &mut app, items_per_page, theme_provider.sort_newest_first);
             app.last_fetch_time = Instant::now();
             app.needs_fetch = false;
         }
@@ -128,9 +130,21 @@ fn main() {
 
                 reader.draw_screen().unwrap();
 
-                if event::poll(Duration::from_secs(3600)).unwrap() {
-                    let ev = event::read().unwrap();
+                // Calculate timeout dynamically based on whether a status message is active
+                let timeout = if let Some(time) = reader.status_time {
+                    let elapsed = time.elapsed();
+                    if elapsed >= Duration::from_secs(3) {
+                        reader.clear_status();
+                        Duration::from_millis(1)
+                    } else {
+                        Duration::from_secs(3) - elapsed
+                    }
+                } else {
+                    Duration::from_secs(3600)
+                };
 
+                if event::poll(timeout).unwrap() {
+                    let ev = event::read().unwrap();
                     if let event::Event::Key(mut key) = ev {
                         // Copy to clipboard binding
                         if key.modifiers.contains(event::KeyModifiers::CONTROL) && key.code == event::KeyCode::Char('y') {

@@ -64,6 +64,7 @@ pub struct Editor {
     pub(crate) pre_justify_snapshot: Option<(Rope, usize, usize)>,
     pub(crate) show_line_numbers: bool,
     pub(crate) soft_wrap: bool,
+    pub(crate) sort_newest_first: bool,
     pub(crate) previous_action_was_cut: bool,
 }
 
@@ -83,7 +84,7 @@ impl Editor {
         let (theme_set, themes_found, error_occurred) = Self::load_theme_set();
         let initial_status = if themes_found > 0 { String::new() } else if let Some(err) = error_occurred { err } else { String::new() };
 
-        let (mut starting_theme, line_numbers, soft_wrap) = Self::load_config();
+        let (mut starting_theme, line_numbers, soft_wrap, sort_newest_first) = Self::load_config();
         if !theme_set.themes.contains_key(&starting_theme) {
             starting_theme = String::from("base16-ocean.dark");
         }
@@ -105,7 +106,9 @@ impl Editor {
             highlight_match: None, highlight_cache: HashMap::new(),
             current_theme: starting_theme,
             is_justified: false, pre_justify_snapshot: None,
-            show_line_numbers: line_numbers, soft_wrap, previous_action_was_cut: false,
+            show_line_numbers: line_numbers, soft_wrap, sort_newest_first,
+            previous_action_was_cut: false,
+
         }
     }
 
