@@ -13,25 +13,6 @@ pub fn handle_event(event: Event, app: &mut App, session: &mut ImapSession, them
     if let Event::Key(k) = event {
         if k.kind == KeyEventKind::Press {
             match &mut app.mode {
-                // AppMode::Settings { selected_idx } => {
-                //     match k.code {
-                //         KeyCode::Up | KeyCode::Char('p') | KeyCode::Char('P') => *selected_idx = selected_idx.saturating_sub(1),
-                //         KeyCode::Down | KeyCode::Char('n') | KeyCode::Char('N') => *selected_idx = (*selected_idx + 1).min(1),
-                //
-                //         // Use Left or '<' to go back, replacing Esc
-                //         KeyCode::Left | KeyCode::Char('<') | KeyCode::Char('q') | KeyCode::Char('Q') | KeyCode::Char('s') | KeyCode::Char('S') => app.mode = AppMode::MainMenu { selected_idx: 3 },
-                //
-                //         // Right arrow or Enter to toggle
-                //         KeyCode::Right | KeyCode::Enter => {
-                //             if *selected_idx == 0 { theme_provider.soft_wrap = !theme_provider.soft_wrap; theme_provider.save_config(); }
-                //             else if *selected_idx == 1 { theme_provider.show_line_numbers = !theme_provider.show_line_numbers; theme_provider.save_config(); }
-                //         }
-                //
-                //         KeyCode::Char('w') | KeyCode::Char('W') => { theme_provider.soft_wrap = !theme_provider.soft_wrap; theme_provider.save_config(); }
-                //         KeyCode::Char('l') | KeyCode::Char('L') => { theme_provider.show_line_numbers = !theme_provider.show_line_numbers; theme_provider.save_config(); }
-                //         _ => {}
-                //     }
-                // }
                 AppMode::Settings { selected_idx } => {
                     match k.code {
                         KeyCode::Up | KeyCode::Char('p') | KeyCode::Char('P') => *selected_idx = selected_idx.saturating_sub(1),
@@ -236,17 +217,6 @@ pub fn handle_event(event: Event, app: &mut App, session: &mut ImapSession, them
                                 }
                             }
                         }
-                        // KeyCode::Up | KeyCode::Char('p') | KeyCode::Char('P') => {
-                        //     if app.selected_index > 0 { app.selected_index -= 1; }
-                        //     else if app.current_page + 1 < total_pages { app.current_page += 1; app.needs_fetch = true; app.selected_index = (items_per_page - 1) as usize; }
-                        // }
-                        // KeyCode::Down | KeyCode::Char('n') | KeyCode::Char('N') => {
-                        //     if !app.page_emails.is_empty() {
-                        //         let max_visible = app.page_emails.len().min(rows.saturating_sub(3) as usize);
-                        //         if app.selected_index + 1 < max_visible { app.selected_index += 1; }
-                        //         else if app.current_page > 0 { app.current_page -= 1; app.needs_fetch = true; app.selected_index = 0; }
-                        //     }
-                        // }
                         KeyCode::Up | KeyCode::Char('p') | KeyCode::Char('P') => {
                             if app.selected_index > 0 { app.selected_index -= 1; }
                             else {
@@ -270,8 +240,49 @@ pub fn handle_event(event: Event, app: &mut App, session: &mut ImapSession, them
                                 }
                             }
                         }
+                        KeyCode::PageUp | KeyCode::Char('y') | KeyCode::Char('Y') => {
+                            if theme_provider.sort_newest_first {
+                                if app.current_page > 0 {
+                                    app.current_page -= 1;
+                                    app.needs_fetch = true;
+                                    app.selected_index = 0;
+                                } else {
+                                    app.selected_index = 0; // Already at top, just move cursor to first item
+                                }
+                            } else {
+                                if app.current_page + 1 < total_pages {
+                                    app.current_page += 1;
+                                    app.needs_fetch = true;
+                                    app.selected_index = 0;
+                                } else {
+                                    app.selected_index = 0;
+                                }
+                            }
+                        }
+                        KeyCode::PageDown | KeyCode::Char('v') | KeyCode::Char('V') => {
+                            if theme_provider.sort_newest_first {
+                                if app.current_page + 1 < total_pages {
+                                    app.current_page += 1;
+                                    app.needs_fetch = true;
+                                    app.selected_index = 0;
+                                } else {
+                                    // Already at bottom, move cursor to the last visible item
+                                    app.selected_index = app.page_emails.len().saturating_sub(1);
+                                }
+                            } else {
+                                if app.current_page > 0 {
+                                    app.current_page -= 1;
+                                    app.needs_fetch = true;
+                                    app.selected_index = 0;
+                                } else {
+                                    app.selected_index = app.page_emails.len().saturating_sub(1);
+                                }
+                            }
+                        }
                         KeyCode::Char('m') | KeyCode::Char('M') => app.mode = AppMode::MainMenu { selected_idx: 0 },
-
+                        KeyCode::Char('o') | KeyCode::Char('O') => {
+                            app.menu_page = if app.menu_page == 1 { 2 } else { 1 };
+                        }
                         KeyCode::Char('*') => net::toggle_imap_flag(session, &mut app.page_emails, app.selected_index, "\\Flagged"),
                         KeyCode::Char('d') | KeyCode::Char('D') => net::toggle_imap_flag(session, &mut app.page_emails, app.selected_index, "\\Deleted"),
                         KeyCode::Char('u') | KeyCode::Char('U') => net::toggle_imap_flag(session, &mut app.page_emails, app.selected_index, "\\Seen"),
@@ -281,18 +292,6 @@ pub fn handle_event(event: Event, app: &mut App, session: &mut ImapSession, them
                                 app.update_status(status);
                             }
                         }
-                        // KeyCode::Char('x') | KeyCode::Char('X') => {
-                        //     if !app.page_emails.is_empty() && session.expunge().is_ok() {
-                        //         let offset = app.current_page * items_per_page + app.page_emails.len().saturating_sub(1).saturating_sub(app.selected_index) as u32;
-                        //         if let Ok(m) = session.select(&app.current_folder) {
-                        //             app.total_messages = m.exists;
-                        //             let safe_offset = offset.min(app.total_messages.saturating_sub(1));
-                        //             app.current_page = safe_offset / items_per_page;
-                        //             app.restore_index_from_end = Some(safe_offset % items_per_page);
-                        //             app.needs_fetch = true;
-                        //         }
-                        //     }
-                        // }
                         KeyCode::Char('x') | KeyCode::Char('X') => {
                             if !app.page_emails.is_empty() && session.expunge().is_ok() {
                                 let offset = if theme_provider.sort_newest_first {

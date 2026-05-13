@@ -188,7 +188,7 @@ fn main() {
                             }
 
                             // Open HTML version in the browser
-                            if key.code == event::KeyCode::Char('v') || key.code == event::KeyCode::Char('V') {
+                            if key.code == event::KeyCode::Char('b') || key.code == event::KeyCode::Char('B') {
                                 // Extract the string from the Option
                                 if let Some(html) = html_body {
                                     if !html.is_empty() {

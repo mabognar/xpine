@@ -165,12 +165,29 @@ impl Editor {
                 KeyCode::Esc | KeyCode::Left | KeyCode::Char('<') => return Ok(EditorResult::Cancel),
                 KeyCode::Char('r') | KeyCode::Char('R') => return Ok(EditorResult::Send("REPLY".to_string())),
                 KeyCode::Char('f') | KeyCode::Char('F') => return Ok(EditorResult::Send("FORWARD".to_string())),
-                KeyCode::Up => self.move_up(),
-                KeyCode::Down => self.move_down(),
-                KeyCode::PageUp => self.page_up()?,
-                KeyCode::PageDown => self.page_down()?,
-                KeyCode::Home => { self.cursor_y = 0; self.cursor_x = 0; }
-                KeyCode::End => { self.cursor_y = self.buffer.len_lines().saturating_sub(1); self.cursor_x = 0; }
+
+                KeyCode::Char('v') | KeyCode::Char('V') | KeyCode::PageDown => self.page_down()?,
+                KeyCode::Char('y') | KeyCode::Char('Y') | KeyCode::PageUp => self.page_up()?,
+
+                KeyCode::Up | KeyCode::Char('p') | KeyCode::Char('P') => {
+                    self.row_offset = self.row_offset.saturating_sub(1);
+                    self.cursor_y = self.row_offset;
+                }
+
+                KeyCode::Down | KeyCode::Char('n') | KeyCode::Char('N') => {
+                    let (_, rows) = terminal::size()?;
+                    let visible_rows = rows.saturating_sub(4 + self.top_margin) as usize;
+                    let max_offset = self.buffer.len_lines().saturating_sub(visible_rows);
+
+                    self.row_offset = (self.row_offset + 1).min(max_offset);
+                    self.cursor_y = self.row_offset;
+                }
+
+                KeyCode::Home => { self.cursor_y = 0; self.row_offset = 0; self.cursor_x = 0; }
+                KeyCode::End => {
+                    self.cursor_y = self.buffer.len_lines().saturating_sub(1);
+                    self.cursor_x = 0;
+                }
                 _ => {}
             }
             self.scroll()?;

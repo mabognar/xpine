@@ -44,6 +44,7 @@ pub struct App {
     pub last_fetch_time: Instant,
     pub auto_refresh_interval: Duration,
     pub accounts: Vec<Account>,
+    pub menu_page: u8, // Tracks the current menu page
 }
 
 impl App {
@@ -66,9 +67,10 @@ impl App {
             last_fetch_time: Instant::now(),
             auto_refresh_interval: Duration::from_secs(60),
             accounts,
+            menu_page: 1, // Initialize to page 1
         }
     }
-
+    
     pub fn update_status(&mut self, msg: String) {
         self.list_status = msg;
         self.list_status_time = Some(Instant::now());

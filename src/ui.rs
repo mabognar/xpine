@@ -122,8 +122,11 @@ impl UiExt for Editor {
         let default_cross_bg = Color::Rgb { r: raw_theme_bg.r, g: raw_theme_bg.g, b: raw_theme_bg.b };
         let ui_bg = Self::derive_ui_color(raw_theme_bg, is_dark);
         let title_fg = if is_dark { Color::Reset } else { Color::Black };
-        let menu_key_fg = if is_dark { Color::Rgb { r: 0, g: 150, b: 200 } } else { Color::Rgb { r: 0, g: 100, b: 200 } };
-        let menu_text_fg = if is_dark { Color::Reset } else { Color::Black };
+        // let menu_key_fg = if is_dark { Color::Rgb { r: 0, g: 150, b: 200 } } else { Color::Rgb { r: 0, g: 100, b: 200 } };
+        // let menu_text_fg = if is_dark { Color::Reset } else { Color::Black };
+        let ui_colors = derive_ui_colors(theme);
+        let menu_key_fg = ui_colors.accent;
+        let menu_text_fg = ui_colors.fg;
         let dollar_bg = if is_dark { Color::Rgb { r: 180, g: 180, b: 180 } } else { Color::Rgb { r: 80, g: 80, b: 80 } };
         let dollar_fg = if is_dark { Color::Black } else { Color::White };
 
@@ -324,14 +327,14 @@ impl UiExt for Editor {
 
         match self.menu_state {
             MenuState::EmailComposer => {
-                let menu1 = [("^X", " Send"), ("^O", " Write Out"), ("^R", " Read File"), ("^Y", " Prev Pg"), ("^K", " Cut Txt"), ("^C", " Cancel")];
-                let menu2 = [("^J", " Justify"), ("^W", " Where Is"), ("^V", " Next Pg"), ("^U", if self.is_justified { " Unjustify" } else { " UnCut" }), ("^T", " To Spell"), ("", "")];
+                let menu1 = [("^X", " Send"), ("^O", " Write Out"), ("^R", " Read File"), ("^Y", " Prev Pg"), ("^K", " Cut Txt"), ("^J", " Justify")];
+                let menu2 = [("^C", " Cancel"), ("^W", " Where Is"), ("^V", " Next Pg"), ("^U", if self.is_justified { " Unjustify" } else { " UnCut" }), ("^T", " To Spell"), ("", "")];
                 Self::draw_menu_line(&mut stdout, rows - 2, cols, col_width, &menu1, ui_bg, menu_key_fg, menu_text_fg)?;
                 Self::draw_menu_line(&mut stdout, rows - 1, cols, col_width, &menu2, ui_bg, menu_key_fg, menu_text_fg)?;
             }
             MenuState::EmailReader => {
-                let menu1 = [("<", " Back"),  ("R", " Reply"),    ("P", " Prev"),    ("^Y", " Prev Pg"),    ("Home", " Top"), ("A", " Add Address")];
-                let menu2 = [("", ""),  ("F", " Forward"), ("N", " Next"), ("^V", " Next Pg"), ("End", " Bottom"), ("1-9", " Open Att")];
+                let menu1 = [("<", " Back"),  ("R", " Reply"),    ("P", " Prev"),    ("Y", " Prev Pg"),  ("A", " Add Address"), ("","")];
+                let menu2 = [("", ""),  ("F", " Forward"), ("N", " Next"), ("V", " Next Pg"), ("1-9", " Open Att"), ("","")];
                 Self::draw_menu_line(&mut stdout, rows - 2, cols, col_width, &menu1, ui_bg, menu_key_fg, menu_text_fg)?;
                 Self::draw_menu_line(&mut stdout, rows - 1, cols, col_width, &menu2, ui_bg, menu_key_fg, menu_text_fg)?;
             }
@@ -688,8 +691,15 @@ pub fn draw_app(stdout: &mut std::io::Stdout, app: &App, theme_provider: &Editor
             }
 
             let r_col = (cols as usize / 6).max(1);
-            Editor::draw_menu_line(stdout, rows - 2, cols, r_col, &[(">", " View"), ("M", " Menu"), ("C", " Compose"), ("R", " Reply"),   ("D", " Delete"), ("*", " Flag")], colors.ui_bg, colors.accent, colors.fg)?;
-            Editor::draw_menu_line(stdout, rows - 1, cols, r_col, &[("Q", " Quit"), ("<", " Back"), ("Tab", " Acct"),  ("F", " Forward"), ("X", " Expunge"), ("U", " Toggle Read"), ], colors.ui_bg, colors.accent, colors.fg)?;
+            if app.menu_page == 1 {
+                Editor::draw_menu_line(stdout, rows - 2, cols, r_col, &[("<", " Back"), (">", " View"), ("C", " Compose"), ("R", " Reply"),   ("D", " Delete"), ("O", " Other (1/2)")], colors.ui_bg, colors.accent, colors.fg)?;
+                Editor::draw_menu_line(stdout, rows - 1, cols, r_col, &[("Q", " Quit"), ("M", " Menu"), ("*", " Flag"),    ("F", " Forward"), ("X", " Expunge"), ("Tab", " Acct")], colors.ui_bg, colors.accent, colors.fg)?;
+            } else {
+                Editor::draw_menu_line(stdout, rows - 2, cols, r_col, &[("U", " (Un)Read"), ("P", " Prev"), ("Y", " Prev Pg"), ("", ""), ("", ""), ("O", " Other (2/2)")], colors.ui_bg, colors.accent, colors.fg)?;
+                Editor::draw_menu_line(stdout, rows - 1, cols, r_col, &[("", ""), ("N", " Next"), ("V", " Next Pg"), ("", ""), ("", ""), ("", "")], colors.ui_bg, colors.accent, colors.fg)?;
+            }
+            // Editor::draw_menu_line(stdout, rows - 2, cols, r_col, &[(">", " View"), ("M", " Menu"), ("C", " Compose"), ("R", " Reply"),   ("D", " Delete"), ("*", " Flag")], colors.ui_bg, colors.accent, colors.fg)?;
+            // Editor::draw_menu_line(stdout, rows - 1, cols, r_col, &[("Q", " Quit"), ("<", " Back"), ("Tab", " Acct"),  ("F", " Forward"), ("X", " Expunge"), ("U", " Toggle Read"), ], colors.ui_bg, colors.accent, colors.fg)?;
 
             if let Some(time) = app.list_status_time {
                 if time.elapsed() >= app.list_status_duration {
