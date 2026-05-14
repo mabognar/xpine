@@ -838,3 +838,66 @@ pub fn draw_app(stdout: &mut std::io::Stdout, app: &App, theme_provider: &Editor
     stdout.flush()?;
     Ok(())
 }
+
+pub fn draw_file_browser(
+    stdout: &mut std::io::Stdout,
+    current_dir: &std::path::Path,
+    entries: &[(String, std::path::PathBuf, bool)],
+    selected_idx: usize,
+    prompting: bool,
+    input_buffer: &str,
+    colors: &UiColors
+) -> std::io::Result<()> {
+    use crossterm::{cursor, execute, queue, style::{Print, ResetColor, SetBackgroundColor, SetForegroundColor}, terminal::{Clear, ClearType, size as term_size}};
+    use crate::editor::Editor;
+
+    let (cols, rows) = term_size()?;
+
+    execute!(stdout, SetBackgroundColor(colors.bg), Clear(ClearType::All), cursor::MoveTo(0, 0))?;
+
+    let title = format!(" --- File Browser: {} ", current_dir.display());
+    let pad_len = (cols as usize).saturating_sub(title.chars().count());
+
+    queue!(
+        stdout, SetBackgroundColor(colors.ui_bg), SetForegroundColor(colors.accent),
+        Print(title), Print(" ".repeat(pad_len)), ResetColor
+    )?;
+
+    let items_per_page = (rows.saturating_sub(3) as usize).max(1);
+    let start_idx = if selected_idx >= items_per_page { selected_idx - items_per_page + 1 } else { 0 };
+
+    for i in 0..items_per_page {
+        let actual_idx = start_idx + i;
+        if actual_idx < entries.len() {
+            let entry = &entries[actual_idx];
+            let prefix = if entry.2 { "[DIR]  " } else { "       " };
+            let mut display_str = format!("{}{}", prefix, entry.0);
+            if display_str.chars().count() > cols as usize {
+                display_str = display_str.chars().take((cols as usize).saturating_sub(3)).collect::<String>();
+            }
+
+            execute!(stdout, cursor::MoveTo(0, (i + 1) as u16))?;
+            if actual_idx == selected_idx {
+                queue!(stdout, SetBackgroundColor(colors.ui_bg), SetForegroundColor(colors.fg), Print(display_str), ResetColor)?;
+            } else {
+                let fg = if entry.2 { colors.accent } else { colors.fg };
+                queue!(stdout, SetBackgroundColor(colors.bg), SetForegroundColor(fg), Print(display_str), ResetColor)?;
+            }
+        }
+    }
+
+    if prompting {
+        execute!(
+            stdout, cursor::MoveTo(0, rows - 1), SetBackgroundColor(colors.ui_bg),
+            Clear(ClearType::UntilNewLine), SetForegroundColor(colors.accent),
+            Print(" File name: "), SetForegroundColor(colors.fg),
+            Print(input_buffer), ResetColor
+        )?;
+    } else {
+        let m_col = (cols as usize / 6).max(1);
+        Editor::draw_menu_line(stdout, rows - 2, cols, m_col, &[("",""),           ("P", " Prev"), ("Enter", " Select"), ("", ""), ("", ""), ("", "")], colors.ui_bg, colors.accent, colors.fg)?;
+        Editor::draw_menu_line(stdout, rows - 1, cols, m_col, &[("^C", " Cancel"), ("N", " Next"), ("", ""), ("", ""), ("", ""), ("", "")], colors.ui_bg, colors.accent, colors.fg)?;
+    }
+
+    stdout.flush()
+}

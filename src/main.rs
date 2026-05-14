@@ -35,13 +35,12 @@ fn main() {
     execute!(stdout, EnterAlternateScreen).unwrap();
 
     let mut theme_provider = Editor::new(None);
-    // let mut session = net::connect(&app.active_account.email, &app.active_account.password).expect("Initial IMAP Login failed");
     let mut session = net::connect(&app.active_account).unwrap();
+
     loop {
         if app.needs_reconnect {
             app.active_account = app.accounts[app.current_account_idx].clone();
             let _ = session.logout();
-            // session = net::connect(&app.active_account.email, &app.active_account.password).expect("IMAP Login failed");
             session = net::connect(&app.active_account).expect("IMAP Login failed");
             app.needs_fetch = true;
             app.needs_reconnect = false;
@@ -62,7 +61,6 @@ fn main() {
         }
 
         if app.needs_fetch && matches!(app.mode, AppMode::List) {
-            // Pass the sort order directly to fetch_emails and remove the .reverse()
             net::fetch_emails(&mut session, &mut app, items_per_page, theme_provider.sort_newest_first);
             app.last_fetch_time = Instant::now();
             app.needs_fetch = false;
@@ -72,7 +70,6 @@ fn main() {
             let mut reader = Editor::new(None);
             reader.menu_state = MenuState::EmailReader;
 
-            // Dynamically adjust the top margin based on the number of vertically listed attachments
             let attach_lines = if attachments.is_empty() { 1 } else { attachments.len() };
             reader.top_margin = (5 + attach_lines) as u16;
 
@@ -85,7 +82,6 @@ fn main() {
             let email_subject = app.page_emails[app.selected_index].subject.clone();
             let active_email = app.active_account.email.clone();
 
-            // Metadata needed for replies and forwards
             let reply_to = app.page_emails[app.selected_index].reply_to.clone();
             let date = app.page_emails[app.selected_index].date.clone();
             let fetch_seq = app.page_emails[app.selected_index].id.to_string();
@@ -130,7 +126,6 @@ fn main() {
 
                 reader.draw_screen().unwrap();
 
-                // Calculate timeout dynamically based on whether a status message is active
                 let timeout = if let Some(time) = reader.status_time {
                     let elapsed = time.elapsed();
                     if elapsed >= Duration::from_secs(3) {
@@ -146,16 +141,13 @@ fn main() {
                 if event::poll(timeout).unwrap() {
                     let ev = event::read().unwrap();
                     if let event::Event::Key(mut key) = ev {
-                        // Copy to clipboard binding
                         if key.modifiers.contains(event::KeyModifiers::CONTROL) && key.code == event::KeyCode::Char('y') {
                             reader.set_status("Text copied to clipboard".to_string());
                             continue;
                         }
 
-                        // Add to address book, Reply, Forward bindings
                         if !key.modifiers.contains(event::KeyModifiers::CONTROL) && !key.modifiers.contains(event::KeyModifiers::ALT) {
 
-                            // Instant Add to Address Book
                             if key.code == event::KeyCode::Char('a') || key.code == event::KeyCode::Char('A') {
                                 if let Ok(added) = crate::config::add_to_address_book(&email_from) {
                                     if added {
@@ -187,16 +179,13 @@ fn main() {
                                 continue;
                             }
 
-                            // Open HTML version in the browser
                             if key.code == event::KeyCode::Char('b') || key.code == event::KeyCode::Char('B') {
-                                // Extract the string from the Option
                                 if let Some(html) = html_body {
                                     if !html.is_empty() {
                                         let temp_dir = std::env::temp_dir().join("xpine_attachments");
                                         let _ = std::fs::create_dir_all(&temp_dir);
                                         let file_path = temp_dir.join("email_view.html");
 
-                                        // Write the unwrapped 'html' string
                                         if std::fs::write(&file_path, html).is_ok() {
                                             if webbrowser::open(file_path.to_str().unwrap()).is_ok() {
                                                 reader.set_status("Opened HTML version in browser.".to_string());
@@ -215,19 +204,21 @@ fn main() {
                                 continue;
                             }
 
-                            // Save email to file
+                            // ---> [ NEW: File Browser Trigger ] <---
                             if key.code == event::KeyCode::Char('s') || key.code == event::KeyCode::Char('S') {
-                                if let Ok(Some(path)) = reader.run_file_browser() {
-                                    if std::fs::write(&path, &text_body).is_ok() {
-                                        reader.set_status(format!("Saved to {}", path));
-                                    } else {
-                                        reader.set_status(format!("Failed to save to {}", path));
-                                    }
-                                }
-                                continue;
+                                let current_dir = std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from("/"));
+                                let entries = App::refresh_browser_entries(&current_dir);
+                                app.mode = AppMode::FileBrowser {
+                                    current_dir,
+                                    selected_idx: 0,
+                                    entries,
+                                    action: app::BrowserAction::SaveEmail(text_body.clone()),
+                                    input_buffer: String::new(),
+                                    prompting: false,
+                                };
+                                break; // Break out of the Reading loop to hand off to FileBrowser
                             }
 
-                            // Open attachment via numbering
                             if let event::KeyCode::Char(c) = key.code {
                                 if c.is_ascii_digit() && c != '0' {
                                     let idx = (c.to_digit(10).unwrap() as usize).saturating_sub(1);
@@ -255,17 +246,30 @@ fn main() {
                             EditorResult::Cancel => break,
                             _ => {}
                         }
-                    } else if let event::Event::Resize(_, _) = ev {
-                        // Resizing naturally triggers a loop iteration to redraw
-                    }
+                    } else if let event::Event::Resize(_, _) = ev {}
                 }
             }
             theme_provider.current_theme = reader.current_theme;
-            app.mode = AppMode::List;
+
+            // Only revert to List mode if we didn't just intentionally switch to the FileBrowser
+            if matches!(app.mode, AppMode::Reading { .. }) {
+                app.mode = AppMode::List;
+            }
             continue;
         }
 
-        ui::draw_app(&mut stdout, &app, &theme_provider).unwrap();
+        // ---> [ NEW: Global Rendering Match ] <---
+        match &app.mode {
+            AppMode::FileBrowser { current_dir, entries, selected_idx, prompting, input_buffer, .. } => {
+                let theme = &theme_provider.theme_set.themes[&theme_provider.current_theme];
+                let colors = ui::derive_ui_colors(theme);
+                ui::draw_file_browser(&mut stdout, current_dir, entries, *selected_idx, *prompting, input_buffer, &colors).unwrap();
+            }
+            AppMode::List => {
+                ui::draw_app(&mut stdout, &app, &theme_provider).unwrap();
+            }
+            _ => {} // Other modes (like Reading) are intercepted above
+        }
 
         let mut timeout = if app.last_fetch_time.elapsed() >= app.auto_refresh_interval { Duration::from_millis(1) } else { app.auto_refresh_interval - app.last_fetch_time.elapsed() };
 

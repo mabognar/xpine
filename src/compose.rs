@@ -1,5 +1,6 @@
-use crate::config::{derive_ui_colors, Account, UiColors};
+use crate::config::Account;
 use crate::editor::{Editor, EditorResult, MenuState};
+use crate::ui::{derive_ui_colors, UiColors, UiExt};
 
 use lettre::transport::smtp::authentication::Credentials as SmtpCredentials;
 use lettre::{Message, SmtpTransport, Transport};
@@ -15,7 +16,6 @@ use crossterm::{
     style::{Color, Print, ResetColor, SetBackgroundColor, SetForegroundColor},
     terminal::{Clear, ClearType, size as term_size},
 };
-use crate::ui::UiExt;
 
 struct ComposeState {
     to: String,
@@ -26,142 +26,61 @@ struct ComposeState {
     active_idx: usize,
 }
 
-fn file_browser(stdout: &mut std::io::Stdout, rows: u16, cols: u16, colors: &UiColors) -> Option<String> {
+fn file_browser(stdout: &mut std::io::Stdout, colors: &UiColors) -> Option<String> {
     let mut current_dir = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("/"));
     let mut selected_idx = 0;
+    let mut prompting = false;
+    let mut input_buffer = String::new();
 
     loop {
-        let mut entries = vec![];
-
-        entries.push((".".to_string(), current_dir.clone(), true));
-
-        if current_dir.parent().is_some() {
-            entries.push(("..".to_string(), current_dir.parent().unwrap().to_path_buf(), true));
-        }
-
-        if let Ok(read_dir) = fs::read_dir(&current_dir) {
-            let mut dirs = vec![];
-            let mut files = vec![];
-            let mut dot_dirs = vec![];
-            let mut dot_files = vec![];
-
-            for entry in read_dir.flatten() {
-                let path = entry.path();
-                let name = entry.file_name().to_string_lossy().into_owned();
-                let is_dir = path.is_dir();
-                let is_dot = name.starts_with('.');
-
-                if is_dir {
-                    if is_dot { dot_dirs.push((name, path, true)); } else { dirs.push((name, path, true)); }
-                } else {
-                    if is_dot { dot_files.push((name, path, false)); } else { files.push((name, path, false)); }
-                }
-            }
-
-            dirs.sort_by(|a, b| a.0.to_lowercase().cmp(&b.0.to_lowercase()));
-            files.sort_by(|a, b| a.0.to_lowercase().cmp(&b.0.to_lowercase()));
-            dot_dirs.sort_by(|a, b| a.0.to_lowercase().cmp(&b.0.to_lowercase()));
-            dot_files.sort_by(|a, b| a.0.to_lowercase().cmp(&b.0.to_lowercase()));
-
-            entries.extend(dirs);
-            entries.extend(files);
-            entries.extend(dot_dirs);
-            entries.extend(dot_files);
-        }
-
+        let entries = crate::app::App::refresh_browser_entries(&current_dir);
         if selected_idx >= entries.len() {
             selected_idx = entries.len().saturating_sub(1);
         }
 
-        execute!(stdout, SetBackgroundColor(colors.bg), Clear(ClearType::All), cursor::MoveTo(0, 0)).unwrap();
-
-        let title = format!(" --- Browse to Attach: {} ", current_dir.display());
-        let pad_len = (cols as usize).saturating_sub(title.chars().count());
-
-        queue!(
-            stdout, SetBackgroundColor(colors.ui_bg), SetForegroundColor(colors.accent),
-            Print(title), Print(" ".repeat(pad_len)), ResetColor
-        ).unwrap();
-
-        let items_per_page = (rows.saturating_sub(3) as usize).max(1);
-        let start_idx = if selected_idx >= items_per_page { selected_idx - items_per_page + 1 } else { 0 };
-
-        for i in 0..items_per_page {
-            let actual_idx = start_idx + i;
-            if actual_idx < entries.len() {
-                let entry = &entries[actual_idx];
-                let prefix = if entry.2 { "[DIR]  " } else { "       " };
-                let mut display_str = format!("{}{}", prefix, entry.0);
-                if display_str.chars().count() > cols as usize {
-                    display_str = display_str.chars().take((cols as usize).saturating_sub(3)).collect::<String>();
-                }
-
-                execute!(stdout, cursor::MoveTo(0, (i + 1) as u16)).unwrap();
-                if actual_idx == selected_idx {
-                    queue!(stdout, SetBackgroundColor(colors.ui_bg), SetForegroundColor(colors.fg), Print(display_str), ResetColor).unwrap();
-                } else {
-                    let fg = if entry.2 { colors.accent } else { colors.fg };
-                    queue!(stdout, SetBackgroundColor(colors.bg), SetForegroundColor(fg), Print(display_str), ResetColor).unwrap();
-                }
-            }
-        }
-
-        let m_col = (cols as usize / 6).max(1);
-        Editor::draw_menu_line(stdout, rows - 2, cols, m_col, &[("Up/Dn", " Nav"), ("Enter", " Select"), ("", ""), ("", ""), ("", ""), ("", "")], colors.ui_bg, colors.accent, colors.fg).unwrap();
-        Editor::draw_menu_line(stdout, rows - 1, cols, m_col, &[("^C", " Cancel"), ("", ""), ("", ""), ("", ""), ("", ""), ("", "")], colors.ui_bg, colors.accent, colors.fg).unwrap();
-        stdout.flush().unwrap();
+        crate::ui::draw_file_browser(stdout, &current_dir, &entries, selected_idx, prompting, &input_buffer, colors).unwrap();
 
         if let Event::Key(k) = event::read().unwrap() {
             if k.kind == KeyEventKind::Press {
-                match k.code {
-                    KeyCode::Up => selected_idx = selected_idx.saturating_sub(1),
-                    KeyCode::Down => if selected_idx + 1 < entries.len() { selected_idx += 1 },
-                    KeyCode::Enter => {
-                        if !entries.is_empty() {
-                            let selected = &entries[selected_idx];
-                            if selected.0 == "." {
-                                let mut input = String::new();
-                                loop {
-                                    execute!(
-                                        stdout, cursor::MoveTo(0, rows - 1), SetBackgroundColor(colors.ui_bg),
-                                        Clear(ClearType::UntilNewLine), SetForegroundColor(colors.accent),
-                                        Print(" File to attach: "), SetForegroundColor(colors.fg),
-                                        Print(&input), ResetColor
-                                    ).unwrap();
-                                    stdout.flush().unwrap();
-
-                                    if let Ok(Event::Key(pk)) = event::read() {
-                                        if pk.kind == KeyEventKind::Press {
-                                            match pk.code {
-                                                KeyCode::Enter => {
-                                                    if !input.trim().is_empty() {
-                                                        let target = current_dir.join(input.trim());
-                                                        return Some(target.to_string_lossy().into_owned());
-                                                    }
-                                                    break;
-                                                }
-                                                KeyCode::Esc => break,
-                                                KeyCode::Char('c') if pk.modifiers.contains(KeyModifiers::CONTROL) => break,
-                                                KeyCode::Backspace => { input.pop(); }
-                                                KeyCode::Char(c) if !pk.modifiers.contains(KeyModifiers::CONTROL) && !pk.modifiers.contains(KeyModifiers::ALT) => {
-                                                    input.push(c);
-                                                }
-                                                _ => {}
-                                            }
-                                        }
-                                    }
-                                }
-                            } else if selected.2 {
-                                current_dir = selected.1.clone();
-                                selected_idx = 0;
+                if prompting {
+                    match k.code {
+                        KeyCode::Enter => {
+                            if !input_buffer.trim().is_empty() {
+                                return Some(current_dir.join(input_buffer.trim()).to_string_lossy().into_owned());
                             } else {
-                                return Some(selected.1.to_string_lossy().into_owned());
+                                prompting = false;
                             }
                         }
+                        KeyCode::Esc => prompting = false,
+                        KeyCode::Char('c') if k.modifiers.contains(KeyModifiers::CONTROL) => prompting = false,
+                        KeyCode::Backspace => { input_buffer.pop(); }
+                        KeyCode::Char(c) if !k.modifiers.contains(KeyModifiers::CONTROL) && !k.modifiers.contains(KeyModifiers::ALT) => {
+                            input_buffer.push(c);
+                        }
+                        _ => {}
                     }
-                    KeyCode::Char('c') if k.modifiers.contains(KeyModifiers::CONTROL) => return None,
-                    KeyCode::Esc => return None,
-                    _ => {}
+                } else {
+                    match k.code {
+                        KeyCode::Up | KeyCode::Char('p') | KeyCode::Char('P') => selected_idx = selected_idx.saturating_sub(1),
+                        KeyCode::Down | KeyCode::Char('n') | KeyCode::Char('N') => if selected_idx + 1 < entries.len() { selected_idx += 1 },
+                        KeyCode::Enter => {
+                            if !entries.is_empty() {
+                                let selected = &entries[selected_idx];
+                                if selected.0 == "." {
+                                    prompting = true;
+                                    input_buffer.clear();
+                                } else if selected.2 {
+                                    current_dir = selected.1.clone();
+                                    selected_idx = 0;
+                                } else {
+                                    return Some(selected.1.to_string_lossy().into_owned());
+                                }
+                            }
+                        }
+                        KeyCode::Char('c') | KeyCode::Char('C') if k.modifiers.contains(KeyModifiers::CONTROL) => return None,
+                        KeyCode::Char('<') | KeyCode::Left => return None,
+                        _ => {}
+                    }
                 }
             }
         }
@@ -182,7 +101,6 @@ fn find_suggestion(input: &str, address_book: &[String]) -> Option<String> {
     None
 }
 
-// Intercepts the ^C command to prompt the user before wiping out their draft
 fn prompt_cancel(stdout: &mut std::io::Stdout, colors: &UiColors) -> bool {
     let (_, rows) = term_size().unwrap_or((80, 24));
     execute!(
@@ -269,8 +187,8 @@ pub fn compose_email(account: &Account, default_to: Option<&str>, default_subjec
             queue!(stdout, SetForegroundColor(dim_c), Print("(Press ^T to attach a file)")).unwrap();
         } else {
             let att_names: Vec<String> = state.attachments.iter().enumerate().map(|(i, p)| {
-                let fname = Path::new(p).file_name().unwrap_or_default().to_string_lossy();
-                format!("{}. {}", i + 1, fname)
+                let file_name = Path::new(p).file_name().unwrap_or_default().to_string_lossy();
+                format!("{}. {}", i + 1, file_name)
             }).collect();
             queue!(stdout, Print(att_names.join("   "))).unwrap();
         }
@@ -335,7 +253,7 @@ pub fn compose_email(account: &Account, default_to: Option<&str>, default_subjec
                     } else {
                         match key_event.code {
                             KeyCode::Char('t') if key_event.modifiers.contains(KeyModifiers::CONTROL) => {
-                                if let Some(path) = file_browser(&mut stdout, rows, cols, &colors) { state.attachments.push(path); }
+                                if let Some(path) = file_browser(&mut stdout, &colors) { state.attachments.push(path); }
                             }
                             KeyCode::Char('p') if key_event.modifiers.contains(KeyModifiers::CONTROL) => state.active_idx = state.active_idx.saturating_sub(1),
                             KeyCode::Char('n') if key_event.modifiers.contains(KeyModifiers::CONTROL) => state.active_idx = (state.active_idx + 1).min(4),
@@ -422,7 +340,7 @@ pub fn compose_email(account: &Account, default_to: Option<&str>, default_subjec
 
     for att in &state.attachments {
         if let Ok(file_data) = fs::read(att) {
-            let filename = Path::new(att).file_name().unwrap_or_default().to_string_lossy().into_owned();
+            let file_name = Path::new(att).file_name().unwrap_or_default().to_string_lossy().into_owned();
             let ext = Path::new(att).extension().unwrap_or_default().to_string_lossy().to_lowercase();
             let mime_str = match ext.as_str() {
                 "txt" | "rs" | "c" | "cpp" | "md" | "toml" | "json" => "text/plain",
@@ -435,7 +353,7 @@ pub fn compose_email(account: &Account, default_to: Option<&str>, default_subjec
                 _ => "application/octet-stream",
             };
             if let Ok(content_type) = mime_str.parse::<lettre::message::header::ContentType>() {
-                let attachment = lettre::message::Attachment::new(filename).body(file_data, content_type);
+                let attachment = lettre::message::Attachment::new(file_name).body(file_data, content_type);
                 multipart = multipart.singlepart(attachment);
             }
         }

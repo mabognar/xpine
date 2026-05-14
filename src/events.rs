@@ -1,4 +1,4 @@
-use crate::app::{App, AppMode};
+use crate::app::{App, AppMode, BrowserAction};
 use crate::net::{self, ImapSession};
 use crate::compose::compose_email;
 use crate::editor::Editor;
@@ -16,7 +16,6 @@ pub fn handle_event(event: Event, app: &mut App, session: &mut ImapSession, them
                 AppMode::Settings { selected_idx } => {
                     match k.code {
                         KeyCode::Up | KeyCode::Char('p') | KeyCode::Char('P') => *selected_idx = selected_idx.saturating_sub(1),
-                        // Change the .min(1) constraint to .min(2) to allow a third menu item
                         KeyCode::Down | KeyCode::Char('n') | KeyCode::Char('N') => *selected_idx = (*selected_idx + 1).min(2),
 
                         KeyCode::Left | KeyCode::Char('<') | KeyCode::Char('q') | KeyCode::Char('Q') | KeyCode::Char('s') | KeyCode::Char('S') => app.mode = AppMode::MainMenu { selected_idx: 3 },
@@ -24,17 +23,15 @@ pub fn handle_event(event: Event, app: &mut App, session: &mut ImapSession, them
                         KeyCode::Char('x') | KeyCode::Char('X') | KeyCode::Right | KeyCode::Enter => {
                             if *selected_idx == 0 { theme_provider.soft_wrap = !theme_provider.soft_wrap; theme_provider.save_config(); }
                             else if *selected_idx == 1 { theme_provider.show_line_numbers = !theme_provider.show_line_numbers; theme_provider.save_config(); }
-                            // Add the toggle for the new setting
                             else if *selected_idx == 2 {
                                 theme_provider.sort_newest_first = !theme_provider.sort_newest_first;
                                 theme_provider.save_config();
-                                app.needs_fetch = true; // Trigger fetch to re-order the list
+                                app.needs_fetch = true;
                             }
                         }
 
                         KeyCode::Char('w') | KeyCode::Char('W') => { theme_provider.soft_wrap = !theme_provider.soft_wrap; theme_provider.save_config(); }
                         KeyCode::Char('l') | KeyCode::Char('L') => { theme_provider.show_line_numbers = !theme_provider.show_line_numbers; theme_provider.save_config(); }
-                        // Add a shortcut (e.g. 'O' for Order/Sort)
                         KeyCode::Char('o') | KeyCode::Char('O') => {
                             theme_provider.sort_newest_first = !theme_provider.sort_newest_first;
                             theme_provider.save_config();
@@ -81,10 +78,10 @@ pub fn handle_event(event: Event, app: &mut App, session: &mut ImapSession, them
                         KeyCode::Char('m') | KeyCode::Char('M') => app.mode = AppMode::List,
                         KeyCode::Enter | KeyCode::Char('>') | KeyCode::Right => {
                             match *selected_idx {
-                                0 => { // Inbox
+                                0 => {
                                     app.current_folder = "INBOX".to_string();
                                     app.current_page = 0;
-                                    app.restore_index_from_end = Some(0); // Updated line
+                                    app.restore_index_from_end = Some(0);
                                     app.needs_fetch = true;
                                     app.mode = AppMode::List;
                                 }
@@ -99,7 +96,7 @@ pub fn handle_event(event: Event, app: &mut App, session: &mut ImapSession, them
                         KeyCode::Char('i') | KeyCode::Char('I') => {
                             app.current_folder = "INBOX".to_string();
                             app.current_page = 0;
-                            app.restore_index_from_end = Some(0); // Updated line
+                            app.restore_index_from_end = Some(0);
                             app.needs_fetch = true;
                             app.mode = AppMode::List;
                         }
@@ -131,7 +128,6 @@ pub fn handle_event(event: Event, app: &mut App, session: &mut ImapSession, them
                                     app.active_account = app.accounts[app.current_account_idx].clone();
                                     let _ = session.logout();
                                     *session = net::connect(&app.active_account).unwrap();
-                                    // *session = net::connect(&app.active_account.email, &app.active_account.password).unwrap();
                                 }
 
                                 let mut fetched = Vec::new();
@@ -146,7 +142,7 @@ pub fn handle_event(event: Event, app: &mut App, session: &mut ImapSession, them
                             } else {
                                 app.current_folder = folders[*selected_idx].clone();
                                 app.current_page = 0;
-                                app.restore_index_from_end = Some(0); // Updated line
+                                app.restore_index_from_end = Some(0);
                                 app.needs_fetch = true;
                                 app.mode = AppMode::List;
                             }
@@ -184,7 +180,7 @@ pub fn handle_event(event: Event, app: &mut App, session: &mut ImapSession, them
                                     } else {
                                         app.current_folder = parts.join(&separator.to_string());
                                         app.current_page = 0;
-                                        app.restore_index_from_end = Some(0); // Updated line
+                                        app.restore_index_from_end = Some(0);
                                         app.needs_fetch = true;
                                     }
                                 } else {
@@ -247,7 +243,7 @@ pub fn handle_event(event: Event, app: &mut App, session: &mut ImapSession, them
                                     app.needs_fetch = true;
                                     app.selected_index = 0;
                                 } else {
-                                    app.selected_index = 0; // Already at top, just move cursor to first item
+                                    app.selected_index = 0;
                                 }
                             } else {
                                 if app.current_page + 1 < total_pages {
@@ -266,7 +262,6 @@ pub fn handle_event(event: Event, app: &mut App, session: &mut ImapSession, them
                                     app.needs_fetch = true;
                                     app.selected_index = 0;
                                 } else {
-                                    // Already at bottom, move cursor to the last visible item
                                     app.selected_index = app.page_emails.len().saturating_sub(1);
                                 }
                             } else {
@@ -350,6 +345,66 @@ pub fn handle_event(event: Event, app: &mut App, session: &mut ImapSession, them
                         }
                         KeyCode::Char('q') | KeyCode::Esc => quit = true,
                         _ => {}
+                    }
+                }
+                AppMode::FileBrowser { current_dir, selected_idx, entries, action, input_buffer, prompting } => {
+                    let BrowserAction::SaveEmail(body) = action;
+
+                    let mut target_to_save = None;
+                    let mut cancel = false;
+
+                    if *prompting {
+                        match k.code {
+                            KeyCode::Enter => {
+                                if !input_buffer.trim().is_empty() {
+                                    target_to_save = Some(current_dir.join(input_buffer.trim()));
+                                } else {
+                                    *prompting = false;
+                                }
+                            }
+                            KeyCode::Esc => *prompting = false,
+                            KeyCode::Char('c') if k.modifiers.contains(KeyModifiers::CONTROL) => *prompting = false,
+                            KeyCode::Backspace => { input_buffer.pop(); }
+                            KeyCode::Char(c) if !k.modifiers.contains(KeyModifiers::CONTROL) && !k.modifiers.contains(KeyModifiers::ALT) => {
+                                input_buffer.push(c);
+                            }
+                            _ => {}
+                        }
+                    } else {
+                        match k.code {
+                            KeyCode::Up | KeyCode::Char('p') | KeyCode::Char('P') => *selected_idx = selected_idx.saturating_sub(1),
+                            KeyCode::Down | KeyCode::Char('n') | KeyCode::Char('N') => if *selected_idx + 1 < entries.len() { *selected_idx += 1; },
+                            KeyCode::Enter => {
+                                if !entries.is_empty() {
+                                    let selected = entries[*selected_idx].clone();
+                                    if selected.0 == "." {
+                                        *prompting = true;
+                                        input_buffer.clear();
+                                    } else if selected.2 {
+                                        *current_dir = selected.1;
+                                        *selected_idx = 0;
+                                        *entries = App::refresh_browser_entries(current_dir);
+                                    } else {
+                                        target_to_save = Some(selected.1);
+                                    }
+                                }
+                            }
+                            KeyCode::Char('c') | KeyCode::Char('C') if k.modifiers.contains(KeyModifiers::CONTROL) => cancel = true,
+                            KeyCode::Char('<') | KeyCode::Left => cancel = true,
+                            _ => {}
+                        }
+                    }
+
+                    if let Some(target) = target_to_save {
+                        if std::fs::write(&target, body.as_bytes()).is_ok() {
+                            theme_provider.status_message = format!("Saved to {}", target.display());
+                        } else {
+                            theme_provider.status_message = format!("Failed to save to {}", target.display());
+                        }
+                        theme_provider.status_time = Some(std::time::Instant::now());
+                        app.mode = AppMode::Reading { text_body: body.clone(), html_body: None, attachments: vec![] };
+                    } else if cancel {
+                        app.mode = AppMode::Reading { text_body: body.clone(), html_body: None, attachments: vec![] };
                     }
                 }
                 _ => {} // Reading mode uses editor loop, handled inside main
