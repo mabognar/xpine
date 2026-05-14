@@ -1,15 +1,10 @@
 use crate::app::{App, AppMode};
 use crate::editor::{Editor, MenuState};
-use crossterm::{
-    cursor,
-    event::{self, Event, KeyCode, KeyModifiers},
-    queue,
-    style::{Color, Print, ResetColor, SetBackgroundColor, SetForegroundColor},
-    terminal::{self, ClearType, size as term_size},
-};
+use crossterm::{cursor, event::{self, Event, KeyCode, KeyModifiers}, execute, queue, style::{Color, Print, ResetColor, SetBackgroundColor, SetForegroundColor}, terminal::{self, ClearType, size as term_size}};
 use syntect::easy::HighlightLines;
 use std::io::{self, stdout, Write};
-use std::env;
+use std::{env, fs};
+use std::path::PathBuf;
 use crate::config::ConfigExt;
 
 #[derive(Clone, Copy)]
@@ -333,7 +328,7 @@ impl UiExt for Editor {
                 Self::draw_menu_line(&mut stdout, rows - 1, cols, col_width, &menu2, ui_bg, menu_key_fg, menu_text_fg)?;
             }
             MenuState::EmailReader => {
-                let menu1 = [("<", " Back"),  ("R", " Reply"),    ("P", " Prev"),    ("Y", " Prev Pg"),  ("A", " Add Address"), ("","")];
+                let menu1 = [("<", " Back"),  ("R", " Reply"),    ("P", " Prev"),    ("Y", " Prev Pg"),  ("A", " Add Addr"), ("S"," Save")];
                 let menu2 = [("", ""),  ("F", " Forward"), ("N", " Next"), ("V", " Next Pg"), ("1-9", " Open Att"), ("","")];
                 Self::draw_menu_line(&mut stdout, rows - 2, cols, col_width, &menu1, ui_bg, menu_key_fg, menu_text_fg)?;
                 Self::draw_menu_line(&mut stdout, rows - 1, cols, col_width, &menu2, ui_bg, menu_key_fg, menu_text_fg)?;
@@ -472,8 +467,137 @@ impl UiExt for Editor {
         }
     }
 
+    // fn run_file_browser(&mut self) -> io::Result<Option<String>> {
+    //     Ok(None)
+    // }
     fn run_file_browser(&mut self) -> io::Result<Option<String>> {
-        Ok(None)
+        let mut current_dir = env::current_dir().unwrap_or_else(|_| PathBuf::from("/"));
+        let mut selected_idx = 0;
+        let mut stdout = io::stdout();
+
+        loop {
+            let mut entries = vec![];
+
+            // Add the current directory "." option to trigger the filename prompt
+            entries.push((".".to_string(), current_dir.clone(), true));
+
+            if current_dir.parent().is_some() {
+                entries.push(("..".to_string(), current_dir.parent().unwrap().to_path_buf(), true));
+            }
+
+            if let Ok(read_dir) = fs::read_dir(&current_dir) {
+                let mut dirs = vec![];
+                let mut files = vec![];
+                let mut dot_dirs = vec![];
+                let mut dot_files = vec![];
+
+                for entry in read_dir.flatten() {
+                    let path = entry.path();
+                    let name = entry.file_name().to_string_lossy().into_owned();
+                    let is_dir = path.is_dir();
+                    let is_dot = name.starts_with('.');
+
+                    if is_dir {
+                        if is_dot { dot_dirs.push((name, path, true)); } else { dirs.push((name, path, true)); }
+                    } else {
+                        if is_dot { dot_files.push((name, path, false)); } else { files.push((name, path, false)); }
+                    }
+                }
+
+                // Match our preferred sorting layout
+                dirs.sort_by(|a, b| a.0.to_lowercase().cmp(&b.0.to_lowercase()));
+                files.sort_by(|a, b| a.0.to_lowercase().cmp(&b.0.to_lowercase()));
+                dot_dirs.sort_by(|a, b| a.0.to_lowercase().cmp(&b.0.to_lowercase()));
+                dot_files.sort_by(|a, b| a.0.to_lowercase().cmp(&b.0.to_lowercase()));
+
+                entries.extend(dirs);
+                entries.extend(files);
+                entries.extend(dot_dirs);
+                entries.extend(dot_files);
+            }
+
+            if selected_idx >= entries.len() {
+                selected_idx = entries.len().saturating_sub(1);
+            }
+
+            // Derive UI theme colors
+            let theme = &self.theme_set.themes[&self.current_theme];
+            let is_dark = Self::is_dark_theme(theme);
+            let raw_bg = theme.settings.background.unwrap_or(syntect::highlighting::Color { r: 0, g: 0, b: 0, a: 255 });
+            let ui_bg = Self::derive_ui_color(raw_bg, is_dark);
+            let menu_key_fg = if is_dark { Color::Rgb { r: 0, g: 150, b: 200 } } else { Color::Rgb { r: 0, g: 100, b: 200 } };
+            let menu_text_fg = if is_dark { Color::Reset } else { Color::Black };
+
+            execute!(stdout, SetBackgroundColor(Color::Rgb { r: raw_bg.r, g: raw_bg.g, b: raw_bg.b }), terminal::Clear(ClearType::All), cursor::MoveTo(0, 0))?;
+
+            let title = format!(" --- File Browser: {} ", current_dir.display());
+            let (cols, rows) = terminal::size()?;
+            let pad_len = (cols as usize).saturating_sub(title.chars().count());
+
+            queue!(
+                stdout, SetBackgroundColor(ui_bg), SetForegroundColor(menu_key_fg),
+                Print(title), Print(" ".repeat(pad_len)), SetForegroundColor(Color::Reset)
+            )?;
+
+            let items_per_page = (rows.saturating_sub(3) as usize).max(1);
+            let start_idx = if selected_idx >= items_per_page { selected_idx - items_per_page + 1 } else { 0 };
+
+            for i in 0..items_per_page {
+                let actual_idx = start_idx + i;
+                if actual_idx < entries.len() {
+                    let entry = &entries[actual_idx];
+                    let prefix = if entry.2 { "[DIR]  " } else { "       " };
+                    let mut display_str = format!("{}{}", prefix, entry.0);
+                    if display_str.chars().count() > cols as usize {
+                        display_str = display_str.chars().take((cols as usize).saturating_sub(3)).collect::<String>();
+                    }
+
+                    execute!(stdout, cursor::MoveTo(0, (i + 1) as u16))?;
+                    if actual_idx == selected_idx {
+                        queue!(stdout, SetBackgroundColor(ui_bg), SetForegroundColor(menu_text_fg), Print(display_str), SetForegroundColor(Color::Reset), SetBackgroundColor(Color::Reset))?;
+                    } else {
+                        let fg = if entry.2 { menu_key_fg } else { menu_text_fg };
+                        queue!(stdout, SetBackgroundColor(Color::Rgb { r: raw_bg.r, g: raw_bg.g, b: raw_bg.b }), SetForegroundColor(fg), Print(display_str), SetForegroundColor(Color::Reset))?;
+                    }
+                }
+            }
+
+            let m_col = (cols as usize / 6).max(1);
+            Self::draw_menu_line(&mut stdout, rows - 2, cols, m_col, &[("Up/Dn", " Nav"), ("Enter", " Select"), ("", ""), ("", ""), ("", ""), ("", "")], ui_bg, menu_key_fg, menu_text_fg)?;
+            Self::draw_menu_line(&mut stdout, rows - 1, cols, m_col, &[("^C", " Cancel"), ("", ""), ("", ""), ("", ""), ("", ""), ("", "")], ui_bg, menu_key_fg, menu_text_fg)?;
+            stdout.flush()?;
+
+            if let Event::Key(k) = event::read()? {
+                if k.kind == event::KeyEventKind::Press {
+                    match k.code {
+                        KeyCode::Up => selected_idx = selected_idx.saturating_sub(1),
+                        KeyCode::Down => if selected_idx + 1 < entries.len() { selected_idx += 1 },
+                        KeyCode::Enter => {
+                            if !entries.is_empty() {
+                                let selected = &entries[selected_idx];
+                                if selected.0 == "." {
+                                    // When "." is selected, prompt for a filename using the built-in UI
+                                    if let Ok(Some(filename)) = self.prompt("Save as: ", false) {
+                                        if !filename.trim().is_empty() {
+                                            let target = current_dir.join(filename.trim());
+                                            return Ok(Some(target.to_string_lossy().into_owned()));
+                                        }
+                                    }
+                                } else if selected.2 {
+                                    current_dir = selected.1.clone();
+                                    selected_idx = 0;
+                                } else {
+                                    return Ok(Some(selected.1.to_string_lossy().into_owned()));
+                                }
+                            }
+                        }
+                        KeyCode::Char('c') if k.modifiers.contains(KeyModifiers::CONTROL) => return Ok(None),
+                        KeyCode::Esc => return Ok(None),
+                        _ => {}
+                    }
+                }
+            }
+        }
     }
 
     fn show_help(&mut self) -> io::Result<()> {

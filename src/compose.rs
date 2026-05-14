@@ -32,6 +32,9 @@ fn file_browser(stdout: &mut std::io::Stdout, rows: u16, cols: u16, colors: &UiC
 
     loop {
         let mut entries = vec![];
+
+        entries.push((".".to_string(), current_dir.clone(), true));
+
         if current_dir.parent().is_some() {
             entries.push(("..".to_string(), current_dir.parent().unwrap().to_path_buf(), true));
         }
@@ -39,16 +42,31 @@ fn file_browser(stdout: &mut std::io::Stdout, rows: u16, cols: u16, colors: &UiC
         if let Ok(read_dir) = fs::read_dir(&current_dir) {
             let mut dirs = vec![];
             let mut files = vec![];
+            let mut dot_dirs = vec![];
+            let mut dot_files = vec![];
+
             for entry in read_dir.flatten() {
                 let path = entry.path();
                 let name = entry.file_name().to_string_lossy().into_owned();
-                if path.is_dir() { dirs.push((name, path, true)); }
-                else { files.push((name, path, false)); }
+                let is_dir = path.is_dir();
+                let is_dot = name.starts_with('.');
+
+                if is_dir {
+                    if is_dot { dot_dirs.push((name, path, true)); } else { dirs.push((name, path, true)); }
+                } else {
+                    if is_dot { dot_files.push((name, path, false)); } else { files.push((name, path, false)); }
+                }
             }
+
             dirs.sort_by(|a, b| a.0.to_lowercase().cmp(&b.0.to_lowercase()));
             files.sort_by(|a, b| a.0.to_lowercase().cmp(&b.0.to_lowercase()));
+            dot_dirs.sort_by(|a, b| a.0.to_lowercase().cmp(&b.0.to_lowercase()));
+            dot_files.sort_by(|a, b| a.0.to_lowercase().cmp(&b.0.to_lowercase()));
+
             entries.extend(dirs);
             entries.extend(files);
+            entries.extend(dot_dirs);
+            entries.extend(dot_files);
         }
 
         if selected_idx >= entries.len() {
@@ -101,7 +119,39 @@ fn file_browser(stdout: &mut std::io::Stdout, rows: u16, cols: u16, colors: &UiC
                     KeyCode::Enter => {
                         if !entries.is_empty() {
                             let selected = &entries[selected_idx];
-                            if selected.2 {
+                            if selected.0 == "." {
+                                let mut input = String::new();
+                                loop {
+                                    execute!(
+                                        stdout, cursor::MoveTo(0, rows - 1), SetBackgroundColor(colors.ui_bg),
+                                        Clear(ClearType::UntilNewLine), SetForegroundColor(colors.accent),
+                                        Print(" File to attach: "), SetForegroundColor(colors.fg),
+                                        Print(&input), ResetColor
+                                    ).unwrap();
+                                    stdout.flush().unwrap();
+
+                                    if let Ok(Event::Key(pk)) = event::read() {
+                                        if pk.kind == KeyEventKind::Press {
+                                            match pk.code {
+                                                KeyCode::Enter => {
+                                                    if !input.trim().is_empty() {
+                                                        let target = current_dir.join(input.trim());
+                                                        return Some(target.to_string_lossy().into_owned());
+                                                    }
+                                                    break;
+                                                }
+                                                KeyCode::Esc => break,
+                                                KeyCode::Char('c') if pk.modifiers.contains(KeyModifiers::CONTROL) => break,
+                                                KeyCode::Backspace => { input.pop(); }
+                                                KeyCode::Char(c) if !pk.modifiers.contains(KeyModifiers::CONTROL) && !pk.modifiers.contains(KeyModifiers::ALT) => {
+                                                    input.push(c);
+                                                }
+                                                _ => {}
+                                            }
+                                        }
+                                    }
+                                }
+                            } else if selected.2 {
                                 current_dir = selected.1.clone();
                                 selected_idx = 0;
                             } else {
@@ -121,17 +171,40 @@ fn file_browser(stdout: &mut std::io::Stdout, rows: u16, cols: u16, colors: &UiC
 fn find_suggestion(input: &str, address_book: &[String]) -> Option<String> {
     if input.is_empty() { return None; }
 
-    // Support autocomplete even if they are typing the second/third address (after a comma)
     let last_part = input.split(',').last().unwrap_or("").trim_start();
     if last_part.is_empty() { return None; }
 
     for addr in address_book {
         if addr.to_lowercase().starts_with(&last_part.to_lowercase()) {
-            // Return only the remaining ghost text
             return Some(addr[last_part.len()..].to_string());
         }
     }
     None
+}
+
+// Intercepts the ^C command to prompt the user before wiping out their draft
+fn prompt_cancel(stdout: &mut std::io::Stdout, colors: &UiColors) -> bool {
+    let (_, rows) = term_size().unwrap_or((80, 24));
+    execute!(
+        stdout, cursor::MoveTo(0, rows - 3),
+        SetBackgroundColor(colors.ui_bg), Clear(ClearType::UntilNewLine),
+        SetForegroundColor(colors.accent), Print(" Are you sure you want to cancel? "),
+        SetForegroundColor(colors.fg), Print("[Y] Yes   [N] No"),
+        ResetColor
+    ).unwrap();
+    stdout.flush().unwrap();
+
+    loop {
+        if let Ok(Event::Key(pk)) = event::read() {
+            if pk.kind == KeyEventKind::Press {
+                match pk.code {
+                    KeyCode::Char('y') | KeyCode::Char('Y') => return true,
+                    KeyCode::Char('n') | KeyCode::Char('N') | KeyCode::Esc => return false,
+                    _ => {}
+                }
+            }
+        }
+    }
 }
 
 pub fn compose_email(account: &Account, default_to: Option<&str>, default_subject: Option<&str>, default_body: Option<&str>, current_theme: &mut String) -> Option<String> {
@@ -157,7 +230,6 @@ pub fn compose_email(account: &Account, default_to: Option<&str>, default_subjec
     let mut final_body = String::new();
     let mut cancelled = false;
 
-    // Load the address book prior to rendering the compose loop
     let address_book = crate::config::load_address_book();
 
     loop {
@@ -182,7 +254,6 @@ pub fn compose_email(account: &Account, default_to: Option<&str>, default_subjec
                 SetForegroundColor(colors.fg), Print(" "), Print(vals[i])
             ).unwrap();
 
-            // --- AUTOCOMPLETE SUGGESTION HIGHLIGHT ---
             if i < 3 && i == state.active_idx {
                 if let Some(suggestion) = find_suggestion(vals[i], &address_book) {
                     let dim_c = if colors.is_dark { Color::DarkGrey } else { Color::Grey };
@@ -236,8 +307,12 @@ pub fn compose_email(account: &Account, default_to: Option<&str>, default_subjec
                             break;
                         }
                         if key_event.code == KeyCode::Char('c') {
-                            cancelled = true;
-                            break;
+                            if prompt_cancel(&mut stdout, &colors) {
+                                cancelled = true;
+                                break;
+                            } else {
+                                continue;
+                            }
                         }
                     }
 
@@ -249,7 +324,12 @@ pub fn compose_email(account: &Account, default_to: Option<&str>, default_subjec
 
                         match editor.handle_keypress(key_event).unwrap() {
                             EditorResult::Send(content) => { final_body = content; break; }
-                            EditorResult::Cancel => { cancelled = true; break; }
+                            EditorResult::Cancel => {
+                                if prompt_cancel(&mut stdout, &colors) {
+                                    cancelled = true;
+                                    break;
+                                }
+                            }
                             EditorResult::Continue => {}
                         }
                     } else {
@@ -261,17 +341,14 @@ pub fn compose_email(account: &Account, default_to: Option<&str>, default_subjec
                             KeyCode::Char('n') if key_event.modifiers.contains(KeyModifiers::CONTROL) => state.active_idx = (state.active_idx + 1).min(4),
                             KeyCode::Up | KeyCode::BackTab => state.active_idx = state.active_idx.saturating_sub(1),
 
-                            // Make sure Down arrow only navigates fields
                             KeyCode::Down => { state.active_idx = (state.active_idx + 1).min(4); }
 
-                            // Let Tab / Enter intercept the text completion
                             KeyCode::Tab | KeyCode::Enter => {
                                 if state.active_idx < 3 {
                                     let target = match state.active_idx {
                                         0 => &mut state.to, 1 => &mut state.cc, 2 => &mut state.bcc, _ => unreachable!()
                                     };
 
-                                    // If a valid suggestion exists, complete it and stay on the current line
                                     if let Some(suggestion) = find_suggestion(target, &address_book) {
                                         target.push_str(&suggestion);
                                         continue;
@@ -315,7 +392,7 @@ pub fn compose_email(account: &Account, default_to: Option<&str>, default_subjec
     let (_, rows) = term_size().unwrap_or((80, 24));
     let theme = &editor.theme_set.themes[&editor.current_theme];
     let colors = derive_ui_colors(theme);
-    queue!(stdout, cursor::MoveTo(0, rows - 1), SetBackgroundColor(colors.selected_bg), Clear(ClearType::UntilNewLine), SetForegroundColor(colors.accent), Print(" Sending message... Please wait "), ResetColor).unwrap();
+    queue!(stdout, cursor::MoveTo(0, rows - 3), SetBackgroundColor(colors.selected_bg), Clear(ClearType::UntilNewLine), SetForegroundColor(colors.accent), Print(" Sending message... Please wait "), ResetColor).unwrap();
     stdout.flush().unwrap();
 
     let mut builder = Message::builder()
@@ -368,7 +445,6 @@ pub fn compose_email(account: &Account, default_to: Option<&str>, default_subjec
         Ok(email_msg) => {
             let creds = SmtpCredentials::new(account.email.clone(), account.password.clone());
             let mailer = SmtpTransport::relay(&account.smtp_server).unwrap().credentials(creds).build();
-            // let mailer = SmtpTransport::relay("smtp.gmail.com").unwrap().credentials(creds).build();
             match mailer.send(&email_msg) {
                 Ok(_) => Some("Message Sent".to_string()),
                 Err(e) => {

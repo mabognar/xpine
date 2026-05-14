@@ -215,6 +215,18 @@ fn main() {
                                 continue;
                             }
 
+                            // Save email to file
+                            if key.code == event::KeyCode::Char('s') || key.code == event::KeyCode::Char('S') {
+                                if let Ok(Some(path)) = reader.run_file_browser() {
+                                    if std::fs::write(&path, &text_body).is_ok() {
+                                        reader.set_status(format!("Saved to {}", path));
+                                    } else {
+                                        reader.set_status(format!("Failed to save to {}", path));
+                                    }
+                                }
+                                continue;
+                            }
+
                             // Open attachment via numbering
                             if let event::KeyCode::Char(c) = key.code {
                                 if c.is_ascii_digit() && c != '0' {
