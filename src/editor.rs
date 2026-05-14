@@ -66,6 +66,7 @@ pub struct Editor {
     pub(crate) soft_wrap: bool,
     pub(crate) sort_newest_first: bool,
     pub(crate) previous_action_was_cut: bool,
+    pub menu_page: u8,
 }
 
 impl Editor {
@@ -108,7 +109,7 @@ impl Editor {
             is_justified: false, pre_justify_snapshot: None,
             show_line_numbers: line_numbers, soft_wrap, sort_newest_first,
             previous_action_was_cut: false,
-
+            menu_page: 1,
         }
     }
 
@@ -209,8 +210,19 @@ impl Editor {
             KeyCode::Char('x') if is_ctrl => self.exit_editor()?,
             KeyCode::F(2) => self.exit_editor()?,
 
-            KeyCode::Char('o') if is_ctrl => self.save_file()?,
-            KeyCode::F(3) => self.save_file()?,
+            KeyCode::Char('o') if is_ctrl => {
+                if self.menu_state == MenuState::EmailComposer {
+                    self.menu_page = if self.menu_page == 1 { 2 } else { 1 };
+                } else {
+                    self.save_file()?;
+                }
+            }
+
+            KeyCode::Char('j') if is_ctrl => {
+                self.justify();
+                self.is_justified = true;
+                keep_justified = true;
+            }
 
             KeyCode::Char('r') if is_ctrl => self.read_file()?,
             KeyCode::F(5) => self.read_file()?,
@@ -621,5 +633,5 @@ impl Editor {
         }
         Ok(())
     }
-    
+
 }

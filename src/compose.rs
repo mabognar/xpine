@@ -60,10 +60,19 @@ fn file_browser(stdout: &mut std::io::Stdout, colors: &UiColors) -> Option<Strin
                         _ => {}
                     }
                 } else {
+                    let (_, rows) = term_size().unwrap_or((80, 24));
+                    let items_per_page = (rows.saturating_sub(3) as usize).max(1);
+
                     match k.code {
                         KeyCode::Up | KeyCode::Char('p') | KeyCode::Char('P') => selected_idx = selected_idx.saturating_sub(1),
                         KeyCode::Down | KeyCode::Char('n') | KeyCode::Char('N') => if selected_idx + 1 < entries.len() { selected_idx += 1 },
-                        KeyCode::Enter => {
+                        KeyCode::Char('y') | KeyCode::Char('Y') | KeyCode::PageUp => {
+                            selected_idx = selected_idx.saturating_sub(items_per_page);
+                        }
+                        KeyCode::Char('v') | KeyCode::Char('V') | KeyCode::PageDown => {
+                            selected_idx = (selected_idx + items_per_page).min(entries.len().saturating_sub(1));
+                        }
+                        KeyCode::Enter | KeyCode::Char('>') | KeyCode::Right => {
                             if !entries.is_empty() {
                                 let selected = &entries[selected_idx];
                                 if selected.0 == "." {
@@ -77,8 +86,14 @@ fn file_browser(stdout: &mut std::io::Stdout, colors: &UiColors) -> Option<Strin
                                 }
                             }
                         }
-                        KeyCode::Char('c') | KeyCode::Char('C') if k.modifiers.contains(KeyModifiers::CONTROL) => return None,
-                        KeyCode::Char('<') | KeyCode::Left => return None,
+                        KeyCode::Char('<') | KeyCode::Left => {
+                            if let Some(parent) = current_dir.parent() {
+                                current_dir = parent.to_path_buf();
+                                selected_idx = 0;
+                            }
+                        }
+                        KeyCode::Char('c') if k.modifiers.contains(KeyModifiers::CONTROL) => return None,
+                        KeyCode::Esc => return None,
                         _ => {}
                     }
                 }
@@ -95,7 +110,11 @@ fn find_suggestion(input: &str, address_book: &[String]) -> Option<String> {
 
     for addr in address_book {
         if addr.to_lowercase().starts_with(&last_part.to_lowercase()) {
-            return Some(addr[last_part.len()..].to_string());
+            let remainder = &addr[last_part.len()..];
+            // Fix: Only return a suggestion if there is actually text left to autocomplete
+            if !remainder.is_empty() {
+                return Some(remainder.to_string());
+            }
         }
     }
     None
@@ -198,8 +217,8 @@ pub fn compose_email(account: &Account, default_to: Option<&str>, default_subjec
 
         if state.active_idx < 4 {
             let m_col = (cols as usize / 6).max(1);
-            Editor::draw_menu_line(&mut stdout, rows - 2, cols, m_col, &[("^P", " Prev"), ("Tab", " Next"), ("^T", " Attach"), ("", ""), ("", ""), ("", "")], colors.ui_bg, colors.accent, colors.fg).unwrap();
-            Editor::draw_menu_line(&mut stdout, rows - 1, cols, m_col, &[("^C", " Cancel"), ("Enter", " Body"), ("^X", " Send"), ("", ""), ("", ""), ("", "")], colors.ui_bg, colors.accent, colors.fg).unwrap();
+            Editor::draw_menu_line(&mut stdout, rows - 2, cols, m_col, &[("^X", " Send"),   (" ^P", " Prev"), ("^T", " Attach"), ("", ""), ("", "")], colors.ui_bg, colors.accent, colors.fg).unwrap();
+            Editor::draw_menu_line(&mut stdout, rows - 1, cols, m_col, &[("^C", " Cancel"), ("Tab", " Next"), ("", ""), ("", ""), ("", ""), ("", "")], colors.ui_bg, colors.accent, colors.fg).unwrap();
 
             queue!(stdout, cursor::Show).unwrap();
             let cursor_y = (state.active_idx as u16) + 1;

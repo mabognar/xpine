@@ -321,11 +321,20 @@ impl UiExt for Editor {
         let col_width = ((cols as usize) / 6).max(1);
 
         match self.menu_state {
+            // MenuState::EmailComposer => {
+            //     let menu1 = [("^X", " Send"), ("^O", " Write Out"), ("^R", " Read File"), ("^Y", " Prev Pg"), ("^K", " Cut Txt"), ("^J", " Justify")];
+            //     let menu2 = [("^C", " Cancel"), ("^W", " Where Is"), ("^V", " Next Pg"), ("^U", if self.is_justified { " Unjustify" } else { " UnCut" }), ("^T", " To Spell"), ("", "")];
+            //     Self::draw_menu_line(&mut stdout, rows - 2, cols, col_width, &menu1, ui_bg, menu_key_fg, menu_text_fg)?;
+            //     Self::draw_menu_line(&mut stdout, rows - 1, cols, col_width, &menu2, ui_bg, menu_key_fg, menu_text_fg)?;
+            // }
             MenuState::EmailComposer => {
-                let menu1 = [("^X", " Send"), ("^O", " Write Out"), ("^R", " Read File"), ("^Y", " Prev Pg"), ("^K", " Cut Txt"), ("^J", " Justify")];
-                let menu2 = [("^C", " Cancel"), ("^W", " Where Is"), ("^V", " Next Pg"), ("^U", if self.is_justified { " Unjustify" } else { " UnCut" }), ("^T", " To Spell"), ("", "")];
-                Self::draw_menu_line(&mut stdout, rows - 2, cols, col_width, &menu1, ui_bg, menu_key_fg, menu_text_fg)?;
-                Self::draw_menu_line(&mut stdout, rows - 1, cols, col_width, &menu2, ui_bg, menu_key_fg, menu_text_fg)?;
+                if self.menu_page == 1 {
+                    Self::draw_menu_line(&mut stdout, rows - 2, cols, col_width, &[("^X", " Send"),   ("^P", " Prev"), ("^Y", " Prev Pg"), ("^K", " Cut"),   ("^J", " Justify"), ("^O", " Other 1/2")], ui_bg, menu_key_fg, menu_text_fg)?;
+                    Self::draw_menu_line(&mut stdout, rows - 1, cols, col_width, &[("^C", " Cancel"), ("^N", " Next"), ("^V", " Next Pg"), ("^U", " UnCut"), ("",""),            ("^G", " Get Help")], ui_bg, menu_key_fg, menu_text_fg)?;
+                } else {
+                    Self::draw_menu_line(&mut stdout, rows - 2, cols, col_width, &[("^R", " Read File"), ("^T", " To Spell"), ("", ""), ("", ""),  ("",""), ("^O", " Other 2/2")], ui_bg, menu_key_fg, menu_text_fg)?;
+                    Self::draw_menu_line(&mut stdout, rows - 1, cols, col_width, &[("^W", " Where is"), ("Alt-A", " Mark"), ("", ""), ("", ""), ("", ""), ("", "")], ui_bg, menu_key_fg, menu_text_fg)?;
+                }
             }
             MenuState::EmailReader => {
                 let menu1 = [("<", " Back"),  ("R", " Reply"),    ("P", " Prev"),    ("Y", " Prev Pg"),  ("A", " Add Addr"), ("S"," Save")];
@@ -765,8 +774,8 @@ pub fn draw_app(stdout: &mut std::io::Stdout, app: &App, theme_provider: &Editor
             }
 
             let m_col = (cols as usize / 6).max(1);
-            Editor::draw_menu_line(stdout, rows - 2, cols, m_col, &[("Up/Dn", " Nav"), ("Enter", " Select"), ("Esc", " Back"), ("M", " Main Menu"), ("", ""), ("", "")], colors.ui_bg, colors.accent, colors.fg)?;
-            Editor::draw_menu_line(stdout, rows - 1, cols, m_col, &[("", ""), ("", ""), ("", ""), ("", ""), ("", ""), ("", "")], colors.ui_bg, colors.accent, colors.fg)?;
+            Editor::draw_menu_line(stdout, rows - 2, cols, m_col, &[("M", " Main Menu"), ("P", " Prev"), ("Y", " Prev Pg"), (">", " Select"),  ("", ""), ("", "")], colors.ui_bg, colors.accent, colors.fg)?;
+            Editor::draw_menu_line(stdout, rows - 1, cols, m_col, &[("<", " Back"),      ("N", " Next"), ("V", " Next Pg"), ("", ""), ("", ""), ("", "")], colors.ui_bg, colors.accent, colors.fg)?;
         }
         AppMode::List => {
             let header_title = format!("xpine - {} ({})", app.current_folder, app.active_account.email);
@@ -895,8 +904,8 @@ pub fn draw_file_browser(
         )?;
     } else {
         let m_col = (cols as usize / 6).max(1);
-        Editor::draw_menu_line(stdout, rows - 2, cols, m_col, &[("",""),           ("P", " Prev"), ("Enter", " Select"), ("", ""), ("", ""), ("", "")], colors.ui_bg, colors.accent, colors.fg)?;
-        Editor::draw_menu_line(stdout, rows - 1, cols, m_col, &[("^C", " Cancel"), ("N", " Next"), ("", ""), ("", ""), ("", ""), ("", "")], colors.ui_bg, colors.accent, colors.fg)?;
+        Editor::draw_menu_line(stdout, rows - 2, cols, m_col, &[(" >", " Select"),  ("P", " Prev"), ("Y", " Prev Pg"), ("", ""), ("", ""), ("", "")], colors.ui_bg, colors.accent, colors.fg)?;
+        Editor::draw_menu_line(stdout, rows - 1, cols, m_col, &[("^C", " Cancel"), ("N", " Next"), ("V", " Next Pg"), ("", ""), ("", ""), ("", "")], colors.ui_bg, colors.accent, colors.fg)?;
     }
 
     stdout.flush()

@@ -110,17 +110,32 @@ pub fn handle_event(event: Event, app: &mut App, session: &mut ImapSession, them
                 }
                 AppMode::FolderList { step, selected_idx, folders } => {
                     let items_count = if *step == 0 { app.accounts.len() } else { folders.len() };
+
+                    // Calculate items per page for the Y/V jumps
+                    let (_, rows) = term_size().unwrap_or((80, 24));
+                    let items_per_page = (rows.saturating_sub(3) as usize).max(1);
+
                     match k.code {
-                        KeyCode::Up => *selected_idx = selected_idx.saturating_sub(1),
-                        KeyCode::Down => *selected_idx = (*selected_idx + 1).min(items_count.saturating_sub(1)),
+                        KeyCode::Up | KeyCode::Char('p') | KeyCode::Char('P') => {
+                            *selected_idx = selected_idx.saturating_sub(1);
+                        }
+                        KeyCode::Down | KeyCode::Char('n') | KeyCode::Char('N') => {
+                            *selected_idx = (*selected_idx + 1).min(items_count.saturating_sub(1));
+                        }
+                        KeyCode::PageUp | KeyCode::Char('y') | KeyCode::Char('Y') => {
+                            *selected_idx = selected_idx.saturating_sub(items_per_page);
+                        }
+                        KeyCode::PageDown | KeyCode::Char('v') | KeyCode::Char('V') => {
+                            *selected_idx = (*selected_idx + items_per_page).min(items_count.saturating_sub(1));
+                        }
                         KeyCode::Char('m') | KeyCode::Char('M') => {
                             app.mode = AppMode::MainMenu { selected_idx: 2 };
                         }
-                        KeyCode::Esc | KeyCode::Char('q') | KeyCode::Char('Q') => {
+                        KeyCode::Esc | KeyCode::Char('q') | KeyCode::Char('Q') | KeyCode::Char('<') | KeyCode::Left => {
                             if *step == 1 { *step = 0; *selected_idx = app.current_account_idx; }
                             else { app.mode = AppMode::MainMenu { selected_idx: 2 }; }
                         }
-                        KeyCode::Enter => {
+                        KeyCode::Enter | KeyCode::Char('>') | KeyCode::Right => {
                             if *step == 0 {
                                 let new_idx = *selected_idx;
                                 if new_idx != app.current_account_idx {
@@ -165,27 +180,41 @@ pub fn handle_event(event: Event, app: &mut App, session: &mut ImapSession, them
                             }
                         }
                         KeyCode::Char('<') | KeyCode::Left => {
-                            if app.current_folder.eq_ignore_ascii_case("INBOX") {
-                                app.mode = AppMode::MainMenu { selected_idx: 0 };
-                            } else {
-                                let separator = if app.current_folder.contains('/') { '/' }
-                                else if app.current_folder.contains('.') { '.' }
-                                else { '\0' };
+                            let separator = if app.current_folder.contains('/') { '/' }
+                            else if app.current_folder.contains('.') { '.' }
+                            else { '\0' };
 
-                                if separator != '\0' {
-                                    let mut parts: Vec<&str> = app.current_folder.split(separator).collect();
-                                    parts.pop();
-                                    if parts.is_empty() || (parts.len() == 1 && parts[0] == "") {
-                                        app.mode = AppMode::MainMenu { selected_idx: 0 };
-                                    } else {
-                                        app.current_folder = parts.join(&separator.to_string());
-                                        app.current_page = 0;
-                                        app.restore_index_from_end = Some(0);
-                                        app.needs_fetch = true;
-                                    }
+                            let mut go_to_folder_list = false;
+
+                            if separator != '\0' {
+                                let mut parts: Vec<&str> = app.current_folder.split(separator).collect();
+                                parts.pop(); // Remove the current sub-directory
+                                if parts.is_empty() || (parts.len() == 1 && parts[0] == "") {
+                                    go_to_folder_list = true;
                                 } else {
-                                    app.mode = AppMode::MainMenu { selected_idx: 0 };
+                                    app.current_folder = parts.join(&separator.to_string());
+                                    app.current_page = 0;
+                                    app.restore_index_from_end = Some(0);
+                                    app.needs_fetch = true;
                                 }
+                            } else {
+                                go_to_folder_list = true;
+                            }
+
+                            // If we hit the top of the directory tree, load the folder browser
+                            if go_to_folder_list {
+                                let mut fetched = Vec::new();
+                                if let Ok(mailboxes) = session.list(Some(""), Some("*")) {
+                                    for mb in mailboxes.iter() { fetched.push(mb.name().to_string()); }
+                                }
+                                if fetched.is_empty() { fetched.push("INBOX".to_string()); }
+                                fetched.sort();
+
+                                // Auto-select the folder we just backed out of
+                                let prev_folder = app.current_folder.clone();
+                                let idx = fetched.iter().position(|f| f == &prev_folder).unwrap_or(0);
+
+                                app.mode = AppMode::FolderList { step: 1, selected_idx: idx, folders: fetched };
                             }
                         }
                         KeyCode::Tab => {
@@ -279,7 +308,14 @@ pub fn handle_event(event: Event, app: &mut App, session: &mut ImapSession, them
                             app.menu_page = if app.menu_page == 1 { 2 } else { 1 };
                         }
                         KeyCode::Char('*') => net::toggle_imap_flag(session, &mut app.page_emails, app.selected_index, "\\Flagged"),
-                        KeyCode::Char('d') | KeyCode::Char('D') => net::toggle_imap_flag(session, &mut app.page_emails, app.selected_index, "\\Deleted"),
+                        // KeyCode::Char('d') | KeyCode::Char('D') => net::toggle_imap_flag(session, &mut app.page_emails, app.selected_index, "\\Deleted"),
+                        KeyCode::Char('d') | KeyCode::Char('D') => {
+                            net::toggle_imap_flag(session, &mut app.page_emails, app.selected_index, "\\Deleted");
+                            let max_visible = app.page_emails.len().min(rows.saturating_sub(3) as usize);
+                            if app.selected_index + 1 < max_visible {
+                                app.selected_index += 1;
+                            }
+                        }
                         KeyCode::Char('u') | KeyCode::Char('U') => net::toggle_imap_flag(session, &mut app.page_emails, app.selected_index, "\\Seen"),
 
                         KeyCode::Char('c') | KeyCode::Char('C') => {
@@ -371,10 +407,19 @@ pub fn handle_event(event: Event, app: &mut App, session: &mut ImapSession, them
                             _ => {}
                         }
                     } else {
+                        let (_, rows) = term_size().unwrap_or((80, 24));
+                        let items_per_page = (rows.saturating_sub(3) as usize).max(1);
+
                         match k.code {
                             KeyCode::Up | KeyCode::Char('p') | KeyCode::Char('P') => *selected_idx = selected_idx.saturating_sub(1),
                             KeyCode::Down | KeyCode::Char('n') | KeyCode::Char('N') => if *selected_idx + 1 < entries.len() { *selected_idx += 1; },
-                            KeyCode::Enter => {
+                            KeyCode::Char('y') | KeyCode::Char('Y') | KeyCode::PageUp => {
+                                *selected_idx = selected_idx.saturating_sub(items_per_page);
+                            }
+                            KeyCode::Char('v') | KeyCode::Char('V') | KeyCode::PageDown => {
+                                *selected_idx = (*selected_idx + items_per_page).min(entries.len().saturating_sub(1));
+                            }
+                            KeyCode::Enter | KeyCode::Char('>') | KeyCode::Right => {
                                 if !entries.is_empty() {
                                     let selected = entries[*selected_idx].clone();
                                     if selected.0 == "." {
@@ -389,8 +434,15 @@ pub fn handle_event(event: Event, app: &mut App, session: &mut ImapSession, them
                                     }
                                 }
                             }
-                            KeyCode::Char('c') | KeyCode::Char('C') if k.modifiers.contains(KeyModifiers::CONTROL) => cancel = true,
-                            KeyCode::Char('<') | KeyCode::Left => cancel = true,
+                            KeyCode::Char('<') | KeyCode::Left => {
+                                if let Some(parent) = current_dir.parent() {
+                                    *current_dir = parent.to_path_buf();
+                                    *selected_idx = 0;
+                                    *entries = App::refresh_browser_entries(current_dir);
+                                }
+                            }
+                            KeyCode::Char('c') if k.modifiers.contains(KeyModifiers::CONTROL) => cancel = true,
+                            KeyCode::Esc => cancel = true,
                             _ => {}
                         }
                     }
