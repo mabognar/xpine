@@ -4,6 +4,37 @@ use std::time::{Duration, Instant};
 use std::path::{Path, PathBuf};
 use std::fs;
 
+// pub enum AppMode {
+//     List,
+//     Reading {
+//         text_body: String,
+//         html_body: Option<String>,
+//         attachments: Vec<(String, Vec<u8>)>,
+//     },
+//     MainMenu {
+//         selected_idx: usize,
+//     },
+//     Settings {
+//         selected_idx: usize,
+//     },
+//     FolderList {
+//         step: u8,
+//         selected_idx: usize,
+//         folders: Vec<String>,
+//     },
+//     AddressBook {
+//         selected_idx: usize,
+//         addresses: Vec<String>,
+//     },
+//     FileBrowser {
+//         current_dir: PathBuf,
+//         selected_idx: usize,
+//         entries: Vec<(String, PathBuf, bool)>,
+//         action: BrowserAction,
+//         input_buffer: String,
+//         prompting: bool,
+//     },
+// }
 pub enum AppMode {
     List,
     Reading {
@@ -25,14 +56,6 @@ pub enum AppMode {
     AddressBook {
         selected_idx: usize,
         addresses: Vec<String>,
-    },
-    FileBrowser {
-        current_dir: PathBuf,
-        selected_idx: usize,
-        entries: Vec<(String, PathBuf, bool)>,
-        action: BrowserAction,
-        input_buffer: String,
-        prompting: bool,
     },
 }
 

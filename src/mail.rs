@@ -202,13 +202,21 @@ pub fn parse_email_body(body_data: &[u8]) -> (String, Option<String>, Vec<(Strin
 
         walk(&parsed, &mut text_body, &mut html_body, &mut attachments);
 
+        // To this:
         if text_body.is_empty() && html_body.is_some() {
-            text_body = "[This message contains an HTML body. Press 'B' to view in browser.]\r\n".to_string();
+            text_body = html_body.as_ref().unwrap().replace('\n', "\r\n");
         } else if !text_body.is_empty() {
             text_body = text_body.replace('\n', "\r\n");
         } else {
             text_body = String::from_utf8_lossy(body_data).replace('\n', "\r\n");
         }
+        // if text_body.is_empty() && html_body.is_some() {
+        //     text_body = "[This message contains an HTML body. Press 'B' to view in browser.]\r\n".to_string();
+        // } else if !text_body.is_empty() {
+        //     text_body = text_body.replace('\n', "\r\n");
+        // } else {
+        //     text_body = String::from_utf8_lossy(body_data).replace('\n', "\r\n");
+        // }
     } else {
         let raw = String::from_utf8_lossy(body_data);
         text_body = raw.replace('\n', "\r\n");

@@ -73,6 +73,8 @@ impl SpellExt for Editor {
     }
 
     fn spell_check(&mut self) -> io::Result<()> {
+        let previous_state = self.menu_state;
+
         if self.dictionary.is_none() {
             self.dictionary = Some(Self::load_dictionary());
         }
@@ -105,7 +107,10 @@ impl SpellExt for Editor {
 
             let choice_result = self.prompt("Replace with: ", false)?;
 
-            self.menu_state = MenuState::Default;
+            // RESTORE STATE HERE
+            // self.menu_state = if is_composer { MenuState::EmailComposer } else { MenuState::Default };
+            self.menu_state = previous_state;
+
             let current_suggs_copy = self.current_suggestions.clone();
             self.current_suggestions.clear();
 
@@ -149,6 +154,9 @@ impl SpellExt for Editor {
             } else {
                 self.highlight_match = None;
                 self.set_status(String::from("Spell check cancelled"));
+                // RESTORE STATE ON CANCEL
+                // if is_composer { self.menu_state = MenuState::EmailComposer; }
+                self.menu_state = previous_state;
                 return Ok(());
             }
 
@@ -156,6 +164,9 @@ impl SpellExt for Editor {
         }
 
         self.set_status(format!("Spell check complete. {} corrections made.", corrections));
+        // RESTORE STATE ON FINISH
+        self.menu_state = previous_state;
+        // if is_composer { self.menu_state = MenuState::EmailComposer; }
         Ok(())
     }
 

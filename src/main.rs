@@ -76,6 +76,13 @@ fn main() {
             reader.buffer = Rope::from_str(text_body.as_str());
             reader.current_theme = theme_provider.current_theme.clone();
 
+            // Set the status message if an HTML body is present
+            if let Some(html) = html_body {
+                if !html.is_empty() {
+                    reader.set_status("Email contains HTML. Type 'B' to view in browser".to_string());
+                }
+            }
+
             let email_from = app.page_emails[app.selected_index].from.clone();
             let email_to = app.page_emails[app.selected_index].to_addr.clone();
             let email_cc = app.page_emails[app.selected_index].cc.clone();
@@ -113,13 +120,15 @@ fn main() {
                 if attachments.is_empty() {
                     let dim_c = if r_colors.is_dark { Color::DarkGrey } else { Color::Grey };
                     queue!(stdout, SetForegroundColor(dim_c), Print("None")).unwrap();
+                // To this:
                 } else {
                     for (i, (n, data)) in attachments.iter().enumerate() {
                         let size_kb = (data.len() as f32 / 1024.0).max(1.0);
                         let size_str = if size_kb < 1024.0 { format!("{:.0}K", size_kb) } else { format!("{:.1}M", size_kb / 1024.0) };
                         let att_str = format!("{}. {} ({})", i + 1, n, size_str);
 
-                        queue!(stdout, cursor::MoveTo(9, (5 + i) as u16), SetBackgroundColor(r_colors.ui_bg), SetForegroundColor(r_colors.flag_n), Print(att_str)).unwrap();
+                        // Changed r_colors.fg to r_colors.accent
+                        queue!(stdout, cursor::MoveTo(9, (5 + i) as u16), SetBackgroundColor(r_colors.ui_bg), SetForegroundColor(r_colors.accent), Print(att_str)).unwrap();
                     }
                 }
                 queue!(stdout, ResetColor).unwrap();
@@ -180,43 +189,68 @@ fn main() {
                             }
 
                             if key.code == event::KeyCode::Char('b') || key.code == event::KeyCode::Char('B') {
-                                if let Some(html) = html_body {
-                                    if !html.is_empty() {
-                                        let temp_dir = std::env::temp_dir().join("xpine_attachments");
-                                        let _ = std::fs::create_dir_all(&temp_dir);
-                                        let file_path = temp_dir.join("email_view.html");
+                                let temp_dir = std::env::temp_dir().join("xpine_attachments");
+                                let _ = std::fs::create_dir_all(&temp_dir);
 
+                                let opened = if let Some(html) = html_body {
+                                    if !html.is_empty() {
+                                        let file_path = temp_dir.join("email_view.html");
                                         if std::fs::write(&file_path, html).is_ok() {
                                             if webbrowser::open(file_path.to_str().unwrap()).is_ok() {
                                                 reader.set_status("Opened HTML version in browser.".to_string());
+                                                true
                                             } else {
-                                                reader.set_status("Failed to open browser.".to_string());
+                                                false
                                             }
                                         } else {
-                                            reader.set_status("Failed to save HTML file.".to_string());
+                                            false
                                         }
                                     } else {
-                                        reader.set_status("No HTML version available for this email.".to_string());
+                                        false
                                     }
                                 } else {
-                                    reader.set_status("No HTML version available for this email.".to_string());
+                                    false
+                                };
+
+                                if !opened {
+                                    let file_path = temp_dir.join("email_view.txt");
+                                    if std::fs::write(&file_path, text_body).is_ok() {
+                                        if webbrowser::open(file_path.to_str().unwrap()).is_ok() {
+                                            reader.set_status("Opened text version in browser.".to_string());
+                                        } else {
+                                            reader.set_status("Failed to open browser.".to_string());
+                                        }
+                                    } else {
+                                        reader.set_status("Failed to save text file.".to_string());
+                                    }
                                 }
                                 continue;
                             }
 
-                            // ---> [ File Browser Trigger ] <---
+                            // // ---> [ File Browser Trigger ] <---
+                            // if key.code == event::KeyCode::Char('s') || key.code == event::KeyCode::Char('S') {
+                            //     let current_dir = std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from("/"));
+                            //     let entries = app::App::refresh_browser_entries(&current_dir);
+                            //     app.mode = AppMode::FileBrowser {
+                            //         current_dir,
+                            //         selected_idx: 0,
+                            //         entries,
+                            //         action: app::BrowserAction::SaveEmail(text_body.clone()),
+                            //         input_buffer: String::new(),
+                            //         prompting: false,
+                            //     };
+                            //     break; // Break out of the Reading loop to hand off to FileBrowser
+                            // }
+
                             if key.code == event::KeyCode::Char('s') || key.code == event::KeyCode::Char('S') {
-                                let current_dir = std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from("/"));
-                                let entries = app::App::refresh_browser_entries(&current_dir);
-                                app.mode = AppMode::FileBrowser {
-                                    current_dir,
-                                    selected_idx: 0,
-                                    entries,
-                                    action: app::BrowserAction::SaveEmail(text_body.clone()),
-                                    input_buffer: String::new(),
-                                    prompting: false,
-                                };
-                                break; // Break out of the Reading loop to hand off to FileBrowser
+                                if let Ok(Some(path)) = reader.run_file_browser(true) {
+                                    if std::fs::write(&path, text_body.as_bytes()).is_ok() {
+                                        reader.set_status(format!("Saved to {}", path));
+                                    } else {
+                                        reader.set_status(format!("Failed to save to {}", path));
+                                    }
+                                }
+                                continue;
                             }
 
                             if let event::KeyCode::Char(c) = key.code {
@@ -258,18 +292,20 @@ fn main() {
             continue;
         }
 
-        // ---> [ Global Rendering Match ] <---
-        match &app.mode {
-            AppMode::FileBrowser { current_dir, entries, selected_idx, prompting, input_buffer, .. } => {
-                let theme = &theme_provider.theme_set.themes[&theme_provider.current_theme];
-                let colors = ui::derive_ui_colors(theme);
-                ui::draw_file_browser(&mut stdout, current_dir, entries, *selected_idx, *prompting, input_buffer, &colors).unwrap();
-            }
-            // Use a catch-all so ui::draw_app handles List, MainMenu, Settings, AddressBook, etc.
-            _ => {
-                ui::draw_app(&mut stdout, &app, &theme_provider).unwrap();
-            }
-        }
+        // // ---> [ Global Rendering Match ] <---
+        // match &app.mode {
+        //     AppMode::FileBrowser { current_dir, entries, selected_idx, prompting, input_buffer, .. } => {
+        //         let theme = &theme_provider.theme_set.themes[&theme_provider.current_theme];
+        //         let colors = ui::derive_ui_colors(theme);
+        //         ui::draw_file_browser(&mut stdout, current_dir, entries, *selected_idx, *prompting, input_buffer, &colors).unwrap();
+        //     }
+        //     // Use a catch-all so ui::draw_app handles List, MainMenu, Settings, AddressBook, etc.
+        //     _ => {
+        //         ui::draw_app(&mut stdout, &app, &theme_provider).unwrap();
+        //     }
+        // }
+
+        ui::draw_app(&mut stdout, &app, &theme_provider).unwrap();
 
         let mut timeout = if app.last_fetch_time.elapsed() >= app.auto_refresh_interval { Duration::from_millis(1) } else { app.auto_refresh_interval - app.last_fetch_time.elapsed() };
 

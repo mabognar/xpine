@@ -1,7 +1,7 @@
 use std::io;
-use crate::editor::Editor;
+use crate::editor::{Editor, MenuState}; // Ensure MenuState is imported
 use crate::ui::UiExt;
-use crate::syntax::SyntaxExt; // Provides access to self.mark_modified()
+use crate::syntax::SyntaxExt;
 
 pub trait SearchExt {
     fn where_is(&mut self) -> io::Result<()>;
@@ -10,10 +10,17 @@ pub trait SearchExt {
 
 impl SearchExt for Editor {
     fn where_is(&mut self) -> io::Result<()> {
+        let previous_state = self.menu_state;
         let prompt_text = if let Some(ref last) = self.last_search { format!("Search [{}]: ", last) } else { String::from("Search: ") };
         if let Some(mut query) = self.prompt(&prompt_text, false)? {
             if query.is_empty() {
-                if let Some(ref last) = self.last_search { query = last.clone(); } else { self.set_status(String::from("Cancelled")); return Ok(()); }
+                if let Some(ref last) = self.last_search {
+                    query = last.clone();
+                } else {
+                    self.set_status(String::from("Cancelled"));
+                    self.menu_state = previous_state;
+                    return Ok(());
+                }
             } else { self.last_search = Some(query.clone()); }
 
             let text = self.buffer.to_string();
@@ -39,14 +46,22 @@ impl SearchExt for Editor {
                 }
             }
         }
+        self.menu_state = previous_state;
         Ok(())
     }
 
     fn replace(&mut self) -> io::Result<()> {
+        let is_composer = self.menu_state == MenuState::EmailComposer;
         let prompt_text = if let Some(ref last) = self.last_search { format!("Search (to replace) [{}]: ", last) } else { String::from("Search (to replace): ") };
         if let Some(mut query) = self.prompt(&prompt_text, false)? {
             if query.is_empty() {
-                if let Some(ref last) = self.last_search { query = last.clone(); } else { self.set_status(String::from("Cancelled")); return Ok(()); }
+                if let Some(ref last) = self.last_search {
+                    query = last.clone();
+                } else {
+                    self.set_status(String::from("Cancelled"));
+                    if is_composer { self.menu_state = MenuState::EmailComposer; }
+                    return Ok(());
+                }
             } else { self.last_search = Some(query.clone()); }
 
             if let Some(replacement) = self.prompt("Replace with: ", false)? {
@@ -89,7 +104,11 @@ impl SearchExt for Editor {
                                 }
                                 _ => unreachable!()
                             }
-                        } else { self.set_status(String::from("Cancelled")); return Ok(()); }
+                        } else {
+                            self.set_status(String::from("Cancelled"));
+                            if is_composer { self.menu_state = MenuState::EmailComposer; }
+                            return Ok(());
+                        }
                     } else {
                         if current_idx > 0 && !wrapped { current_idx = 0; wrapped = true; } else { break; }
                     }
@@ -97,6 +116,7 @@ impl SearchExt for Editor {
                 if changes_made > 0 { self.set_status(format!("Replaced {} occurrences", changes_made)); } else { self.set_status(String::from("No matches found")); }
             }
         }
+        if is_composer { self.menu_state = MenuState::EmailComposer; }
         Ok(())
     }
 }

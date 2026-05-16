@@ -26,81 +26,81 @@ struct ComposeState {
     active_idx: usize,
 }
 
-fn file_browser(stdout: &mut std::io::Stdout, colors: &UiColors) -> Option<String> {
-    let mut current_dir = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("/"));
-    let mut selected_idx = 0;
-    let mut prompting = false;
-    let mut input_buffer = String::new();
-
-    loop {
-        let entries = crate::app::App::refresh_browser_entries(&current_dir);
-        if selected_idx >= entries.len() {
-            selected_idx = entries.len().saturating_sub(1);
-        }
-
-        crate::ui::draw_file_browser(stdout, &current_dir, &entries, selected_idx, prompting, &input_buffer, colors).unwrap();
-
-        if let Event::Key(k) = event::read().unwrap() {
-            if k.kind == KeyEventKind::Press {
-                if prompting {
-                    match k.code {
-                        KeyCode::Enter => {
-                            if !input_buffer.trim().is_empty() {
-                                return Some(current_dir.join(input_buffer.trim()).to_string_lossy().into_owned());
-                            } else {
-                                prompting = false;
-                            }
-                        }
-                        KeyCode::Esc => prompting = false,
-                        KeyCode::Char('c') if k.modifiers.contains(KeyModifiers::CONTROL) => prompting = false,
-                        KeyCode::Backspace => { input_buffer.pop(); }
-                        KeyCode::Char(c) if !k.modifiers.contains(KeyModifiers::CONTROL) && !k.modifiers.contains(KeyModifiers::ALT) => {
-                            input_buffer.push(c);
-                        }
-                        _ => {}
-                    }
-                } else {
-                    let (_, rows) = term_size().unwrap_or((80, 24));
-                    let items_per_page = (rows.saturating_sub(3) as usize).max(1);
-
-                    match k.code {
-                        KeyCode::Up | KeyCode::Char('p') | KeyCode::Char('P') => selected_idx = selected_idx.saturating_sub(1),
-                        KeyCode::Down | KeyCode::Char('n') | KeyCode::Char('N') => if selected_idx + 1 < entries.len() { selected_idx += 1 },
-                        KeyCode::Char('y') | KeyCode::Char('Y') | KeyCode::PageUp => {
-                            selected_idx = selected_idx.saturating_sub(items_per_page);
-                        }
-                        KeyCode::Char('v') | KeyCode::Char('V') | KeyCode::PageDown => {
-                            selected_idx = (selected_idx + items_per_page).min(entries.len().saturating_sub(1));
-                        }
-                        KeyCode::Enter | KeyCode::Char('>') | KeyCode::Right => {
-                            if !entries.is_empty() {
-                                let selected = &entries[selected_idx];
-                                if selected.0 == "." {
-                                    prompting = true;
-                                    input_buffer.clear();
-                                } else if selected.2 {
-                                    current_dir = selected.1.clone();
-                                    selected_idx = 0;
-                                } else {
-                                    return Some(selected.1.to_string_lossy().into_owned());
-                                }
-                            }
-                        }
-                        KeyCode::Char('<') | KeyCode::Left => {
-                            if let Some(parent) = current_dir.parent() {
-                                current_dir = parent.to_path_buf();
-                                selected_idx = 0;
-                            }
-                        }
-                        KeyCode::Char('c') if k.modifiers.contains(KeyModifiers::CONTROL) => return None,
-                        KeyCode::Esc => return None,
-                        _ => {}
-                    }
-                }
-            }
-        }
-    }
-}
+// fn file_browser(stdout: &mut std::io::Stdout, colors: &UiColors) -> Option<String> {
+//     let mut current_dir = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("/"));
+//     let mut selected_idx = 0;
+//     let mut prompting = false;
+//     let mut input_buffer = String::new();
+//
+//     loop {
+//         let entries = crate::app::App::refresh_browser_entries(&current_dir);
+//         if selected_idx >= entries.len() {
+//             selected_idx = entries.len().saturating_sub(1);
+//         }
+//
+//         crate::ui::draw_file_browser(stdout, &current_dir, &entries, selected_idx, prompting, &input_buffer, colors).unwrap();
+//
+//         if let Event::Key(k) = event::read().unwrap() {
+//             if k.kind == KeyEventKind::Press {
+//                 if prompting {
+//                     match k.code {
+//                         KeyCode::Enter => {
+//                             if !input_buffer.trim().is_empty() {
+//                                 return Some(current_dir.join(input_buffer.trim()).to_string_lossy().into_owned());
+//                             } else {
+//                                 prompting = false;
+//                             }
+//                         }
+//                         KeyCode::Esc => prompting = false,
+//                         KeyCode::Char('c') if k.modifiers.contains(KeyModifiers::CONTROL) => prompting = false,
+//                         KeyCode::Backspace => { input_buffer.pop(); }
+//                         KeyCode::Char(c) if !k.modifiers.contains(KeyModifiers::CONTROL) && !k.modifiers.contains(KeyModifiers::ALT) => {
+//                             input_buffer.push(c);
+//                         }
+//                         _ => {}
+//                     }
+//                 } else {
+//                     let (_, rows) = term_size().unwrap_or((80, 24));
+//                     let items_per_page = (rows.saturating_sub(3) as usize).max(1);
+//
+//                     match k.code {
+//                         KeyCode::Up | KeyCode::Char('p') | KeyCode::Char('P') => selected_idx = selected_idx.saturating_sub(1),
+//                         KeyCode::Down | KeyCode::Char('n') | KeyCode::Char('N') => if selected_idx + 1 < entries.len() { selected_idx += 1 },
+//                         KeyCode::Char('y') | KeyCode::Char('Y') | KeyCode::PageUp => {
+//                             selected_idx = selected_idx.saturating_sub(items_per_page);
+//                         }
+//                         KeyCode::Char('v') | KeyCode::Char('V') | KeyCode::PageDown => {
+//                             selected_idx = (selected_idx + items_per_page).min(entries.len().saturating_sub(1));
+//                         }
+//                         KeyCode::Enter | KeyCode::Char('>') | KeyCode::Right => {
+//                             if !entries.is_empty() {
+//                                 let selected = &entries[selected_idx];
+//                                 if selected.0 == "." {
+//                                     prompting = true;
+//                                     input_buffer.clear();
+//                                 } else if selected.2 {
+//                                     current_dir = selected.1.clone();
+//                                     selected_idx = 0;
+//                                 } else {
+//                                     return Some(selected.1.to_string_lossy().into_owned());
+//                                 }
+//                             }
+//                         }
+//                         KeyCode::Char('<') | KeyCode::Left => {
+//                             if let Some(parent) = current_dir.parent() {
+//                                 current_dir = parent.to_path_buf();
+//                                 selected_idx = 0;
+//                             }
+//                         }
+//                         KeyCode::Char('c') if k.modifiers.contains(KeyModifiers::CONTROL) => return None,
+//                         KeyCode::Esc => return None,
+//                         _ => {}
+//                     }
+//                 }
+//             }
+//         }
+//     }
+// }
 
 fn find_suggestion(input: &str, address_book: &[String]) -> Option<String> {
     if input.is_empty() { return None; }
@@ -203,7 +203,7 @@ pub fn compose_email(account: &Account, default_to: Option<&str>, default_subjec
 
         if state.attachments.is_empty() {
             let dim_c = if colors.is_dark { Color::DarkGrey } else { Color::Grey };
-            queue!(stdout, SetForegroundColor(dim_c), Print("(Press ^T to attach a file)")).unwrap();
+            queue!(stdout, SetForegroundColor(dim_c), Print("(Press ^A to attach a file)")).unwrap(); // Update to ^A
         } else {
             let att_names: Vec<String> = state.attachments.iter().enumerate().map(|(i, p)| {
                 let file_name = Path::new(p).file_name().unwrap_or_default().to_string_lossy();
@@ -216,8 +216,11 @@ pub fn compose_email(account: &Account, default_to: Option<&str>, default_subjec
         editor.draw_screen().unwrap();
 
         if state.active_idx < 4 {
+            // let m_col = (cols as usize / 6).max(1);
+            // Editor::draw_menu_line(&mut stdout, rows - 2, cols, m_col, &[("^X", " Send"),   (" ^P", " Prev"), ("^T", " Attach"), ("", ""), ("", "")], colors.ui_bg, colors.accent, colors.fg).unwrap();
+            // Editor::draw_menu_line(&mut stdout, rows - 1, cols, m_col, &[("^C", " Cancel"), ("Tab", " Next"), ("", ""), ("", ""), ("", ""), ("", "")], colors.ui_bg, colors.accent, colors.fg).unwrap();
             let m_col = (cols as usize / 6).max(1);
-            Editor::draw_menu_line(&mut stdout, rows - 2, cols, m_col, &[("^X", " Send"),   (" ^P", " Prev"), ("^T", " Attach"), ("", ""), ("", "")], colors.ui_bg, colors.accent, colors.fg).unwrap();
+            Editor::draw_menu_line(&mut stdout, rows - 2, cols, m_col, &[("^X", " Send"),   (" ^P", " Prev"), ("^A", " Attach"), ("", ""), ("", "")], colors.ui_bg, colors.accent, colors.fg).unwrap();
             Editor::draw_menu_line(&mut stdout, rows - 1, cols, m_col, &[("^C", " Cancel"), ("Tab", " Next"), ("", ""), ("", ""), ("", ""), ("", "")], colors.ui_bg, colors.accent, colors.fg).unwrap();
 
             queue!(stdout, cursor::Show).unwrap();
@@ -271,10 +274,14 @@ pub fn compose_email(account: &Account, default_to: Option<&str>, default_subjec
                         }
                     } else {
                         match key_event.code {
-                            KeyCode::Char('t') if key_event.modifiers.contains(KeyModifiers::CONTROL) => {
-                                if let Some(path) = file_browser(&mut stdout, &colors) { state.attachments.push(path); }
-                            }
-                            KeyCode::Char('p') if key_event.modifiers.contains(KeyModifiers::CONTROL) => state.active_idx = state.active_idx.saturating_sub(1),
+                            // KeyCode::Char('t') if key_event.modifiers.contains(KeyModifiers::CONTROL) => {
+                            //     if let Some(path) = file_browser(&mut stdout, &colors) { state.attachments.push(path); }
+                            // }
+                            KeyCode::Char('a') if key_event.modifiers.contains(KeyModifiers::CONTROL) => {
+                                if let Ok(Some(path)) = editor.run_file_browser(false) {
+                                    state.attachments.push(path);
+                                }
+                            }                            KeyCode::Char('p') if key_event.modifiers.contains(KeyModifiers::CONTROL) => state.active_idx = state.active_idx.saturating_sub(1),
                             KeyCode::Char('n') if key_event.modifiers.contains(KeyModifiers::CONTROL) => state.active_idx = (state.active_idx + 1).min(4),
                             KeyCode::Up | KeyCode::BackTab => state.active_idx = state.active_idx.saturating_sub(1),
 

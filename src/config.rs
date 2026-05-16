@@ -182,13 +182,15 @@ impl ConfigExt for Editor {
         if home.is_empty() {
             None
         } else {
-            let path = Path::new(&home).join(".xnano");
+            // Update to use the .xpine directory
+            let path = Path::new(&home).join(".xpine");
             let _ = fs::create_dir_all(&path);
             Some(path)
         }
     }
 
     fn initialize_themes() -> std::io::Result<()> {
+        // ... (Keep existing implementation)
         if let Some(theme_dir) = Self::get_theme_dir() {
             if fs::read_dir(&theme_dir)?.next().is_none() {
                 for file in BUNDLED_THEMES.files() {
@@ -201,10 +203,12 @@ impl ConfigExt for Editor {
     }
 
     fn get_config_path() -> Option<PathBuf> {
-        Self::get_base_dir().map(|p| p.join("xnanorc"))
+        // Save UI configuration to "settings" to avoid overwriting "xpinerc"
+        Self::get_base_dir().map(|p| p.join("settings"))
     }
 
     fn get_theme_dir() -> Option<PathBuf> {
+        // ... (Keep existing implementation)
         Self::get_base_dir().map(|p| {
             let theme_path = p.join("themes");
             let _ = fs::create_dir_all(&theme_path);
@@ -213,10 +217,11 @@ impl ConfigExt for Editor {
     }
 
     fn load_config() -> (String, bool, bool, bool) {
-        let mut theme = String::from("base16-ocean.dark");
+        // Set Default-Dark as the fallback theme on first install
+        let mut theme = String::from("Default-Dark");
         let mut line_numbers = false;
         let mut soft_wrap = false;
-        let mut sort_newest_first = false; // New variable
+        let mut sort_newest_first = false;
 
         if let Some(path) = Self::get_config_path() {
             if let Ok(content) = fs::read_to_string(path) {
@@ -227,7 +232,7 @@ impl ConfigExt for Editor {
                             "theme" => theme = parts[1].to_string(),
                             "line_numbers" => line_numbers = parts[1] == "true",
                             "soft_wrap" => soft_wrap = parts[1] == "true",
-                            "sort_newest_first" => sort_newest_first = parts[1] == "true", // Parse setting
+                            "sort_newest_first" => sort_newest_first = parts[1] == "true",
                             _ => {}
                         }
                     }
@@ -236,7 +241,7 @@ impl ConfigExt for Editor {
         }
         (theme, line_numbers, soft_wrap, sort_newest_first)
     }
-
+    
     fn save_config(&self) {
         if let Some(path) = Self::get_config_path() {
             let content = format!(

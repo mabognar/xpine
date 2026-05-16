@@ -1,4 +1,4 @@
-use crate::app::{App, AppMode, BrowserAction};
+use crate::app::{App, AppMode};
 use crate::net::{self, ImapSession};
 use crate::compose::compose_email;
 use crate::editor::Editor;
@@ -180,42 +180,18 @@ pub fn handle_event(event: Event, app: &mut App, session: &mut ImapSession, them
                             }
                         }
                         KeyCode::Char('<') | KeyCode::Left => {
-                            let separator = if app.current_folder.contains('/') { '/' }
-                            else if app.current_folder.contains('.') { '.' }
-                            else { '\0' };
-
-                            let mut go_to_folder_list = false;
-
-                            if separator != '\0' {
-                                let mut parts: Vec<&str> = app.current_folder.split(separator).collect();
-                                parts.pop(); // Remove the current sub-directory
-                                if parts.is_empty() || (parts.len() == 1 && parts[0] == "") {
-                                    go_to_folder_list = true;
-                                } else {
-                                    app.current_folder = parts.join(&separator.to_string());
-                                    app.current_page = 0;
-                                    app.restore_index_from_end = Some(0);
-                                    app.needs_fetch = true;
-                                }
-                            } else {
-                                go_to_folder_list = true;
+                            let mut fetched = Vec::new();
+                            if let Ok(mailboxes) = session.list(Some(""), Some("*")) {
+                                for mb in mailboxes.iter() { fetched.push(mb.name().to_string()); }
                             }
+                            if fetched.is_empty() { fetched.push("INBOX".to_string()); }
+                            fetched.sort();
 
-                            // If we hit the top of the directory tree, load the folder browser
-                            if go_to_folder_list {
-                                let mut fetched = Vec::new();
-                                if let Ok(mailboxes) = session.list(Some(""), Some("*")) {
-                                    for mb in mailboxes.iter() { fetched.push(mb.name().to_string()); }
-                                }
-                                if fetched.is_empty() { fetched.push("INBOX".to_string()); }
-                                fetched.sort();
+                            // Auto-select the folder we just backed out of
+                            let prev_folder = app.current_folder.clone();
+                            let idx = fetched.iter().position(|f| f == &prev_folder).unwrap_or(0);
 
-                                // Auto-select the folder we just backed out of
-                                let prev_folder = app.current_folder.clone();
-                                let idx = fetched.iter().position(|f| f == &prev_folder).unwrap_or(0);
-
-                                app.mode = AppMode::FolderList { step: 1, selected_idx: idx, folders: fetched };
-                            }
+                            app.mode = AppMode::FolderList { step: 1, selected_idx: idx, folders: fetched };
                         }
                         KeyCode::Tab => {
                             if app.accounts.len() > 1 {
@@ -383,82 +359,82 @@ pub fn handle_event(event: Event, app: &mut App, session: &mut ImapSession, them
                         _ => {}
                     }
                 }
-                AppMode::FileBrowser { current_dir, selected_idx, entries, action, input_buffer, prompting } => {
-                    let BrowserAction::SaveEmail(body) = action;
-
-                    let mut target_to_save = None;
-                    let mut cancel = false;
-
-                    if *prompting {
-                        match k.code {
-                            KeyCode::Enter => {
-                                if !input_buffer.trim().is_empty() {
-                                    target_to_save = Some(current_dir.join(input_buffer.trim()));
-                                } else {
-                                    *prompting = false;
-                                }
-                            }
-                            KeyCode::Esc => *prompting = false,
-                            KeyCode::Char('c') if k.modifiers.contains(KeyModifiers::CONTROL) => *prompting = false,
-                            KeyCode::Backspace => { input_buffer.pop(); }
-                            KeyCode::Char(c) if !k.modifiers.contains(KeyModifiers::CONTROL) && !k.modifiers.contains(KeyModifiers::ALT) => {
-                                input_buffer.push(c);
-                            }
-                            _ => {}
-                        }
-                    } else {
-                        let (_, rows) = term_size().unwrap_or((80, 24));
-                        let items_per_page = (rows.saturating_sub(3) as usize).max(1);
-
-                        match k.code {
-                            KeyCode::Up | KeyCode::Char('p') | KeyCode::Char('P') => *selected_idx = selected_idx.saturating_sub(1),
-                            KeyCode::Down | KeyCode::Char('n') | KeyCode::Char('N') => if *selected_idx + 1 < entries.len() { *selected_idx += 1; },
-                            KeyCode::Char('y') | KeyCode::Char('Y') | KeyCode::PageUp => {
-                                *selected_idx = selected_idx.saturating_sub(items_per_page);
-                            }
-                            KeyCode::Char('v') | KeyCode::Char('V') | KeyCode::PageDown => {
-                                *selected_idx = (*selected_idx + items_per_page).min(entries.len().saturating_sub(1));
-                            }
-                            KeyCode::Enter | KeyCode::Char('>') | KeyCode::Right => {
-                                if !entries.is_empty() {
-                                    let selected = entries[*selected_idx].clone();
-                                    if selected.0 == "." {
-                                        *prompting = true;
-                                        input_buffer.clear();
-                                    } else if selected.2 {
-                                        *current_dir = selected.1;
-                                        *selected_idx = 0;
-                                        *entries = App::refresh_browser_entries(current_dir);
-                                    } else {
-                                        target_to_save = Some(selected.1);
-                                    }
-                                }
-                            }
-                            KeyCode::Char('<') | KeyCode::Left => {
-                                if let Some(parent) = current_dir.parent() {
-                                    *current_dir = parent.to_path_buf();
-                                    *selected_idx = 0;
-                                    *entries = App::refresh_browser_entries(current_dir);
-                                }
-                            }
-                            KeyCode::Char('c') if k.modifiers.contains(KeyModifiers::CONTROL) => cancel = true,
-                            KeyCode::Esc => cancel = true,
-                            _ => {}
-                        }
-                    }
-
-                    if let Some(target) = target_to_save {
-                        if std::fs::write(&target, body.as_bytes()).is_ok() {
-                            theme_provider.status_message = format!("Saved to {}", target.display());
-                        } else {
-                            theme_provider.status_message = format!("Failed to save to {}", target.display());
-                        }
-                        theme_provider.status_time = Some(std::time::Instant::now());
-                        app.mode = AppMode::Reading { text_body: body.clone(), html_body: None, attachments: vec![] };
-                    } else if cancel {
-                        app.mode = AppMode::Reading { text_body: body.clone(), html_body: None, attachments: vec![] };
-                    }
-                }
+                // AppMode::FileBrowser { current_dir, selected_idx, entries, action, input_buffer, prompting } => {
+                //     let BrowserAction::SaveEmail(body) = action;
+                //
+                //     let mut target_to_save = None;
+                //     let mut cancel = false;
+                //
+                //     if *prompting {
+                //         match k.code {
+                //             KeyCode::Enter => {
+                //                 if !input_buffer.trim().is_empty() {
+                //                     target_to_save = Some(current_dir.join(input_buffer.trim()));
+                //                 } else {
+                //                     *prompting = false;
+                //                 }
+                //             }
+                //             KeyCode::Esc => *prompting = false,
+                //             KeyCode::Char('c') if k.modifiers.contains(KeyModifiers::CONTROL) => *prompting = false,
+                //             KeyCode::Backspace => { input_buffer.pop(); }
+                //             KeyCode::Char(c) if !k.modifiers.contains(KeyModifiers::CONTROL) && !k.modifiers.contains(KeyModifiers::ALT) => {
+                //                 input_buffer.push(c);
+                //             }
+                //             _ => {}
+                //         }
+                //     } else {
+                //         let (_, rows) = term_size().unwrap_or((80, 24));
+                //         let items_per_page = (rows.saturating_sub(3) as usize).max(1);
+                //
+                //         match k.code {
+                //             KeyCode::Up | KeyCode::Char('p') | KeyCode::Char('P') => *selected_idx = selected_idx.saturating_sub(1),
+                //             KeyCode::Down | KeyCode::Char('n') | KeyCode::Char('N') => if *selected_idx + 1 < entries.len() { *selected_idx += 1; },
+                //             KeyCode::Char('y') | KeyCode::Char('Y') | KeyCode::PageUp => {
+                //                 *selected_idx = selected_idx.saturating_sub(items_per_page);
+                //             }
+                //             KeyCode::Char('v') | KeyCode::Char('V') | KeyCode::PageDown => {
+                //                 *selected_idx = (*selected_idx + items_per_page).min(entries.len().saturating_sub(1));
+                //             }
+                //             KeyCode::Enter | KeyCode::Char('>') | KeyCode::Right => {
+                //                 if !entries.is_empty() {
+                //                     let selected = entries[*selected_idx].clone();
+                //                     if selected.0 == "." {
+                //                         *prompting = true;
+                //                         input_buffer.clear();
+                //                     } else if selected.2 {
+                //                         *current_dir = selected.1;
+                //                         *selected_idx = 0;
+                //                         *entries = App::refresh_browser_entries(current_dir);
+                //                     } else {
+                //                         target_to_save = Some(selected.1);
+                //                     }
+                //                 }
+                //             }
+                //             KeyCode::Char('<') | KeyCode::Left => {
+                //                 if let Some(parent) = current_dir.parent() {
+                //                     *current_dir = parent.to_path_buf();
+                //                     *selected_idx = 0;
+                //                     *entries = App::refresh_browser_entries(current_dir);
+                //                 }
+                //             }
+                //             KeyCode::Char('c') if k.modifiers.contains(KeyModifiers::CONTROL) => cancel = true,
+                //             KeyCode::Esc => cancel = true,
+                //             _ => {}
+                //         }
+                //     }
+                //
+                //     if let Some(target) = target_to_save {
+                //         if std::fs::write(&target, body.as_bytes()).is_ok() {
+                //             theme_provider.status_message = format!("Saved to {}", target.display());
+                //         } else {
+                //             theme_provider.status_message = format!("Failed to save to {}", target.display());
+                //         }
+                //         theme_provider.status_time = Some(std::time::Instant::now());
+                //         app.mode = AppMode::Reading { text_body: body.clone(), html_body: None, attachments: vec![] };
+                //     } else if cancel {
+                //         app.mode = AppMode::Reading { text_body: body.clone(), html_body: None, attachments: vec![] };
+                //     }
+                // }
                 _ => {} // Reading mode uses editor loop, handled inside main
             }
         }

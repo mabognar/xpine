@@ -17,9 +17,8 @@ use crate::theme::ThemeExt;
 use crate::syntax::SyntaxExt;
 use crate::search::SearchExt;
 
-#[derive(PartialEq)]
+#[derive(PartialEq, Clone, Copy)]
 pub enum MenuState {
-    Default,
     YesNoCancel,
     ReplaceAction,
     CancelOnly,
@@ -102,7 +101,7 @@ impl Editor {
             syntax_set: Self::init_syntax(),
             theme_set,
             is_modified: false, last_search: None,
-            menu_state: MenuState::Default,
+            menu_state: MenuState::EmailComposer,
             top_margin: 0,
             highlight_match: None, highlight_cache: HashMap::new(),
             current_theme: starting_theme,

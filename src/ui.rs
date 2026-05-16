@@ -76,7 +76,9 @@ pub trait UiExt {
     fn prompt(&mut self, prompt_text: &str, allow_browser: bool) -> io::Result<Option<String>>;
     fn prompt_yn(&mut self, prompt_text: &str) -> io::Result<Option<bool>>;
     fn prompt_replace(&mut self, prompt_text: &str) -> io::Result<Option<char>>;
-    fn run_file_browser(&mut self) -> io::Result<Option<String>>;
+    // fn run_file_browser(&mut self) -> io::Result<Option<String>>;
+    // Change this line in pub trait UiExt {
+    fn run_file_browser(&mut self, is_saving: bool) -> io::Result<Option<String>>;
     fn show_help(&mut self) -> io::Result<()>;
     fn set_status(&mut self, message: String);
     fn clear_status(&mut self);
@@ -125,7 +127,7 @@ impl UiExt for Editor {
         let dollar_bg = if is_dark { Color::Rgb { r: 180, g: 180, b: 180 } } else { Color::Rgb { r: 80, g: 80, b: 80 } };
         let dollar_fg = if is_dark { Color::Black } else { Color::White };
 
-        if self.menu_state == MenuState::EmailComposer || self.menu_state == MenuState::EmailReader {
+        if self.menu_state == MenuState::EmailComposer || self.menu_state == MenuState::EmailReader || self.top_margin > 0 {
             queue!(stdout, cursor::MoveTo(0, self.top_margin), SetBackgroundColor(default_cross_bg), terminal::Clear(ClearType::CurrentLine))?;
         } else {
             queue!(stdout, cursor::MoveTo(0, self.top_margin), SetBackgroundColor(ui_bg))?;
@@ -321,12 +323,6 @@ impl UiExt for Editor {
         let col_width = ((cols as usize) / 6).max(1);
 
         match self.menu_state {
-            // MenuState::EmailComposer => {
-            //     let menu1 = [("^X", " Send"), ("^O", " Write Out"), ("^R", " Read File"), ("^Y", " Prev Pg"), ("^K", " Cut Txt"), ("^J", " Justify")];
-            //     let menu2 = [("^C", " Cancel"), ("^W", " Where Is"), ("^V", " Next Pg"), ("^U", if self.is_justified { " Unjustify" } else { " UnCut" }), ("^T", " To Spell"), ("", "")];
-            //     Self::draw_menu_line(&mut stdout, rows - 2, cols, col_width, &menu1, ui_bg, menu_key_fg, menu_text_fg)?;
-            //     Self::draw_menu_line(&mut stdout, rows - 1, cols, col_width, &menu2, ui_bg, menu_key_fg, menu_text_fg)?;
-            // }
             MenuState::EmailComposer => {
                 if self.menu_page == 1 {
                     Self::draw_menu_line(&mut stdout, rows - 2, cols, col_width, &[("^X", " Send"),   ("^P", " Prev"), ("^Y", " Prev Pg"), ("^K", " Cut"),   ("^J", " Justify"), ("^O", " Other 1/2")], ui_bg, menu_key_fg, menu_text_fg)?;
@@ -338,13 +334,9 @@ impl UiExt for Editor {
             }
             MenuState::EmailReader => {
                 let menu1 = [("<", " Back"),  ("R", " Reply"),    ("P", " Prev"),    ("Y", " Prev Pg"),  ("A", " Add Addr"), ("S"," Save")];
-                let menu2 = [("", ""),  ("F", " Forward"), ("N", " Next"), ("V", " Next Pg"), ("1-9", " Open Att"), ("","")];
+                let menu2 = [("", ""),  ("F", " Forward"), ("N", " Next"), ("V", " Next Pg"), ("1-9", " Open Att"), ("B"," Browser")];
                 Self::draw_menu_line(&mut stdout, rows - 2, cols, col_width, &menu1, ui_bg, menu_key_fg, menu_text_fg)?;
                 Self::draw_menu_line(&mut stdout, rows - 1, cols, col_width, &menu2, ui_bg, menu_key_fg, menu_text_fg)?;
-            }
-            MenuState::Default => {
-                Self::draw_menu_line(&mut stdout, rows - 2, cols, col_width, &[("^G", " Get Help"), ("^O", " Write Out"), ("^R", " Read File"), ("^Y", " Prev Pg"), ("^K", " Cut Txt"), ("^C", " Cur Pos")], ui_bg, menu_key_fg, menu_text_fg)?;
-                Self::draw_menu_line(&mut stdout, rows - 1, cols, col_width, &[("^X", " Exit"), ("^J", " Justify"), ("^W", " Where Is"), ("^V", " Next Pg"), ("^U", if self.is_justified { " Unjustify" } else { " UnCut" }), ("^T", " To Spell")], ui_bg, menu_key_fg, menu_text_fg)?;
             }
             MenuState::YesNoCancel => {
                 Self::draw_menu_line(&mut stdout, rows - 2, cols, col_width, &[("Y", " Yes"), ("", ""), ("", ""), ("", ""), ("", ""), ("", "")], ui_bg, menu_key_fg, menu_text_fg)?;
@@ -395,6 +387,7 @@ impl UiExt for Editor {
     }
 
     fn prompt(&mut self, prompt_text: &str, allow_browser: bool) -> io::Result<Option<String>> {
+        let previous_state = self.menu_state; // Save the state
         let mut input = String::new();
         self.menu_state = if allow_browser { MenuState::PromptWithBrowser } else { MenuState::CancelOnly };
         loop {
@@ -405,11 +398,11 @@ impl UiExt for Editor {
 
                 if key.code == KeyCode::Char('c') && key.modifiers.contains(KeyModifiers::CONTROL) {
                     self.clear_status();
-                    self.menu_state = MenuState::Default;
+                    self.menu_state = previous_state; // Restore state on cancel
                     return Ok(None);
                 } else if allow_browser && key.code == KeyCode::Char('t') && key.modifiers.contains(KeyModifiers::CONTROL) {
-                    if let Ok(Some(selected_file)) = self.run_file_browser() {
-                        self.menu_state = MenuState::Default;
+                    if let Ok(Some(selected_file)) = self.run_file_browser(false) {
+                        self.menu_state = previous_state; // Restore state on success
                         self.clear_status();
                         return Ok(Some(selected_file));
                     } else {
@@ -419,7 +412,7 @@ impl UiExt for Editor {
                     match key.code {
                         KeyCode::Enter => {
                             self.clear_status();
-                            self.menu_state = MenuState::Default;
+                            self.menu_state = previous_state; // Restore state on success
                             return Ok(Some(input));
                         }
                         KeyCode::Backspace => { input.pop(); }
@@ -432,6 +425,7 @@ impl UiExt for Editor {
     }
 
     fn prompt_yn(&mut self, prompt_text: &str) -> io::Result<Option<bool>> {
+        let previous_state = self.menu_state; // Save the state
         self.menu_state = MenuState::YesNoCancel;
         self.set_status(String::from(prompt_text));
         self.draw_screen()?;
@@ -441,12 +435,12 @@ impl UiExt for Editor {
                 if key.kind != event::KeyEventKind::Press { continue; }
                 if key.code == KeyCode::Char('c') && key.modifiers.contains(KeyModifiers::CONTROL) {
                     self.clear_status();
-                    self.menu_state = MenuState::Default;
+                    self.menu_state = previous_state; // Restore state on cancel
                     return Ok(None);
                 }
                 match key.code {
-                    KeyCode::Char('y') | KeyCode::Char('Y') => { self.clear_status(); self.menu_state = MenuState::Default; return Ok(Some(true)); }
-                    KeyCode::Char('n') | KeyCode::Char('N') => { self.clear_status(); self.menu_state = MenuState::Default; return Ok(Some(false)); }
+                    KeyCode::Char('y') | KeyCode::Char('Y') => { self.clear_status(); self.menu_state = previous_state; return Ok(Some(true)); }
+                    KeyCode::Char('n') | KeyCode::Char('N') => { self.clear_status(); self.menu_state = previous_state; return Ok(Some(false)); }
                     _ => {}
                 }
             }
@@ -454,6 +448,7 @@ impl UiExt for Editor {
     }
 
     fn prompt_replace(&mut self, prompt_text: &str) -> io::Result<Option<char>> {
+        let previous_state = self.menu_state; // Save the state
         self.menu_state = MenuState::ReplaceAction;
         self.set_status(String::from(prompt_text));
         self.draw_screen()?;
@@ -463,147 +458,155 @@ impl UiExt for Editor {
                 if key.kind != event::KeyEventKind::Press { continue; }
                 if key.code == KeyCode::Char('c') && key.modifiers.contains(KeyModifiers::CONTROL) {
                     self.clear_status();
-                    self.menu_state = MenuState::Default;
+                    self.menu_state = previous_state; // Restore state on cancel
                     return Ok(None);
                 }
                 match key.code {
-                    KeyCode::Char('y') | KeyCode::Char('Y') => { self.clear_status(); self.menu_state = MenuState::Default; return Ok(Some('y')); }
-                    KeyCode::Char('n') | KeyCode::Char('N') => { self.clear_status(); self.menu_state = MenuState::Default; return Ok(Some('n')); }
-                    KeyCode::Char('a') | KeyCode::Char('A') => { self.clear_status(); self.menu_state = MenuState::Default; return Ok(Some('a')); }
+                    KeyCode::Char('y') | KeyCode::Char('Y') => { self.clear_status(); self.menu_state = previous_state; return Ok(Some('y')); }
+                    KeyCode::Char('n') | KeyCode::Char('N') => { self.clear_status(); self.menu_state = previous_state; return Ok(Some('n')); }
+                    KeyCode::Char('a') | KeyCode::Char('A') => { self.clear_status(); self.menu_state = previous_state; return Ok(Some('a')); }
                     _ => {}
                 }
             }
         }
     }
 
-    // fn run_file_browser(&mut self) -> io::Result<Option<String>> {
-    //     Ok(None)
-    // }
-    fn run_file_browser(&mut self) -> io::Result<Option<String>> {
+    fn run_file_browser(&mut self, is_saving: bool) -> io::Result<Option<String>> {
         let mut current_dir = env::current_dir().unwrap_or_else(|_| PathBuf::from("/"));
         let mut selected_idx = 0;
-        let mut stdout = io::stdout();
+        let mut scroll_offset = 0;
+        let mut error_msg = String::new(); // State variable for file not found errors
 
         loop {
-            let mut entries = vec![];
+            let mut stdout = stdout();
+            let (cols, rows) = terminal::size()?;
 
-            // Add the current directory "." option to trigger the filename prompt
-            entries.push((".".to_string(), current_dir.clone(), true));
+            let theme = &self.theme_set.themes[&self.current_theme];
+            let ui_colors = derive_ui_colors(theme);
+            let ui_bg = ui_colors.ui_bg;
+            let title_fg = ui_colors.fg;
+            let menu_key_fg = ui_colors.accent;
 
-            if current_dir.parent().is_some() {
-                entries.push(("..".to_string(), current_dir.parent().unwrap().to_path_buf(), true));
-            }
+            let mut entries = Vec::new();
+            entries.push((".".to_string(), true));
+            if current_dir.parent().is_some() { entries.push(("..".to_string(), true)); }
 
             if let Ok(read_dir) = fs::read_dir(&current_dir) {
-                let mut dirs = vec![];
-                let mut files = vec![];
-                let mut dot_dirs = vec![];
-                let mut dot_files = vec![];
+                let mut dirs = Vec::new();
+                let mut files = Vec::new();
+                let mut dot_dirs = Vec::new();
+                let mut dot_files = Vec::new();
 
                 for entry in read_dir.flatten() {
-                    let path = entry.path();
                     let name = entry.file_name().to_string_lossy().into_owned();
-                    let is_dir = path.is_dir();
+                    let is_dir = entry.file_type().map(|t| t.is_dir()).unwrap_or(false);
                     let is_dot = name.starts_with('.');
 
                     if is_dir {
-                        if is_dot { dot_dirs.push((name, path, true)); } else { dirs.push((name, path, true)); }
+                        if is_dot { dot_dirs.push((name, is_dir)); } else { dirs.push((name, is_dir)); }
                     } else {
-                        if is_dot { dot_files.push((name, path, false)); } else { files.push((name, path, false)); }
+                        if is_dot { dot_files.push((name, is_dir)); } else { files.push((name, is_dir)); }
                     }
                 }
 
-                // Match our preferred sorting layout
                 dirs.sort_by(|a, b| a.0.to_lowercase().cmp(&b.0.to_lowercase()));
                 files.sort_by(|a, b| a.0.to_lowercase().cmp(&b.0.to_lowercase()));
                 dot_dirs.sort_by(|a, b| a.0.to_lowercase().cmp(&b.0.to_lowercase()));
                 dot_files.sort_by(|a, b| a.0.to_lowercase().cmp(&b.0.to_lowercase()));
 
-                entries.extend(dirs);
-                entries.extend(files);
-                entries.extend(dot_dirs);
-                entries.extend(dot_files);
+                entries.extend(dirs); entries.extend(files); entries.extend(dot_dirs); entries.extend(dot_files);
             }
 
-            if selected_idx >= entries.len() {
-                selected_idx = entries.len().saturating_sub(1);
+            if selected_idx >= entries.len() { selected_idx = entries.len().saturating_sub(1); }
+
+            queue!(stdout, SetBackgroundColor(ui_bg), terminal::Clear(ClearType::All))?;
+            queue!(stdout, cursor::MoveTo(0, 0), SetForegroundColor(title_fg), Print(format!("   xnano File Browser: {}", current_dir.display())))?;
+
+            // Draw the error message right below the title if it exists
+            if !error_msg.is_empty() {
+                queue!(stdout, cursor::MoveTo(0, 1), SetBackgroundColor(ui_bg), SetForegroundColor(Color::Red), Print(format!("   {}", error_msg)))?;
             }
 
-            // Derive UI theme colors
-            let theme = &self.theme_set.themes[&self.current_theme];
-            let is_dark = Self::is_dark_theme(theme);
-            let raw_bg = theme.settings.background.unwrap_or(syntect::highlighting::Color { r: 0, g: 0, b: 0, a: 255 });
-            let ui_bg = Self::derive_ui_color(raw_bg, is_dark);
-            let menu_key_fg = if is_dark { Color::Rgb { r: 0, g: 150, b: 200 } } else { Color::Rgb { r: 0, g: 100, b: 200 } };
-            let menu_text_fg = if is_dark { Color::Reset } else { Color::Black };
+            let visible_rows = (rows.saturating_sub(4)) as usize;
+            let visible_rows_safe = visible_rows.max(1);
 
-            execute!(stdout, SetBackgroundColor(Color::Rgb { r: raw_bg.r, g: raw_bg.g, b: raw_bg.b }), terminal::Clear(ClearType::All), cursor::MoveTo(0, 0))?;
+            if selected_idx < scroll_offset {
+                scroll_offset = selected_idx;
+            } else if selected_idx >= scroll_offset + visible_rows_safe {
+                scroll_offset = selected_idx - visible_rows_safe + 1;
+            }
 
-            let title = format!(" --- File Browser: {} ", current_dir.display());
-            let (cols, rows) = terminal::size()?;
-            let pad_len = (cols as usize).saturating_sub(title.chars().count());
+            if scroll_offset + visible_rows_safe > entries.len() {
+                scroll_offset = entries.len().saturating_sub(visible_rows_safe);
+            }
 
-            queue!(
-                stdout, SetBackgroundColor(ui_bg), SetForegroundColor(menu_key_fg),
-                Print(title), Print(" ".repeat(pad_len)), SetForegroundColor(Color::Reset)
-            )?;
+            let start_idx = scroll_offset;
 
-            let items_per_page = (rows.saturating_sub(3) as usize).max(1);
-            let start_idx = if selected_idx >= items_per_page { selected_idx - items_per_page + 1 } else { 0 };
+            for i in 0..visible_rows_safe {
+                if start_idx + i < entries.len() {
+                    let (name, is_dir) = &entries[start_idx + i];
+                    let prefix = if *is_dir { "[DIR] " } else { "      " };
+                    let display_str = format!("{}{}", prefix, name);
 
-            for i in 0..items_per_page {
-                let actual_idx = start_idx + i;
-                if actual_idx < entries.len() {
-                    let entry = &entries[actual_idx];
-                    let prefix = if entry.2 { "[DIR]  " } else { "       " };
-                    let mut display_str = format!("{}{}", prefix, entry.0);
-                    if display_str.chars().count() > cols as usize {
-                        display_str = display_str.chars().take((cols as usize).saturating_sub(3)).collect::<String>();
-                    }
-
-                    execute!(stdout, cursor::MoveTo(0, (i + 1) as u16))?;
-                    if actual_idx == selected_idx {
-                        queue!(stdout, SetBackgroundColor(ui_bg), SetForegroundColor(menu_text_fg), Print(display_str), SetForegroundColor(Color::Reset), SetBackgroundColor(Color::Reset))?;
+                    if start_idx + i == selected_idx {
+                        queue!(stdout, cursor::MoveTo(0, i as u16 + 2), SetBackgroundColor(ui_colors.selected_bg), SetForegroundColor(Color::White), Print(&display_str))?;
                     } else {
-                        let fg = if entry.2 { menu_key_fg } else { menu_text_fg };
-                        queue!(stdout, SetBackgroundColor(Color::Rgb { r: raw_bg.r, g: raw_bg.g, b: raw_bg.b }), SetForegroundColor(fg), Print(display_str), SetForegroundColor(Color::Reset))?;
+                        let fg_color = if *is_dir { menu_key_fg } else { title_fg };
+                        queue!(stdout, cursor::MoveTo(0, i as u16 + 2), SetBackgroundColor(ui_bg), SetForegroundColor(fg_color), Print(&display_str))?;
                     }
                 }
             }
 
             let m_col = (cols as usize / 6).max(1);
-            Self::draw_menu_line(&mut stdout, rows - 2, cols, m_col, &[("Up/Dn", " Nav"), ("Enter", " Select"), ("", ""), ("", ""), ("", ""), ("", "")], ui_bg, menu_key_fg, menu_text_fg)?;
-            Self::draw_menu_line(&mut stdout, rows - 1, cols, m_col, &[("^C", " Cancel"), ("", ""), ("", ""), ("", ""), ("", ""), ("", "")], ui_bg, menu_key_fg, menu_text_fg)?;
+            Self::draw_menu_line(&mut stdout, rows - 2, cols, m_col, &[("Up/Dn", " Navigate"), ("PgUp/Dn", " Page"), ("Enter", " Select"), ("", ""), ("", ""), ("", "")], ui_bg, menu_key_fg, title_fg)?;
+            Self::draw_menu_line(&mut stdout, rows - 1, cols, m_col, &[("^C", " Cancel"), ("", ""), ("", ""), ("", ""), ("", ""), ("", "")], ui_bg, menu_key_fg, title_fg)?;
+
             stdout.flush()?;
 
-            if let Event::Key(k) = event::read()? {
-                if k.kind == event::KeyEventKind::Press {
-                    match k.code {
-                        KeyCode::Up => selected_idx = selected_idx.saturating_sub(1),
-                        KeyCode::Down => if selected_idx + 1 < entries.len() { selected_idx += 1 },
-                        KeyCode::Enter => {
-                            if !entries.is_empty() {
-                                let selected = &entries[selected_idx];
-                                if selected.0 == "." {
-                                    // When "." is selected, prompt for a filename using the built-in UI
-                                    if let Ok(Some(filename)) = self.prompt("Save as: ", false) {
-                                        if !filename.trim().is_empty() {
-                                            let target = current_dir.join(filename.trim());
-                                            return Ok(Some(target.to_string_lossy().into_owned()));
+            if let Event::Key(key) = event::read()? {
+                error_msg.clear(); // Clear the error on the next keystroke
+                match key.code {
+                    KeyCode::Up | KeyCode::Char('p') | KeyCode::Char('P') => { selected_idx = selected_idx.saturating_sub(1); },
+                    KeyCode::Down | KeyCode::Char('n') | KeyCode::Char('N') => { if selected_idx + 1 < entries.len() { selected_idx += 1; } },
+                    KeyCode::PageUp | KeyCode::Char('y') | KeyCode::Char('Y') => { selected_idx = selected_idx.saturating_sub(visible_rows_safe); },
+                    KeyCode::PageDown | KeyCode::Char('v') | KeyCode::Char('V') => { selected_idx = (selected_idx + visible_rows_safe).min(entries.len().saturating_sub(1)); },
+                    KeyCode::Home => { selected_idx = 0; scroll_offset = 0; },
+                    KeyCode::End => { selected_idx = entries.len().saturating_sub(1); },
+                    KeyCode::Enter => {
+                        if !entries.is_empty() {
+                            let selected = &entries[selected_idx];
+                            if selected.0 == "." {
+                                let prompt_str = if is_saving { "Save as: " } else { "Attach file: " };
+                                if let Ok(Some(filename)) = self.prompt(prompt_str, false) {
+                                    if !filename.trim().is_empty() {
+                                        let target_path = current_dir.join(filename.trim());
+                                        if !is_saving && !target_path.exists() {
+                                            error_msg = format!("File '{}' does not exist in this directory.", filename.trim());
+                                        } else {
+                                            return Ok(Some(target_path.to_string_lossy().into_owned()));
                                         }
                                     }
-                                } else if selected.2 {
-                                    current_dir = selected.1.clone();
-                                    selected_idx = 0;
-                                } else {
-                                    return Ok(Some(selected.1.to_string_lossy().into_owned()));
                                 }
+                            } else if selected.0 == ".." {
+                                if let Some(parent) = current_dir.parent() {
+                                    current_dir = parent.to_path_buf();
+                                    selected_idx = 0;
+                                    scroll_offset = 0;
+                                }
+                            } else if selected.1 {
+                                current_dir = current_dir.join(&selected.0);
+                                selected_idx = 0;
+                                scroll_offset = 0;
+                            } else {
+                                return Ok(Some(current_dir.join(&selected.0).to_string_lossy().into_owned()));
                             }
                         }
-                        KeyCode::Char('c') if k.modifiers.contains(KeyModifiers::CONTROL) => return Ok(None),
-                        KeyCode::Esc => return Ok(None),
-                        _ => {}
-                    }
+                    },
+                    KeyCode::Char('c') | KeyCode::Char('C') => {
+                        if key.modifiers.contains(KeyModifiers::CONTROL) { return Ok(None); }
+                    },
+                    KeyCode::Esc => { return Ok(None); },
+                    _ => {}
                 }
             }
         }
@@ -848,65 +851,65 @@ pub fn draw_app(stdout: &mut std::io::Stdout, app: &App, theme_provider: &Editor
     Ok(())
 }
 
-pub fn draw_file_browser(
-    stdout: &mut std::io::Stdout,
-    current_dir: &std::path::Path,
-    entries: &[(String, std::path::PathBuf, bool)],
-    selected_idx: usize,
-    prompting: bool,
-    input_buffer: &str,
-    colors: &UiColors
-) -> std::io::Result<()> {
-    use crossterm::{cursor, execute, queue, style::{Print, ResetColor, SetBackgroundColor, SetForegroundColor}, terminal::{Clear, ClearType, size as term_size}};
-    use crate::editor::Editor;
-
-    let (cols, rows) = term_size()?;
-
-    execute!(stdout, SetBackgroundColor(colors.bg), Clear(ClearType::All), cursor::MoveTo(0, 0))?;
-
-    let title = format!(" --- File Browser: {} ", current_dir.display());
-    let pad_len = (cols as usize).saturating_sub(title.chars().count());
-
-    queue!(
-        stdout, SetBackgroundColor(colors.ui_bg), SetForegroundColor(colors.accent),
-        Print(title), Print(" ".repeat(pad_len)), ResetColor
-    )?;
-
-    let items_per_page = (rows.saturating_sub(3) as usize).max(1);
-    let start_idx = if selected_idx >= items_per_page { selected_idx - items_per_page + 1 } else { 0 };
-
-    for i in 0..items_per_page {
-        let actual_idx = start_idx + i;
-        if actual_idx < entries.len() {
-            let entry = &entries[actual_idx];
-            let prefix = if entry.2 { "[DIR]  " } else { "       " };
-            let mut display_str = format!("{}{}", prefix, entry.0);
-            if display_str.chars().count() > cols as usize {
-                display_str = display_str.chars().take((cols as usize).saturating_sub(3)).collect::<String>();
-            }
-
-            execute!(stdout, cursor::MoveTo(0, (i + 1) as u16))?;
-            if actual_idx == selected_idx {
-                queue!(stdout, SetBackgroundColor(colors.ui_bg), SetForegroundColor(colors.fg), Print(display_str), ResetColor)?;
-            } else {
-                let fg = if entry.2 { colors.accent } else { colors.fg };
-                queue!(stdout, SetBackgroundColor(colors.bg), SetForegroundColor(fg), Print(display_str), ResetColor)?;
-            }
-        }
-    }
-
-    if prompting {
-        execute!(
-            stdout, cursor::MoveTo(0, rows - 1), SetBackgroundColor(colors.ui_bg),
-            Clear(ClearType::UntilNewLine), SetForegroundColor(colors.accent),
-            Print(" File name: "), SetForegroundColor(colors.fg),
-            Print(input_buffer), ResetColor
-        )?;
-    } else {
-        let m_col = (cols as usize / 6).max(1);
-        Editor::draw_menu_line(stdout, rows - 2, cols, m_col, &[(" >", " Select"),  ("P", " Prev"), ("Y", " Prev Pg"), ("", ""), ("", ""), ("", "")], colors.ui_bg, colors.accent, colors.fg)?;
-        Editor::draw_menu_line(stdout, rows - 1, cols, m_col, &[("^C", " Cancel"), ("N", " Next"), ("V", " Next Pg"), ("", ""), ("", ""), ("", "")], colors.ui_bg, colors.accent, colors.fg)?;
-    }
-
-    stdout.flush()
-}
+// pub fn draw_file_browser(
+//     stdout: &mut std::io::Stdout,
+//     current_dir: &std::path::Path,
+//     entries: &[(String, std::path::PathBuf, bool)],
+//     selected_idx: usize,
+//     prompting: bool,
+//     input_buffer: &str,
+//     colors: &UiColors
+// ) -> std::io::Result<()> {
+//     use crossterm::{cursor, execute, queue, style::{Print, ResetColor, SetBackgroundColor, SetForegroundColor}, terminal::{Clear, ClearType, size as term_size}};
+//     use crate::editor::Editor;
+//
+//     let (cols, rows) = term_size()?;
+//
+//     execute!(stdout, SetBackgroundColor(colors.bg), Clear(ClearType::All), cursor::MoveTo(0, 0))?;
+//
+//     let title = format!(" --- File Browser: {} ", current_dir.display());
+//     let pad_len = (cols as usize).saturating_sub(title.chars().count());
+//
+//     queue!(
+//         stdout, SetBackgroundColor(colors.ui_bg), SetForegroundColor(colors.accent),
+//         Print(title), Print(" ".repeat(pad_len)), ResetColor
+//     )?;
+//
+//     let items_per_page = (rows.saturating_sub(3) as usize).max(1);
+//     let start_idx = if selected_idx >= items_per_page { selected_idx - items_per_page + 1 } else { 0 };
+//
+//     for i in 0..items_per_page {
+//         let actual_idx = start_idx + i;
+//         if actual_idx < entries.len() {
+//             let entry = &entries[actual_idx];
+//             let prefix = if entry.2 { "[DIR]  " } else { "       " };
+//             let mut display_str = format!("{}{}", prefix, entry.0);
+//             if display_str.chars().count() > cols as usize {
+//                 display_str = display_str.chars().take((cols as usize).saturating_sub(3)).collect::<String>();
+//             }
+//
+//             execute!(stdout, cursor::MoveTo(0, (i + 1) as u16))?;
+//             if actual_idx == selected_idx {
+//                 queue!(stdout, SetBackgroundColor(colors.ui_bg), SetForegroundColor(colors.fg), Print(display_str), ResetColor)?;
+//             } else {
+//                 let fg = if entry.2 { colors.accent } else { colors.fg };
+//                 queue!(stdout, SetBackgroundColor(colors.bg), SetForegroundColor(fg), Print(display_str), ResetColor)?;
+//             }
+//         }
+//     }
+//
+//     if prompting {
+//         execute!(
+//             stdout, cursor::MoveTo(0, rows - 1), SetBackgroundColor(colors.ui_bg),
+//             Clear(ClearType::UntilNewLine), SetForegroundColor(colors.accent),
+//             Print(" File name: "), SetForegroundColor(colors.fg),
+//             Print(input_buffer), ResetColor
+//         )?;
+//     } else {
+//         let m_col = (cols as usize / 6).max(1);
+//         Editor::draw_menu_line(stdout, rows - 2, cols, m_col, &[(" >", " Select"),  ("P", " Prev"), ("Y", " Prev Pg"), ("", ""), ("", ""), ("", "")], colors.ui_bg, colors.accent, colors.fg)?;
+//         Editor::draw_menu_line(stdout, rows - 1, cols, m_col, &[("^C", " Cancel"), ("N", " Next"), ("V", " Next Pg"), ("", ""), ("", ""), ("", "")], colors.ui_bg, colors.accent, colors.fg)?;
+//     }
+//
+//     stdout.flush()
+// }
