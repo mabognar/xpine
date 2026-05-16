@@ -326,7 +326,8 @@ impl UiExt for Editor {
             MenuState::EmailComposer => {
                 if self.menu_page == 1 {
                     Self::draw_menu_line(&mut stdout, rows - 2, cols, col_width, &[("^X", " Send"),   ("^P", " Prev"), ("^Y", " Prev Pg"), ("^K", " Cut"),   ("^J", " Justify"), ("^O", " Other 1/2")], ui_bg, menu_key_fg, menu_text_fg)?;
-                    Self::draw_menu_line(&mut stdout, rows - 1, cols, col_width, &[("^C", " Cancel"), ("^N", " Next"), ("^V", " Next Pg"), ("^U", " UnCut"), ("",""),            ("^G", " Get Help")], ui_bg, menu_key_fg, menu_text_fg)?;
+
+                    Self::draw_menu_line(&mut stdout, rows - 1, cols, col_width, &[("^C", " Cancel"), ("^N", " Next"), ("^V", " Next Pg"), ("^U", " UnCut"), ("^A", " Attach"),   ("^G", " Get Help")], ui_bg, menu_key_fg, menu_text_fg)?;
                 } else {
                     Self::draw_menu_line(&mut stdout, rows - 2, cols, col_width, &[("^R", " Read File"), ("^T", " To Spell"), ("", ""), ("", ""),  ("",""), ("^O", " Other 2/2")], ui_bg, menu_key_fg, menu_text_fg)?;
                     Self::draw_menu_line(&mut stdout, rows - 1, cols, col_width, &[("^W", " Where is"), ("Alt-A", " Mark"), ("", ""), ("", ""), ("", ""), ("", "")], ui_bg, menu_key_fg, menu_text_fg)?;

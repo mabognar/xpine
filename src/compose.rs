@@ -26,82 +26,6 @@ struct ComposeState {
     active_idx: usize,
 }
 
-// fn file_browser(stdout: &mut std::io::Stdout, colors: &UiColors) -> Option<String> {
-//     let mut current_dir = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("/"));
-//     let mut selected_idx = 0;
-//     let mut prompting = false;
-//     let mut input_buffer = String::new();
-//
-//     loop {
-//         let entries = crate::app::App::refresh_browser_entries(&current_dir);
-//         if selected_idx >= entries.len() {
-//             selected_idx = entries.len().saturating_sub(1);
-//         }
-//
-//         crate::ui::draw_file_browser(stdout, &current_dir, &entries, selected_idx, prompting, &input_buffer, colors).unwrap();
-//
-//         if let Event::Key(k) = event::read().unwrap() {
-//             if k.kind == KeyEventKind::Press {
-//                 if prompting {
-//                     match k.code {
-//                         KeyCode::Enter => {
-//                             if !input_buffer.trim().is_empty() {
-//                                 return Some(current_dir.join(input_buffer.trim()).to_string_lossy().into_owned());
-//                             } else {
-//                                 prompting = false;
-//                             }
-//                         }
-//                         KeyCode::Esc => prompting = false,
-//                         KeyCode::Char('c') if k.modifiers.contains(KeyModifiers::CONTROL) => prompting = false,
-//                         KeyCode::Backspace => { input_buffer.pop(); }
-//                         KeyCode::Char(c) if !k.modifiers.contains(KeyModifiers::CONTROL) && !k.modifiers.contains(KeyModifiers::ALT) => {
-//                             input_buffer.push(c);
-//                         }
-//                         _ => {}
-//                     }
-//                 } else {
-//                     let (_, rows) = term_size().unwrap_or((80, 24));
-//                     let items_per_page = (rows.saturating_sub(3) as usize).max(1);
-//
-//                     match k.code {
-//                         KeyCode::Up | KeyCode::Char('p') | KeyCode::Char('P') => selected_idx = selected_idx.saturating_sub(1),
-//                         KeyCode::Down | KeyCode::Char('n') | KeyCode::Char('N') => if selected_idx + 1 < entries.len() { selected_idx += 1 },
-//                         KeyCode::Char('y') | KeyCode::Char('Y') | KeyCode::PageUp => {
-//                             selected_idx = selected_idx.saturating_sub(items_per_page);
-//                         }
-//                         KeyCode::Char('v') | KeyCode::Char('V') | KeyCode::PageDown => {
-//                             selected_idx = (selected_idx + items_per_page).min(entries.len().saturating_sub(1));
-//                         }
-//                         KeyCode::Enter | KeyCode::Char('>') | KeyCode::Right => {
-//                             if !entries.is_empty() {
-//                                 let selected = &entries[selected_idx];
-//                                 if selected.0 == "." {
-//                                     prompting = true;
-//                                     input_buffer.clear();
-//                                 } else if selected.2 {
-//                                     current_dir = selected.1.clone();
-//                                     selected_idx = 0;
-//                                 } else {
-//                                     return Some(selected.1.to_string_lossy().into_owned());
-//                                 }
-//                             }
-//                         }
-//                         KeyCode::Char('<') | KeyCode::Left => {
-//                             if let Some(parent) = current_dir.parent() {
-//                                 current_dir = parent.to_path_buf();
-//                                 selected_idx = 0;
-//                             }
-//                         }
-//                         KeyCode::Char('c') if k.modifiers.contains(KeyModifiers::CONTROL) => return None,
-//                         KeyCode::Esc => return None,
-//                         _ => {}
-//                     }
-//                 }
-//             }
-//         }
-//     }
-// }
-
 fn find_suggestion(input: &str, address_book: &[String]) -> Option<String> {
     if input.is_empty() { return None; }
 
@@ -201,15 +125,35 @@ pub fn compose_email(account: &Account, default_to: Option<&str>, default_subjec
 
         queue!(stdout, cursor::MoveTo(0, 5), SetBackgroundColor(colors.ui_bg), SetForegroundColor(colors.accent), Print(" Attach: "), SetForegroundColor(colors.fg)).unwrap();
 
+        // if state.attachments.is_empty() {
+        //     let dim_c = if colors.is_dark { Color::DarkGrey } else { Color::Grey };
+        //     queue!(stdout, SetForegroundColor(dim_c), Print("(Press ^A to attach a file)")).unwrap(); // Update to ^A
+        // } else {
+        //     let att_names: Vec<String> = state.attachments.iter().enumerate().map(|(i, p)| {
+        //         let file_name = Path::new(p).file_name().unwrap_or_default().to_string_lossy();
+        //         format!("{}. {}", i + 1, file_name)
+        //     }).collect();
+        //     queue!(stdout, Print(att_names.join("   "))).unwrap();
+        // }
+        // queue!(stdout, ResetColor).unwrap();
+
         if state.attachments.is_empty() {
             let dim_c = if colors.is_dark { Color::DarkGrey } else { Color::Grey };
             queue!(stdout, SetForegroundColor(dim_c), Print("(Press ^A to attach a file)")).unwrap(); // Update to ^A
         } else {
+            // Apply the viewer's red attachment color
+            let att_color = if colors.is_dark {
+                Color::Rgb { r: 255, g: 80, b: 80 }
+            } else {
+                Color::Rgb { r: 220, g: 0, b: 0 }
+            };
+
             let att_names: Vec<String> = state.attachments.iter().enumerate().map(|(i, p)| {
                 let file_name = Path::new(p).file_name().unwrap_or_default().to_string_lossy();
                 format!("{}. {}", i + 1, file_name)
             }).collect();
-            queue!(stdout, Print(att_names.join("   "))).unwrap();
+
+            queue!(stdout, SetForegroundColor(att_color), Print(att_names.join("   "))).unwrap();
         }
         queue!(stdout, ResetColor).unwrap();
 
@@ -254,6 +198,12 @@ pub fn compose_email(account: &Account, default_to: Option<&str>, default_subjec
                                 continue;
                             }
                         }
+                        if key_event.code == KeyCode::Char('a') {
+                            if let Ok(Some(path)) = editor.run_file_browser(false) {
+                                state.attachments.push(path);
+                            }
+                            continue;
+                        }
                     }
 
                     if state.active_idx == 4 {
@@ -274,19 +224,10 @@ pub fn compose_email(account: &Account, default_to: Option<&str>, default_subjec
                         }
                     } else {
                         match key_event.code {
-                            // KeyCode::Char('t') if key_event.modifiers.contains(KeyModifiers::CONTROL) => {
-                            //     if let Some(path) = file_browser(&mut stdout, &colors) { state.attachments.push(path); }
-                            // }
-                            KeyCode::Char('a') if key_event.modifiers.contains(KeyModifiers::CONTROL) => {
-                                if let Ok(Some(path)) = editor.run_file_browser(false) {
-                                    state.attachments.push(path);
-                                }
-                            }                            KeyCode::Char('p') if key_event.modifiers.contains(KeyModifiers::CONTROL) => state.active_idx = state.active_idx.saturating_sub(1),
+                            KeyCode::Char('p') if key_event.modifiers.contains(KeyModifiers::CONTROL) => state.active_idx = state.active_idx.saturating_sub(1),
                             KeyCode::Char('n') if key_event.modifiers.contains(KeyModifiers::CONTROL) => state.active_idx = (state.active_idx + 1).min(4),
                             KeyCode::Up | KeyCode::BackTab => state.active_idx = state.active_idx.saturating_sub(1),
-
                             KeyCode::Down => { state.active_idx = (state.active_idx + 1).min(4); }
-
                             KeyCode::Tab | KeyCode::Enter => {
                                 if state.active_idx < 3 {
                                     let target = match state.active_idx {
@@ -300,7 +241,6 @@ pub fn compose_email(account: &Account, default_to: Option<&str>, default_subjec
                                 }
                                 state.active_idx = (state.active_idx + 1).min(4);
                             }
-
                             KeyCode::Backspace => {
                                 let target = match state.active_idx { 0 => &mut state.to, 1 => &mut state.cc, 2 => &mut state.bcc, 3 => &mut state.subject, _ => unreachable!() };
                                 target.pop();
