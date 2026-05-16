@@ -120,15 +120,19 @@ fn main() {
                 if attachments.is_empty() {
                     let dim_c = if r_colors.is_dark { Color::DarkGrey } else { Color::Grey };
                     queue!(stdout, SetForegroundColor(dim_c), Print("None")).unwrap();
-                // To this:
                 } else {
+                    let att_color = if r_colors.is_dark {
+                        Color::Rgb { r: 255, g: 80, b: 80 }
+                    } else {
+                        Color::Rgb { r: 220, g: 0, b: 0 }
+                    };
+
                     for (i, (n, data)) in attachments.iter().enumerate() {
                         let size_kb = (data.len() as f32 / 1024.0).max(1.0);
                         let size_str = if size_kb < 1024.0 { format!("{:.0}K", size_kb) } else { format!("{:.1}M", size_kb / 1024.0) };
                         let att_str = format!("{}. {} ({})", i + 1, n, size_str);
 
-                        // Changed r_colors.fg to r_colors.accent
-                        queue!(stdout, cursor::MoveTo(9, (5 + i) as u16), SetBackgroundColor(r_colors.ui_bg), SetForegroundColor(r_colors.accent), Print(att_str)).unwrap();
+                        queue!(stdout, cursor::MoveTo(9, (5 + i) as u16), SetBackgroundColor(r_colors.ui_bg), SetForegroundColor(att_color), Print(att_str)).unwrap();
                     }
                 }
                 queue!(stdout, ResetColor).unwrap();
