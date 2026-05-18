@@ -57,13 +57,50 @@ pub fn handle_event(event: Event, app: &mut App, session: &mut ImapSession, them
                                 }
                             }
                         }
+                        KeyCode::Char('y') | KeyCode::Char('Y') | KeyCode::PageUp => {
+                            if let Ok((_, rows)) = term_size() {
+                                let visible = rows.saturating_sub(3) as usize; // matches ui.rs items_per_page
+                                *selected_idx = selected_idx.saturating_sub(visible);
+                            }
+                        }
+                        KeyCode::Char('v') | KeyCode::Char('V') | KeyCode::PageDown => {
+                            if let Ok((_, rows)) = term_size() {
+                                let visible = rows.saturating_sub(3) as usize;
+                                *selected_idx = (*selected_idx + visible).min(addresses.len().saturating_sub(1));
+                            }
+                        }
+                        KeyCode::Char('t') | KeyCode::Char('T') => {
+                            if let Ok(Some(team_name)) = theme_provider.prompt("Team Name (e.g. My Team): ", false) {
+                                let team_name = team_name.trim();
+                                if !team_name.is_empty() {
+                                    if let Ok(Some(emails)) = theme_provider.prompt_with_autocomplete("Emails (comma separated): ", addresses) {
+                                        let trimmed_emails = emails.trim().trim_end_matches(';');
+                                        if !trimmed_emails.is_empty() {
+                                            let formatted_list = format!("{}: {};", team_name, trimmed_emails);
+                                            addresses.push(formatted_list);
+                                            clean_and_save_address_book(addresses);
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                        KeyCode::Char('a') | KeyCode::Char('A') => {
+                            if let Ok(Some(new_val)) = theme_provider.prompt("Add address: ", false) {
+                                let trimmed = new_val.trim();
+                                if !trimmed.is_empty() && !addresses.iter().any(|a| a.trim() == trimmed) {
+                                    addresses.push(trimmed.to_string());
+                                    clean_and_save_address_book(addresses);
+                                }
+                            }
+                        }
                         KeyCode::Char('e') | KeyCode::Char('E') => {
-                            if !addresses.is_empty() {
-                                let prompt_msg = format!("Replace '{}' with: ", addresses[*selected_idx]);
-                                if let Ok(Some(new_val)) = theme_provider.prompt(&prompt_msg, false) {
+                            if !addresses.is_empty() && !addresses[*selected_idx].trim().is_empty() {
+                                let current_val = &addresses[*selected_idx];
+                                // Use the new prompt_edit function, passing the current value
+                                if let Ok(Some(new_val)) = theme_provider.prompt_edit("Edit: ", current_val) {
                                     if !new_val.trim().is_empty() {
                                         addresses[*selected_idx] = new_val.trim().to_string();
-                                        let _ = crate::config::save_address_book(addresses);
+                                        clean_and_save_address_book(addresses);
                                     }
                                 }
                             }
@@ -241,7 +278,7 @@ pub fn handle_event(event: Event, app: &mut App, session: &mut ImapSession, them
                                 }
                             }
                         }
-                        KeyCode::PageUp | KeyCode::Char('y') | KeyCode::Char('Y') => {
+                        KeyCode::PageUp | KeyCode::Char('y') | KeyCode::Char('Y') | KeyCode::Char('-') => {
                             if theme_provider.sort_newest_first {
                                 if app.current_page > 0 {
                                     app.current_page -= 1;
@@ -260,7 +297,7 @@ pub fn handle_event(event: Event, app: &mut App, session: &mut ImapSession, them
                                 }
                             }
                         }
-                        KeyCode::PageDown | KeyCode::Char('v') | KeyCode::Char('V') => {
+                        KeyCode::PageDown | KeyCode::Char('v') | KeyCode::Char('V') | KeyCode::Char(' ') => {
                             if theme_provider.sort_newest_first {
                                 if app.current_page + 1 < total_pages {
                                     app.current_page += 1;
@@ -300,19 +337,32 @@ pub fn handle_event(event: Event, app: &mut App, session: &mut ImapSession, them
                             }
                         }
                         KeyCode::Char('x') | KeyCode::Char('X') => {
-                            if !app.page_emails.is_empty() && session.expunge().is_ok() {
-                                let offset = if theme_provider.sort_newest_first {
-                                    app.current_page * items_per_page + app.selected_index as u32
-                                } else {
-                                    app.current_page * items_per_page + app.page_emails.len().saturating_sub(1).saturating_sub(app.selected_index) as u32
-                                };
+                            if !app.page_emails.is_empty() {
+                                // Query the IMAP server to see if any messages in the current folder are marked deleted
+                                let has_deleted = session.search("DELETED").map(|res| !res.is_empty()).unwrap_or(false);
 
-                                if let Ok(m) = session.select(&app.current_folder) {
-                                    app.total_messages = m.exists;
-                                    let safe_offset = offset.min(app.total_messages.saturating_sub(1));
-                                    app.current_page = safe_offset / items_per_page;
-                                    app.restore_index_from_end = Some(safe_offset % items_per_page);
-                                    app.needs_fetch = true;
+                                if !has_deleted {
+                                    app.update_status("Nothing to expunge - no messages marked for deletion".to_string());
+                                    // Override the default 1.5s duration to 3 seconds
+                                    app.list_status_duration = std::time::Duration::from_secs(3);
+                                } else {
+                                    if let Ok(Some(true)) = theme_provider.prompt_yn("Expunge?") {
+                                        if session.expunge().is_ok() {
+                                            let offset = if theme_provider.sort_newest_first {
+                                                app.current_page * items_per_page + app.selected_index as u32
+                                            } else {
+                                                app.current_page * items_per_page + app.page_emails.len().saturating_sub(1).saturating_sub(app.selected_index) as u32
+                                            };
+
+                                            if let Ok(m) = session.select(&app.current_folder) {
+                                                app.total_messages = m.exists;
+                                                let safe_offset = offset.min(app.total_messages.saturating_sub(1));
+                                                app.current_page = safe_offset / items_per_page;
+                                                app.restore_index_from_end = Some(safe_offset % items_per_page);
+                                                app.needs_fetch = true;
+                                            }
+                                        }
+                                    }
                                 }
                             }
                         }
@@ -359,83 +409,7 @@ pub fn handle_event(event: Event, app: &mut App, session: &mut ImapSession, them
                         _ => {}
                     }
                 }
-                // AppMode::FileBrowser { current_dir, selected_idx, entries, action, input_buffer, prompting } => {
-                //     let BrowserAction::SaveEmail(body) = action;
-                //
-                //     let mut target_to_save = None;
-                //     let mut cancel = false;
-                //
-                //     if *prompting {
-                //         match k.code {
-                //             KeyCode::Enter => {
-                //                 if !input_buffer.trim().is_empty() {
-                //                     target_to_save = Some(current_dir.join(input_buffer.trim()));
-                //                 } else {
-                //                     *prompting = false;
-                //                 }
-                //             }
-                //             KeyCode::Esc => *prompting = false,
-                //             KeyCode::Char('c') if k.modifiers.contains(KeyModifiers::CONTROL) => *prompting = false,
-                //             KeyCode::Backspace => { input_buffer.pop(); }
-                //             KeyCode::Char(c) if !k.modifiers.contains(KeyModifiers::CONTROL) && !k.modifiers.contains(KeyModifiers::ALT) => {
-                //                 input_buffer.push(c);
-                //             }
-                //             _ => {}
-                //         }
-                //     } else {
-                //         let (_, rows) = term_size().unwrap_or((80, 24));
-                //         let items_per_page = (rows.saturating_sub(3) as usize).max(1);
-                //
-                //         match k.code {
-                //             KeyCode::Up | KeyCode::Char('p') | KeyCode::Char('P') => *selected_idx = selected_idx.saturating_sub(1),
-                //             KeyCode::Down | KeyCode::Char('n') | KeyCode::Char('N') => if *selected_idx + 1 < entries.len() { *selected_idx += 1; },
-                //             KeyCode::Char('y') | KeyCode::Char('Y') | KeyCode::PageUp => {
-                //                 *selected_idx = selected_idx.saturating_sub(items_per_page);
-                //             }
-                //             KeyCode::Char('v') | KeyCode::Char('V') | KeyCode::PageDown => {
-                //                 *selected_idx = (*selected_idx + items_per_page).min(entries.len().saturating_sub(1));
-                //             }
-                //             KeyCode::Enter | KeyCode::Char('>') | KeyCode::Right => {
-                //                 if !entries.is_empty() {
-                //                     let selected = entries[*selected_idx].clone();
-                //                     if selected.0 == "." {
-                //                         *prompting = true;
-                //                         input_buffer.clear();
-                //                     } else if selected.2 {
-                //                         *current_dir = selected.1;
-                //                         *selected_idx = 0;
-                //                         *entries = App::refresh_browser_entries(current_dir);
-                //                     } else {
-                //                         target_to_save = Some(selected.1);
-                //                     }
-                //                 }
-                //             }
-                //             KeyCode::Char('<') | KeyCode::Left => {
-                //                 if let Some(parent) = current_dir.parent() {
-                //                     *current_dir = parent.to_path_buf();
-                //                     *selected_idx = 0;
-                //                     *entries = App::refresh_browser_entries(current_dir);
-                //                 }
-                //             }
-                //             KeyCode::Char('c') if k.modifiers.contains(KeyModifiers::CONTROL) => cancel = true,
-                //             KeyCode::Esc => cancel = true,
-                //             _ => {}
-                //         }
-                //     }
-                //
-                //     if let Some(target) = target_to_save {
-                //         if std::fs::write(&target, body.as_bytes()).is_ok() {
-                //             theme_provider.status_message = format!("Saved to {}", target.display());
-                //         } else {
-                //             theme_provider.status_message = format!("Failed to save to {}", target.display());
-                //         }
-                //         theme_provider.status_time = Some(std::time::Instant::now());
-                //         app.mode = AppMode::Reading { text_body: body.clone(), html_body: None, attachments: vec![] };
-                //     } else if cancel {
-                //         app.mode = AppMode::Reading { text_body: body.clone(), html_body: None, attachments: vec![] };
-                //     }
-                // }
-                _ => {} // Reading mode uses editor loop, handled inside main
+                _ => {}
             }
         }
     } else if let Event::Resize(_, _) = event {
@@ -443,4 +417,36 @@ pub fn handle_event(event: Event, app: &mut App, session: &mut ImapSession, them
     }
 
     quit
+}
+
+fn clean_and_save_address_book(addresses: &mut Vec<String>) {
+    // 1. Remove any existing empty spacers so they don't duplicate
+    addresses.retain(|a| !a.trim().is_empty());
+
+    // 2. Sort: Individuals first, Teams (containing ':') at the bottom
+    addresses.sort_by(|a, b| {
+        let a_is_team = a.contains(':');
+        let b_is_team = b.contains(':');
+
+        if a_is_team == b_is_team {
+            a.cmp(b) // Sort alphabetically within their respective groups
+        } else if a_is_team {
+            std::cmp::Ordering::Greater // Teams are pushed to the bottom
+        } else {
+            std::cmp::Ordering::Less    // Individuals are pulled to the top
+        }
+    });
+
+    // 3. Re-insert the blank spacer line exactly before the first Team
+    // (Only insert if first_team_idx > 0, meaning there is at least one individual above it)
+    if let Some(first_team_idx) = addresses.iter().position(|a| a.contains(':')) {
+        if first_team_idx > 0 {
+            addresses.insert(first_team_idx, String::new());
+        }
+    }
+
+    // 4. Save to disk (filtering out the spacer so it doesn't write blank lines to the config file)
+    let mut save_list = addresses.clone();
+    save_list.retain(|a| !a.trim().is_empty());
+    let _ = crate::config::save_address_book(&save_list);
 }

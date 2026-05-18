@@ -26,6 +26,36 @@ struct ComposeState {
     active_idx: usize,
 }
 
+fn expand_address_lists(input: &str, address_book: &[String]) -> String {
+    let mut expanded = Vec::new();
+
+    for part in input.split(',') {
+        let part = part.trim();
+        let mut matched_list = false;
+
+        for addr in address_book {
+            // Check if this address book entry is a List (contains a colon)
+            if let Some((list_name, emails)) = addr.split_once(':') {
+                // If the user typed the list name or the autocomplete inserted it
+                if part.to_lowercase() == list_name.trim().to_lowercase()
+                    || part.to_lowercase() == addr.trim().to_lowercase()
+                {
+                    // Extract just the emails from the list, strip the trailing ';'
+                    expanded.push(emails.trim().trim_end_matches(';').to_string());
+                    matched_list = true;
+                    break;
+                }
+            }
+        }
+
+        if !matched_list && !part.is_empty() {
+            expanded.push(part.to_string());
+        }
+    }
+
+    expanded.join(", ")
+}
+
 fn find_suggestion(input: &str, address_book: &[String]) -> Option<String> {
     if input.is_empty() { return None; }
 
@@ -44,15 +74,99 @@ fn find_suggestion(input: &str, address_book: &[String]) -> Option<String> {
     None
 }
 
+// fn prompt_cancel(stdout: &mut std::io::Stdout, colors: &UiColors) -> bool {
+//     let (cols, rows) = term_size().unwrap_or((80, 24));
+//
+//     // Clear and draw the confirmation question on the 3rd line from the bottom
+//     execute!(
+//         stdout,
+//         cursor::MoveTo(0, rows.saturating_sub(3)),
+//         SetBackgroundColor(colors.ui_bg),
+//         Clear(ClearType::UntilNewLine),
+//         SetForegroundColor(colors.accent),
+//         Print(" Are you sure you want to cancel? "),
+//         ResetColor
+//     ).unwrap();
+//
+//     // Draw the specialized Yes/No/Cancel shortcut items across the bottom two lines
+//     let col_width = (cols as usize / 6).max(1);
+//     Editor::draw_menu_line(
+//         stdout,
+//         rows.saturating_sub(2),
+//         cols,
+//         col_width,
+//         &[("Y", " Yes"), ("", ""), ("", ""), ("", ""), ("", ""), ("", "")],
+//         colors.ui_bg,
+//         colors.accent,
+//         colors.fg,
+//     ).unwrap();
+//     Editor::draw_menu_line(
+//         stdout,
+//         rows.saturating_sub(1),
+//         cols,
+//         col_width,
+//         &[("N", " No"), ("", ""), ("", ""), ("", ""), ("", ""), ("", "")],
+//         colors.ui_bg,
+//         colors.accent,
+//         colors.fg,
+//     ).unwrap();
+//
+//     stdout.flush().unwrap();
+//
+//     loop {
+//         if let Ok(Event::Key(pk)) = event::read() {
+//             if pk.kind == KeyEventKind::Press {
+//                 match pk.code {
+//                     // Y / Yes exits out of composer
+//                     KeyCode::Char('y') | KeyCode::Char('Y') => return true,
+//                     // N / No returns to the composer fields
+//                     KeyCode::Char('n') | KeyCode::Char('N') => return false,
+//                     // Escape or ^C returns back to the composer fields
+//                     KeyCode::Esc => return false,
+//                     // KeyCode::Char('c') if pk.modifiers.contains(KeyModifiers::CONTROL) => return false,
+//                     _ => {}
+//                 }
+//             }
+//         }
+//     }
+// }
+
 fn prompt_cancel(stdout: &mut std::io::Stdout, colors: &UiColors) -> bool {
-    let (_, rows) = term_size().unwrap_or((80, 24));
+    let (cols, rows) = term_size().unwrap_or((80, 24));
+
+    // Clear and draw the confirmation question cleanly starting at column 0
     execute!(
-        stdout, cursor::MoveTo(0, rows - 3),
-        SetBackgroundColor(colors.ui_bg), Clear(ClearType::UntilNewLine),
-        SetForegroundColor(colors.accent), Print(" Are you sure you want to cancel? "),
-        SetForegroundColor(colors.fg), Print("[Y] Yes   [N] No"),
+        stdout,
+        cursor::MoveTo(0, rows.saturating_sub(3)),
+        SetBackgroundColor(colors.ui_bg),
+        Clear(ClearType::UntilNewLine),
+        SetForegroundColor(colors.accent),
+        Print("Are you sure you want to cancel? "),
         ResetColor
     ).unwrap();
+
+    let col_width = (cols as usize / 6).max(1);
+    Editor::draw_menu_line(
+        stdout,
+        rows.saturating_sub(2),
+        cols,
+        col_width,
+        &[("Y", " Yes"), ("", ""), ("", ""), ("", ""), ("", ""), ("", "")],
+        colors.ui_bg,
+        colors.accent,
+        colors.fg,
+    ).unwrap();
+    Editor::draw_menu_line(
+        stdout,
+        rows.saturating_sub(1),
+        cols,
+        col_width,
+        &[("N", " No"), ("", ""), ("", ""), ("", ""), ("", ""), ("", "")],
+        colors.ui_bg,
+        colors.accent,
+        colors.fg,
+    ).unwrap();
+
     stdout.flush().unwrap();
 
     loop {
@@ -60,7 +174,9 @@ fn prompt_cancel(stdout: &mut std::io::Stdout, colors: &UiColors) -> bool {
             if pk.kind == KeyEventKind::Press {
                 match pk.code {
                     KeyCode::Char('y') | KeyCode::Char('Y') => return true,
-                    KeyCode::Char('n') | KeyCode::Char('N') | KeyCode::Esc => return false,
+                    KeyCode::Char('n') | KeyCode::Char('N') => return false,
+                    KeyCode::Esc => return false,
+                    KeyCode::Char('c') if pk.modifiers.contains(KeyModifiers::CONTROL) => return false,
                     _ => {}
                 }
             }
@@ -124,18 +240,6 @@ pub fn compose_email(account: &Account, default_to: Option<&str>, default_subjec
         }
 
         queue!(stdout, cursor::MoveTo(0, 5), SetBackgroundColor(colors.ui_bg), SetForegroundColor(colors.accent), Print(" Attach: "), SetForegroundColor(colors.fg)).unwrap();
-
-        // if state.attachments.is_empty() {
-        //     let dim_c = if colors.is_dark { Color::DarkGrey } else { Color::Grey };
-        //     queue!(stdout, SetForegroundColor(dim_c), Print("(Press ^A to attach a file)")).unwrap(); // Update to ^A
-        // } else {
-        //     let att_names: Vec<String> = state.attachments.iter().enumerate().map(|(i, p)| {
-        //         let file_name = Path::new(p).file_name().unwrap_or_default().to_string_lossy();
-        //         format!("{}. {}", i + 1, file_name)
-        //     }).collect();
-        //     queue!(stdout, Print(att_names.join("   "))).unwrap();
-        // }
-        // queue!(stdout, ResetColor).unwrap();
 
         if state.attachments.is_empty() {
             let dim_c = if colors.is_dark { Color::DarkGrey } else { Color::Grey };
@@ -285,7 +389,20 @@ pub fn compose_email(account: &Account, default_to: Option<&str>, default_subjec
 
     let parse_and_add = |mut b: lettre::message::MessageBuilder, input: &str, field_type: &str| -> lettre::message::MessageBuilder {
         for addr in input.split(',') {
-            let trimmed = addr.trim();
+            // Strip whitespace AND the trailing semicolon, then convert to an owned String
+            let mut trimmed = addr.trim().trim_end_matches(';').to_string();
+
+            // Gmail deduplication bypass: If the recipient is the sender,
+            // append a plus-alias so Gmail actually places a copy in the Inbox.
+            if trimmed.eq_ignore_ascii_case(&account.email) && trimmed.to_lowercase().ends_with("@gmail.com") {
+                if let Some((user, domain)) = trimmed.split_once('@') {
+                    // Only append if they haven't already explicitly used an alias
+                    if !user.contains('+') {
+                        trimmed = format!("{}+me@{}", user, domain);
+                    }
+                }
+            }
+
             if !trimmed.is_empty() {
                 if let Ok(mailbox) = trimmed.parse::<lettre::message::Mailbox>() {
                     b = match field_type { "to" => b.to(mailbox), "cc" => b.cc(mailbox), "bcc" => b.bcc(mailbox), _ => b, };
@@ -297,9 +414,13 @@ pub fn compose_email(account: &Account, default_to: Option<&str>, default_subjec
         b
     };
 
-    builder = parse_and_add(builder, &state.to, "to");
-    builder = parse_and_add(builder, &state.cc, "cc");
-    builder = parse_and_add(builder, &state.bcc, "bcc");
+    let final_to = expand_address_lists(&state.to, &address_book);
+    let final_cc = expand_address_lists(&state.cc, &address_book);
+    let final_bcc = expand_address_lists(&state.bcc, &address_book);
+
+    builder = parse_and_add(builder, &final_to, "to");
+    builder = parse_and_add(builder, &final_cc, "cc");
+    builder = parse_and_add(builder, &final_bcc, "bcc");
 
     let mut multipart = lettre::message::MultiPart::mixed()
         .singlepart(lettre::message::SinglePart::plain(final_body));

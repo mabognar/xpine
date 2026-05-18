@@ -10,11 +10,6 @@ use crate::syntax::SyntaxExt;
 
 static BUNDLED_THEMES: Dir<'_> = include_dir!("$CARGO_MANIFEST_DIR/themes");
 
-// #[derive(Clone)]
-// pub struct Account {
-//     pub email: String,
-//     pub password: String,
-// }
 #[derive(Clone)]
 pub struct Account {
     pub email: String,
@@ -302,6 +297,8 @@ pub fn get_address_book_path() -> PathBuf {
 pub fn load_address_book() -> Vec<String> {
     let path = get_address_book_path();
     let mut addresses = Vec::new();
+
+    // 1. Read from the file
     if let Ok(file) = fs::File::open(path) {
         let reader = std::io::BufReader::new(file);
         for line in reader.lines() {
@@ -313,6 +310,27 @@ pub fn load_address_book() -> Vec<String> {
             }
         }
     }
+
+    // 2. Force the correct custom sort every time it loads
+    addresses.sort_by(|a, b| {
+        let a_is_team = a.contains(':');
+        let b_is_team = b.contains(':');
+        if a_is_team == b_is_team {
+            a.cmp(b) // Sort alphabetically within their respective groups
+        } else if a_is_team {
+            std::cmp::Ordering::Greater // Teams go to the bottom
+        } else {
+            std::cmp::Ordering::Less    // Individuals go to the top
+        }
+    });
+
+    // 3. Inject the UI spacer line
+    if let Some(first_team_idx) = addresses.iter().position(|a| a.contains(':')) {
+        if first_team_idx > 0 {
+            addresses.insert(first_team_idx, String::new());
+        }
+    }
+
     addresses
 }
 
