@@ -217,18 +217,26 @@ pub fn handle_event(event: Event, app: &mut App, session: &mut ImapSession, them
                             }
                         }
                         KeyCode::Char('<') | KeyCode::Left => {
-                            let mut fetched = Vec::new();
-                            if let Ok(mailboxes) = session.list(Some(""), Some("*")) {
-                                for mb in mailboxes.iter() { fetched.push(mb.name().to_string()); }
+                            if app.search_query.is_some() {
+                                // If we are currently searching, back out of the search to the full list
+                                app.search_query = None;
+                                app.current_page = 0;
+                                app.needs_fetch = true;
+                            } else {
+                                // Otherwise, back out to the folder selection screen
+                                let mut fetched = Vec::new();
+                                if let Ok(mailboxes) = session.list(Some(""), Some("*")) {
+                                    for mb in mailboxes.iter() { fetched.push(mb.name().to_string()); }
+                                }
+                                if fetched.is_empty() { fetched.push("INBOX".to_string()); }
+                                fetched.sort();
+
+                                // Auto-select the folder we just backed out of
+                                let prev_folder = app.current_folder.clone();
+                                let idx = fetched.iter().position(|f| f == &prev_folder).unwrap_or(0);
+
+                                app.mode = AppMode::FolderList { step: 1, selected_idx: idx, folders: fetched };
                             }
-                            if fetched.is_empty() { fetched.push("INBOX".to_string()); }
-                            fetched.sort();
-
-                            // Auto-select the folder we just backed out of
-                            let prev_folder = app.current_folder.clone();
-                            let idx = fetched.iter().position(|f| f == &prev_folder).unwrap_or(0);
-
-                            app.mode = AppMode::FolderList { step: 1, selected_idx: idx, folders: fetched };
                         }
                         KeyCode::Tab => {
                             if app.accounts.len() > 1 {
@@ -239,6 +247,25 @@ pub fn handle_event(event: Event, app: &mut App, session: &mut ImapSession, them
                                 let email = &app.accounts[app.current_account_idx].email;
                                 app.update_status(format!("Switching to {}...", email));
                                 let _ = crate::ui::draw_app(stdout, app, theme_provider);
+                            }
+                        }
+                        KeyCode::Char('s') | KeyCode::Char('S') => {
+                            // Get the current search query, or default to an empty string
+                            let current_query = app.search_query.clone().unwrap_or_default();
+
+                            // Pass current_query to prompt_edit
+                            if let Ok(Some(query)) = theme_provider.prompt_edit("Search: ", &current_query) {
+                                let trimmed = query.trim();
+
+                                if !trimmed.is_empty() {
+                                    app.search_query = Some(trimmed.to_string());
+                                } else {
+                                    // Leaving it blank (or clearing it out) returns to the full list
+                                    app.search_query = None;
+                                }
+
+                                app.current_page = 0;
+                                app.needs_fetch = true;
                             }
                         }
                         KeyCode::Char(c) if c.is_ascii_digit() => {
@@ -420,10 +447,10 @@ pub fn handle_event(event: Event, app: &mut App, session: &mut ImapSession, them
 }
 
 fn clean_and_save_address_book(addresses: &mut Vec<String>) {
-    // 1. Remove any existing empty spacers so they don't duplicate
+    // Remove any existing empty spacers so they don't duplicate
     addresses.retain(|a| !a.trim().is_empty());
 
-    // 2. Sort: Individuals first, Teams (containing ':') at the bottom
+    // Sort: Individuals first, Teams (containing ':') at the bottom
     addresses.sort_by(|a, b| {
         let a_is_team = a.contains(':');
         let b_is_team = b.contains(':');
@@ -437,15 +464,14 @@ fn clean_and_save_address_book(addresses: &mut Vec<String>) {
         }
     });
 
-    // 3. Re-insert the blank spacer line exactly before the first Team
-    // (Only insert if first_team_idx > 0, meaning there is at least one individual above it)
+    // Insert the blank spacer line exactly before the first Team
     if let Some(first_team_idx) = addresses.iter().position(|a| a.contains(':')) {
         if first_team_idx > 0 {
             addresses.insert(first_team_idx, String::new());
         }
     }
 
-    // 4. Save to disk (filtering out the spacer so it doesn't write blank lines to the config file)
+    // Save
     let mut save_list = addresses.clone();
     save_list.retain(|a| !a.trim().is_empty());
     let _ = crate::config::save_address_book(&save_list);

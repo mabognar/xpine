@@ -231,21 +231,6 @@ fn main() {
                                 continue;
                             }
 
-                            // // ---> [ File Browser Trigger ] <---
-                            // if key.code == event::KeyCode::Char('s') || key.code == event::KeyCode::Char('S') {
-                            //     let current_dir = std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from("/"));
-                            //     let entries = app::App::refresh_browser_entries(&current_dir);
-                            //     app.mode = AppMode::FileBrowser {
-                            //         current_dir,
-                            //         selected_idx: 0,
-                            //         entries,
-                            //         action: app::BrowserAction::SaveEmail(text_body.clone()),
-                            //         input_buffer: String::new(),
-                            //         prompting: false,
-                            //     };
-                            //     break; // Break out of the Reading loop to hand off to FileBrowser
-                            // }
-
                             if key.code == event::KeyCode::Char('s') || key.code == event::KeyCode::Char('S') {
                                 if let Ok(Some(path)) = reader.run_file_browser(true) {
                                     if std::fs::write(&path, text_body.as_bytes()).is_ok() {
@@ -295,20 +280,7 @@ fn main() {
             }
             continue;
         }
-
-        // // ---> [ Global Rendering Match ] <---
-        // match &app.mode {
-        //     AppMode::FileBrowser { current_dir, entries, selected_idx, prompting, input_buffer, .. } => {
-        //         let theme = &theme_provider.theme_set.themes[&theme_provider.current_theme];
-        //         let colors = ui::derive_ui_colors(theme);
-        //         ui::draw_file_browser(&mut stdout, current_dir, entries, *selected_idx, *prompting, input_buffer, &colors).unwrap();
-        //     }
-        //     // Use a catch-all so ui::draw_app handles List, MainMenu, Settings, AddressBook, etc.
-        //     _ => {
-        //         ui::draw_app(&mut stdout, &app, &theme_provider).unwrap();
-        //     }
-        // }
-
+        
         ui::draw_app(&mut stdout, &app, &theme_provider).unwrap();
 
         let mut timeout = if app.last_fetch_time.elapsed() >= app.auto_refresh_interval { Duration::from_millis(1) } else { app.auto_refresh_interval - app.last_fetch_time.elapsed() };

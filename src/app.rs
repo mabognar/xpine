@@ -4,37 +4,6 @@ use std::time::{Duration, Instant};
 use std::path::{Path, PathBuf};
 use std::fs;
 
-// pub enum AppMode {
-//     List,
-//     Reading {
-//         text_body: String,
-//         html_body: Option<String>,
-//         attachments: Vec<(String, Vec<u8>)>,
-//     },
-//     MainMenu {
-//         selected_idx: usize,
-//     },
-//     Settings {
-//         selected_idx: usize,
-//     },
-//     FolderList {
-//         step: u8,
-//         selected_idx: usize,
-//         folders: Vec<String>,
-//     },
-//     AddressBook {
-//         selected_idx: usize,
-//         addresses: Vec<String>,
-//     },
-//     FileBrowser {
-//         current_dir: PathBuf,
-//         selected_idx: usize,
-//         entries: Vec<(String, PathBuf, bool)>,
-//         action: BrowserAction,
-//         input_buffer: String,
-//         prompting: bool,
-//     },
-// }
 pub enum AppMode {
     List,
     Reading {
@@ -82,7 +51,8 @@ pub struct App {
     pub last_fetch_time: Instant,
     pub auto_refresh_interval: Duration,
     pub accounts: Vec<Account>,
-    pub menu_page: u8, // Tracks the current menu page
+    pub menu_page: u8,
+    pub search_query: Option<String>,
 }
 
 impl App {
@@ -105,7 +75,8 @@ impl App {
             last_fetch_time: Instant::now(),
             auto_refresh_interval: Duration::from_secs(60),
             accounts,
-            menu_page: 1, // Initialize to page 1
+            menu_page: 1,
+            search_query: None,
         }
     }
     
@@ -115,42 +86,42 @@ impl App {
         self.list_status_duration = Duration::from_millis(1500);
     }
 
-    pub fn refresh_browser_entries(current_dir: &Path) -> Vec<(String, PathBuf, bool)> {
-        let mut entries = vec![];
-        entries.push((".".to_string(), current_dir.to_path_buf(), true));
-        if let Some(parent) = current_dir.parent() {
-            entries.push(("..".to_string(), parent.to_path_buf(), true));
-        }
-
-        if let Ok(read_dir) = fs::read_dir(current_dir) {
-            let mut dirs = vec![];
-            let mut files = vec![];
-            let mut dot_dirs = vec![];
-            let mut dot_files = vec![];
-
-            for entry in read_dir.flatten() {
-                let path = entry.path();
-                let name = entry.file_name().to_string_lossy().into_owned();
-                let is_dir = path.is_dir();
-                let is_dot = name.starts_with('.');
-
-                if is_dir {
-                    if is_dot { dot_dirs.push((name, path, true)); } else { dirs.push((name, path, true)); }
-                } else {
-                    if is_dot { dot_files.push((name, path, false)); } else { files.push((name, path, false)); }
-                }
-            }
-
-            dirs.sort_by(|a, b| a.0.to_lowercase().cmp(&b.0.to_lowercase()));
-            files.sort_by(|a, b| a.0.to_lowercase().cmp(&b.0.to_lowercase()));
-            dot_dirs.sort_by(|a, b| a.0.to_lowercase().cmp(&b.0.to_lowercase()));
-            dot_files.sort_by(|a, b| a.0.to_lowercase().cmp(&b.0.to_lowercase()));
-
-            entries.extend(dirs);
-            entries.extend(files);
-            entries.extend(dot_dirs);
-            entries.extend(dot_files);
-        }
-        entries
-    }
+    // pub fn refresh_browser_entries(current_dir: &Path) -> Vec<(String, PathBuf, bool)> {
+    //     let mut entries = vec![];
+    //     entries.push((".".to_string(), current_dir.to_path_buf(), true));
+    //     if let Some(parent) = current_dir.parent() {
+    //         entries.push(("..".to_string(), parent.to_path_buf(), true));
+    //     }
+    //
+    //     if let Ok(read_dir) = fs::read_dir(current_dir) {
+    //         let mut dirs = vec![];
+    //         let mut files = vec![];
+    //         let mut dot_dirs = vec![];
+    //         let mut dot_files = vec![];
+    //
+    //         for entry in read_dir.flatten() {
+    //             let path = entry.path();
+    //             let name = entry.file_name().to_string_lossy().into_owned();
+    //             let is_dir = path.is_dir();
+    //             let is_dot = name.starts_with('.');
+    //
+    //             if is_dir {
+    //                 if is_dot { dot_dirs.push((name, path, true)); } else { dirs.push((name, path, true)); }
+    //             } else {
+    //                 if is_dot { dot_files.push((name, path, false)); } else { files.push((name, path, false)); }
+    //             }
+    //         }
+    //
+    //         dirs.sort_by(|a, b| a.0.to_lowercase().cmp(&b.0.to_lowercase()));
+    //         files.sort_by(|a, b| a.0.to_lowercase().cmp(&b.0.to_lowercase()));
+    //         dot_dirs.sort_by(|a, b| a.0.to_lowercase().cmp(&b.0.to_lowercase()));
+    //         dot_files.sort_by(|a, b| a.0.to_lowercase().cmp(&b.0.to_lowercase()));
+    //
+    //         entries.extend(dirs);
+    //         entries.extend(files);
+    //         entries.extend(dot_dirs);
+    //         entries.extend(dot_files);
+    //     }
+    //     entries
+    // }
 }

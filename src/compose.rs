@@ -74,67 +74,9 @@ fn find_suggestion(input: &str, address_book: &[String]) -> Option<String> {
     None
 }
 
-// fn prompt_cancel(stdout: &mut std::io::Stdout, colors: &UiColors) -> bool {
-//     let (cols, rows) = term_size().unwrap_or((80, 24));
-//
-//     // Clear and draw the confirmation question on the 3rd line from the bottom
-//     execute!(
-//         stdout,
-//         cursor::MoveTo(0, rows.saturating_sub(3)),
-//         SetBackgroundColor(colors.ui_bg),
-//         Clear(ClearType::UntilNewLine),
-//         SetForegroundColor(colors.accent),
-//         Print(" Are you sure you want to cancel? "),
-//         ResetColor
-//     ).unwrap();
-//
-//     // Draw the specialized Yes/No/Cancel shortcut items across the bottom two lines
-//     let col_width = (cols as usize / 6).max(1);
-//     Editor::draw_menu_line(
-//         stdout,
-//         rows.saturating_sub(2),
-//         cols,
-//         col_width,
-//         &[("Y", " Yes"), ("", ""), ("", ""), ("", ""), ("", ""), ("", "")],
-//         colors.ui_bg,
-//         colors.accent,
-//         colors.fg,
-//     ).unwrap();
-//     Editor::draw_menu_line(
-//         stdout,
-//         rows.saturating_sub(1),
-//         cols,
-//         col_width,
-//         &[("N", " No"), ("", ""), ("", ""), ("", ""), ("", ""), ("", "")],
-//         colors.ui_bg,
-//         colors.accent,
-//         colors.fg,
-//     ).unwrap();
-//
-//     stdout.flush().unwrap();
-//
-//     loop {
-//         if let Ok(Event::Key(pk)) = event::read() {
-//             if pk.kind == KeyEventKind::Press {
-//                 match pk.code {
-//                     // Y / Yes exits out of composer
-//                     KeyCode::Char('y') | KeyCode::Char('Y') => return true,
-//                     // N / No returns to the composer fields
-//                     KeyCode::Char('n') | KeyCode::Char('N') => return false,
-//                     // Escape or ^C returns back to the composer fields
-//                     KeyCode::Esc => return false,
-//                     // KeyCode::Char('c') if pk.modifiers.contains(KeyModifiers::CONTROL) => return false,
-//                     _ => {}
-//                 }
-//             }
-//         }
-//     }
-// }
-
 fn prompt_cancel(stdout: &mut std::io::Stdout, colors: &UiColors) -> bool {
     let (cols, rows) = term_size().unwrap_or((80, 24));
 
-    // Clear and draw the confirmation question cleanly starting at column 0
     execute!(
         stdout,
         cursor::MoveTo(0, rows.saturating_sub(3)),
@@ -264,9 +206,6 @@ pub fn compose_email(account: &Account, default_to: Option<&str>, default_subjec
         editor.draw_screen().unwrap();
 
         if state.active_idx < 4 {
-            // let m_col = (cols as usize / 6).max(1);
-            // Editor::draw_menu_line(&mut stdout, rows - 2, cols, m_col, &[("^X", " Send"),   (" ^P", " Prev"), ("^T", " Attach"), ("", ""), ("", "")], colors.ui_bg, colors.accent, colors.fg).unwrap();
-            // Editor::draw_menu_line(&mut stdout, rows - 1, cols, m_col, &[("^C", " Cancel"), ("Tab", " Next"), ("", ""), ("", ""), ("", ""), ("", "")], colors.ui_bg, colors.accent, colors.fg).unwrap();
             let m_col = (cols as usize / 6).max(1);
             Editor::draw_menu_line(&mut stdout, rows - 2, cols, m_col, &[("^X", " Send"),   (" ^P", " Prev"), ("^A", " Attach"), ("", ""), ("", "")], colors.ui_bg, colors.accent, colors.fg).unwrap();
             Editor::draw_menu_line(&mut stdout, rows - 1, cols, m_col, &[("^C", " Cancel"), ("Tab", " Next"), ("", ""), ("", ""), ("", ""), ("", "")], colors.ui_bg, colors.accent, colors.fg).unwrap();
