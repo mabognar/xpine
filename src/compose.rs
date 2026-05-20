@@ -1,5 +1,3 @@
-mod prompt;
-
 use crate::config::Account;
 use crate::editor::{Editor, EditorResult, MenuState};
 use crate::ui::{derive_ui_colors, UiColors, UiExt};
@@ -236,7 +234,7 @@ pub fn compose_email(account: &Account, default_to: Option<&str>, default_subjec
                             break;
                         }
                         if key_event.code == KeyCode::Char('c') {
-                            if prompt_cancel(&mut stdout, &colors) {
+                            if crate::prompt::prompt_cancel(&mut stdout, &colors) {
                                 cancelled = true;
                                 break;
                             } else {
@@ -260,7 +258,7 @@ pub fn compose_email(account: &Account, default_to: Option<&str>, default_subjec
                         match editor.handle_keypress(key_event).unwrap() {
                             EditorResult::Send(content) => { final_body = content; break; }
                             EditorResult::Cancel => {
-                                if prompt_cancel(&mut stdout, &colors) {
+                                if crate::prompt::prompt_cancel(&mut stdout, &colors) {
                                     cancelled = true;
                                     break;
                                 }

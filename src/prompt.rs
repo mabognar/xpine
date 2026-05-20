@@ -7,7 +7,7 @@ use crate::editor::Editor;
 use crate::ui::{UiColors, UiExt};
 use crossterm::terminal::size as term_size;
 
-fn prompt_cancel(stdout: &mut std::io::Stdout, colors: &UiColors) -> bool {
+pub fn prompt_cancel(stdout: &mut std::io::Stdout, colors: &UiColors) -> bool {
     let (cols, rows) = term_size().unwrap_or((80, 24));
 
     execute!(
