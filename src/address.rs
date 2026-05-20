@@ -15,7 +15,6 @@ pub fn load_address_book() -> Vec<String> {
     let path = get_address_book_path();
     let mut addresses = Vec::new();
 
-    // 1. Read from the file
     if let Ok(file) = fs::File::open(path) {
         let reader = std::io::BufReader::new(file);
         for line in reader.lines() {
@@ -28,7 +27,6 @@ pub fn load_address_book() -> Vec<String> {
         }
     }
 
-    // 2. Force the correct custom sort every time it loads
     addresses.sort_by(|a, b| {
         let a_is_team = a.contains(':');
         let b_is_team = b.contains(':');
@@ -41,7 +39,6 @@ pub fn load_address_book() -> Vec<String> {
         }
     });
 
-    // 3. Inject the UI spacer line
     if let Some(first_team_idx) = addresses.iter().position(|a| a.contains(':')) {
         if first_team_idx > 0 {
             addresses.insert(first_team_idx, String::new());
@@ -82,4 +79,35 @@ pub fn save_address_book(addresses: &[String]) -> std::io::Result<()> {
         }
     }
     Ok(())
+}
+
+pub(crate) fn clean_and_save_address_book(addresses: &mut Vec<String>) {
+    // Remove any existing empty spacers so they don't duplicate
+    addresses.retain(|a| !a.trim().is_empty());
+
+    // Sort: Individuals first, Teams (containing ':') at the bottom
+    addresses.sort_by(|a, b| {
+        let a_is_team = a.contains(':');
+        let b_is_team = b.contains(':');
+
+        if a_is_team == b_is_team {
+            a.cmp(b) // Sort alphabetically within their respective groups
+        } else if a_is_team {
+            std::cmp::Ordering::Greater // Teams are pushed to the bottom
+        } else {
+            std::cmp::Ordering::Less    // Individuals are pulled to the top
+        }
+    });
+
+    // Insert the blank spacer line exactly before the first Team
+    if let Some(first_team_idx) = addresses.iter().position(|a| a.contains(':')) {
+        if first_team_idx > 0 {
+            addresses.insert(first_team_idx, String::new());
+        }
+    }
+
+    // Save
+    let mut save_list = addresses.clone();
+    save_list.retain(|a| !a.trim().is_empty());
+    let _ = crate::address::save_address_book(&save_list);
 }

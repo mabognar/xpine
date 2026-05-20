@@ -2,6 +2,7 @@ use std::io;
 use crate::editor::{Editor, MenuState}; // Ensure MenuState is imported
 use crate::ui::UiExt;
 use crate::syntax::SyntaxExt;
+use crate::prompt::PromptExt;
 
 pub trait SearchExt {
     fn where_is(&mut self) -> io::Result<()>;

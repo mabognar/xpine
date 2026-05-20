@@ -6,6 +6,7 @@ use crate::config::ConfigExt;
 use crate::ui::UiExt;
 use crossterm::event::{Event, KeyCode, KeyEventKind, KeyModifiers};
 use crossterm::terminal::size as term_size;
+use crate::prompt::PromptExt;
 
 pub fn handle_event(event: Event, app: &mut App, session: &mut ImapSession, theme_provider: &mut Editor, stdout: &mut std::io::Stdout) -> bool {
     let mut quit = false;
@@ -78,7 +79,7 @@ pub fn handle_event(event: Event, app: &mut App, session: &mut ImapSession, them
                                         if !trimmed_emails.is_empty() {
                                             let formatted_list = format!("{}: {};", team_name, trimmed_emails);
                                             addresses.push(formatted_list);
-                                            clean_and_save_address_book(addresses);
+                                            crate::address::clean_and_save_address_book(addresses);
                                         }
                                     }
                                 }
@@ -89,7 +90,7 @@ pub fn handle_event(event: Event, app: &mut App, session: &mut ImapSession, them
                                 let trimmed = new_val.trim();
                                 if !trimmed.is_empty() && !addresses.iter().any(|a| a.trim() == trimmed) {
                                     addresses.push(trimmed.to_string());
-                                    clean_and_save_address_book(addresses);
+                                    crate::address::clean_and_save_address_book(addresses);
                                 }
                             }
                         }
@@ -100,7 +101,7 @@ pub fn handle_event(event: Event, app: &mut App, session: &mut ImapSession, them
                                 if let Ok(Some(new_val)) = theme_provider.prompt_edit("Edit: ", current_val) {
                                     if !new_val.trim().is_empty() {
                                         addresses[*selected_idx] = new_val.trim().to_string();
-                                        clean_and_save_address_book(addresses);
+                                        crate::address::clean_and_save_address_book(addresses);
                                     }
                                 }
                             }
@@ -446,33 +447,3 @@ pub fn handle_event(event: Event, app: &mut App, session: &mut ImapSession, them
     quit
 }
 
-fn clean_and_save_address_book(addresses: &mut Vec<String>) {
-    // Remove any existing empty spacers so they don't duplicate
-    addresses.retain(|a| !a.trim().is_empty());
-
-    // Sort: Individuals first, Teams (containing ':') at the bottom
-    addresses.sort_by(|a, b| {
-        let a_is_team = a.contains(':');
-        let b_is_team = b.contains(':');
-
-        if a_is_team == b_is_team {
-            a.cmp(b) // Sort alphabetically within their respective groups
-        } else if a_is_team {
-            std::cmp::Ordering::Greater // Teams are pushed to the bottom
-        } else {
-            std::cmp::Ordering::Less    // Individuals are pulled to the top
-        }
-    });
-
-    // Insert the blank spacer line exactly before the first Team
-    if let Some(first_team_idx) = addresses.iter().position(|a| a.contains(':')) {
-        if first_team_idx > 0 {
-            addresses.insert(first_team_idx, String::new());
-        }
-    }
-
-    // Save
-    let mut save_list = addresses.clone();
-    save_list.retain(|a| !a.trim().is_empty());
-    let _ = crate::address::save_address_book(&save_list);
-}

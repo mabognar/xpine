@@ -8,6 +8,7 @@ use ropey::Rope;
 use syntect::highlighting::{Style, ThemeSet};
 use syntect::parsing::SyntaxSet;
 use crossterm::{execute, terminal, event::{self, Event, KeyCode, KeyModifiers}};
+use crate::prompt::PromptExt;
 
 // Extension Traits
 use crate::config::ConfigExt;

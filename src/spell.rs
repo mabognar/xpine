@@ -5,6 +5,7 @@ use crate::editor::{Editor, MenuState};
 use crate::ui::UiExt;
 use crate::config::ConfigExt;
 use crate::syntax::SyntaxExt; // Provides access to self.mark_modified()
+use crate::prompt::PromptExt;
 
 pub trait SpellExt {
     fn load_dictionary() -> HashSet<String>;

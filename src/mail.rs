@@ -1,6 +1,3 @@
-use std::fs;
-use std::path::{Path, PathBuf};
-
 #[derive(Clone)]
 pub struct Account {
     pub email: String,
@@ -29,87 +26,6 @@ pub struct EmailMeta {
     pub is_flagged: bool,
     pub is_answered: bool,
 }
-
-// pub fn open_in_default_app(file_path: &Path) {
-//     #[cfg(target_os = "windows")]
-//     let _ = std::process::Command::new("cmd").args(["/C", "start", "", file_path.to_str().unwrap()]).spawn();
-//     #[cfg(target_os = "macos")]
-//     let _ = std::process::Command::new("open").arg(file_path).spawn();
-//     #[cfg(target_os = "linux")]
-//     let _ = std::process::Command::new("xdg-open").arg(file_path).spawn();
-// }
-//
-// pub fn load_config() -> AppConfig {
-//     let home = dirs::home_dir().expect("Could not find home directory.");
-//     let config_dir = home.join(".xpine");
-//     let config_path = config_dir.join("xpinerc");
-//
-//     if !config_path.exists() {
-//         fs::create_dir_all(&config_dir).expect("Failed to create .xpine directory.");
-//         // Add the new variables to the template
-//         let template = "# Account 1\nEMAIL=statgod@gmail.com\nPASSWORD=your_16_char_app_password\nIMAP_SERVER=imap.gmail.com\nIMAP_PORT=993\nSMTP_SERVER=smtp.gmail.com\n\n# Account 2\nEMAIL=second@gmail.com\nPASSWORD=app_password\nIMAP_SERVER=imap.gmail.com\nIMAP_PORT=993\nSMTP_SERVER=smtp.gmail.com\n";
-//         fs::write(&config_path, template).expect("Failed to write .xpine/xpinerc template.");
-//
-//         println!("No configuration found.");
-//         println!("Created a new config template at: {:?}", config_path);
-//         println!("Please edit this file with your actual credentials and run the program again.");
-//         std::process::exit(0);
-//     }
-//
-//     let contents = fs::read_to_string(&config_path).expect("Failed to read .xpine/xpinerc");
-//     let mut accounts = Vec::new();
-//
-//     // Set fallback defaults in case an existing user's file is missing these fields
-//     let mut current_email = String::new();
-//     let mut current_password = String::new();
-//     let mut current_imap_server = String::from("imap.gmail.com");
-//     let mut current_imap_port = 993;
-//     let mut current_smtp_server = String::from("smtp.gmail.com");
-//
-//     for line in contents.lines() {
-//         if line.trim().is_empty() || line.starts_with('#') { continue; }
-//         if let Some((key, value)) = line.split_once('=') {
-//             let val = value.trim().to_string();
-//             match key.trim().to_uppercase().as_str() {
-//                 "EMAIL" => {
-//                     // Push the previous account when we hit a new EMAIL line
-//                     if !current_email.is_empty() && !current_password.is_empty() {
-//                         accounts.push(Account {
-//                             email: current_email.clone(), password: current_password.clone(),
-//                             imap_server: current_imap_server.clone(), imap_port: current_imap_port, smtp_server: current_smtp_server.clone(),
-//                         });
-//                         // Reset defaults for the next account block
-//                         current_password.clear();
-//                         current_imap_server = String::from("imap.gmail.com");
-//                         current_imap_port = 993;
-//                         current_smtp_server = String::from("smtp.gmail.com");
-//                     }
-//                     current_email = val;
-//                 }
-//                 "PASSWORD" => current_password = val,
-//                 "IMAP_SERVER" => current_imap_server = val,
-//                 "IMAP_PORT" => if let Ok(p) = val.parse() { current_imap_port = p },
-//                 "SMTP_SERVER" => current_smtp_server = val,
-//                 _ => {}
-//             }
-//         }
-//     }
-//
-//     // Push the final account at the end of the file
-//     if !current_email.is_empty() && !current_password.is_empty() {
-//         accounts.push(Account {
-//             email: current_email, password: current_password,
-//             imap_server: current_imap_server, imap_port: current_imap_port, smtp_server: current_smtp_server,
-//         });
-//     }
-//
-//     if accounts.is_empty() || accounts[0].password == "your_16_char_app_password" {
-//         println!("Invalid or default credentials found in {:?}", config_path);
-//         std::process::exit(1);
-//     }
-//
-//     AppConfig { accounts }
-// }
 
 pub fn parse_email_body(body_data: &[u8]) -> (String, Option<String>, Vec<(String, Vec<u8>)>) {
     let mut text_body = String::new();
