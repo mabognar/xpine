@@ -511,7 +511,6 @@ pub fn draw_app(stdout: &mut std::io::Stdout, app: &App, theme_provider: &Editor
             let title = "xpine - Address Book";
             queue!(stdout, cursor::MoveTo(0, 0), SetBackgroundColor(colors.ui_bg), SetForegroundColor(colors.accent), Print(title), Print(" ".repeat((cols as usize).saturating_sub(title.chars().count()))), ResetColor)?;
 
-            // 1. Change from saturating_sub(3) to saturating_sub(4) to make room for the blank line
             let items_per_page = (rows.saturating_sub(4) as usize).max(1);
             let start_idx = if *selected_idx >= items_per_page { selected_idx - items_per_page + 1 } else { 0 };
 
@@ -521,7 +520,6 @@ pub fn draw_app(stdout: &mut std::io::Stdout, app: &App, theme_provider: &Editor
                     let is_selected = actual_idx == *selected_idx;
                     let bg_color = if is_selected { colors.selected_bg } else { colors.bg };
 
-                    // 2. Change the Y coordinate from (i + 1) to (i + 2) to push the list down one line
                     queue!(stdout, cursor::MoveTo(0, (i + 2) as u16), SetBackgroundColor(bg_color), terminal::Clear(ClearType::CurrentLine))?;
 
                     let display_str = &addresses[actual_idx];
@@ -660,7 +658,7 @@ pub fn draw_app(stdout: &mut std::io::Stdout, app: &App, theme_provider: &Editor
                 Editor::draw_menu_line(stdout, rows - 2, cols, r_col, &[("<", " Back"), (">", " View"), ("C", " Compose"), ("R", " Reply"),   ("D", " Delete"), ("O", " Other (1/2)")], colors.ui_bg, colors.accent, colors.fg)?;
                 Editor::draw_menu_line(stdout, rows - 1, cols, r_col, &[("Q", " Quit"), ("M", " Menu"), ("*", " Flag"),    ("F", " Forward"), ("X", " Expunge"), ("Tab", " Acct")], colors.ui_bg, colors.accent, colors.fg)?;
             } else {
-                Editor::draw_menu_line(stdout, rows - 2, cols, r_col, &[("U", " (Un)Read"), ("P", " Prev"), ("Y", " Prev Pg"), ("", ""), ("", ""), ("O", " Other (2/2)")], colors.ui_bg, colors.accent, colors.fg)?;
+                Editor::draw_menu_line(stdout, rows - 2, cols, r_col, &[("U", " (Un)Read"), ("P", " Prev"), ("Y", " Prev Pg"), ("Meta+T", " Theme"), ("", ""), ("O", " Other (2/2)")], colors.ui_bg, colors.accent, colors.fg)?;
                 Editor::draw_menu_line(stdout, rows - 1, cols, r_col, &[("S", " Search"), ("N", " Next"), ("V", " Next Pg"), ("", ""), ("", ""), ("", "")], colors.ui_bg, colors.accent, colors.fg)?;
             }
 
@@ -723,7 +721,7 @@ pub fn draw_app(stdout: &mut std::io::Stdout, app: &App, theme_provider: &Editor
                 if i == *selected_idx {
                     queue!(stdout, cursor::MoveTo(1, y), SetBackgroundColor(colors.selected_bg))?;
                 } else {
-                    queue!(stdout, cursor::MoveTo(1, y))?;
+                    queue!(stdout, cursor::MoveTo(1, y), SetBackgroundColor(colors.bg), SetForegroundColor(colors.fg))?;
                 }
 
                 let checkbox = if *is_enabled { "[X]" } else { "[ ]" };

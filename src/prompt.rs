@@ -30,12 +30,11 @@ impl PromptExt for Editor {
             let theme = &self.theme_set.themes[&self.current_theme];
             let ui_colors = derive_ui_colors(theme);
 
-            // Draw the prompt text right at column 0 without leading blank padding
             queue!(
                 stdout_handle,
                 cursor::MoveTo(0, rows.saturating_sub(3)),
                 SetBackgroundColor(ui_colors.ui_bg),
-                terminal::Clear(ClearType::CurrentLine),
+                Clear(ClearType::CurrentLine),
                 SetForegroundColor(ui_colors.fg),
                 Print(prompt_text),
                 Print(&input),
@@ -169,88 +168,97 @@ impl PromptExt for Editor {
         }
     }
 
-    fn prompt_edit(&mut self, prompt_text: &str, initial_text: &str) -> io::Result<Option<String>> {
-        let mut stdout = stdout();
-        // Use a char vector for easy and safe cursor manipulation
-        let mut input: Vec<char> = initial_text.chars().collect();
-        let mut cursor_pos = input.len(); // Place cursor at the end
-        let (cols, rows) = term_size()?;
+    fn prompt_yn(&mut self, prompt_text: &str) -> io::Result<Option<bool>> {
+        let previous_state = self.menu_state;
+        self.menu_state = MenuState::YesNoCancel;
+        self.set_status(String::from(prompt_text));
 
+        let mut stdout_handle = stdout();
+        let (cols, rows) = term_size()?;
         let theme = &self.theme_set.themes[&self.current_theme];
-        let colors = derive_ui_colors(theme);
+        let ui_colors = derive_ui_colors(theme);
+
+        // Draw the prompt text right at column 0 without leading blank padding
+        queue!(
+            stdout_handle,
+            cursor::MoveTo(0, rows.saturating_sub(3)),
+            SetBackgroundColor(ui_colors.ui_bg),
+            terminal::Clear(ClearType::CurrentLine),
+            SetForegroundColor(ui_colors.fg),
+            Print(prompt_text),
+            SetBackgroundColor(Color::Reset),
+            SetForegroundColor(Color::Reset)
+        )?;
+
+        // Draw the menu items on the bottom two lines
+        let col_width = (cols as usize / 6).max(1);
+        Self::draw_menu_line(
+            &mut stdout_handle,
+            rows.saturating_sub(2),
+            cols,
+            col_width,
+            &[("Y", " Yes"), ("", ""), ("", ""), ("", ""), ("", ""), ("", "")],
+            ui_colors.ui_bg,
+            ui_colors.accent,
+            ui_colors.fg,
+        )?;
+        Self::draw_menu_line(
+            &mut stdout_handle,
+            rows.saturating_sub(1),
+            cols,
+            col_width,
+            &[("N", " No"), ("", ""), ("", ""), ("", ""), ("", ""), ("", "")],
+            ui_colors.ui_bg,
+            ui_colors.accent,
+            ui_colors.fg,
+        )?;
+
+        stdout_handle.flush()?;
 
         loop {
-            let input_str: String = input.iter().collect();
-            queue!(
-                stdout,
-                cursor::MoveTo(0, rows - 3),
-                SetBackgroundColor(colors.ui_bg),
-                terminal::Clear(ClearType::CurrentLine),
-                SetForegroundColor(colors.accent),
-                Print(prompt_text),
-                SetForegroundColor(colors.fg),
-                Print(&input_str)
-            )?;
-
-            // Move cursor directly to the edit position
-            let prompt_len = prompt_text.chars().count();
-            queue!(
-                stdout,
-                cursor::MoveTo((prompt_len + cursor_pos) as u16, rows - 3)
-            )?;
-
-            stdout.flush()?;
-
             if let Event::Key(key) = event::read()? {
-                if key.kind == event::KeyEventKind::Press {
-                    match key.code {
-                        KeyCode::Enter => return Ok(Some(input.into_iter().collect())),
-                        KeyCode::Esc => return Ok(None),
-                        KeyCode::Char('c') | KeyCode::Char('C') if key.modifiers.contains(KeyModifiers::CONTROL) => return Ok(None),
-
-                        // Navigation
-                        KeyCode::Left => {
-                            if cursor_pos > 0 { cursor_pos -= 1; }
-                        }
-                        KeyCode::Right => {
-                            if cursor_pos < input.len() { cursor_pos += 1; }
-                        }
-                        KeyCode::Char('b') | KeyCode::Char('B') if key.modifiers.contains(KeyModifiers::CONTROL) => {
-                            if cursor_pos > 0 { cursor_pos -= 1; }
-                        }
-                        KeyCode::Char('f') | KeyCode::Char('F') if key.modifiers.contains(KeyModifiers::CONTROL) => {
-                            if cursor_pos < input.len() { cursor_pos += 1; }
-                        }
-
-                        // Editing
-                        KeyCode::Backspace => {
-                            if input.is_empty() {
-                                // If empty, Backspace instantly submits the empty string
-                                // to clear the search and return to the main list
-                                return Ok(Some(String::new()));
-                            } else {
-                                if cursor_pos > 0 {
-                                    cursor_pos -= 1;
-                                    input.remove(cursor_pos);
-                                }
-                            }
-                        }
-                        KeyCode::Char('<') => {
-                            if input.is_empty() {
-                                // If empty, `<` instantly returns to the main list
-                                return Ok(Some(String::new()));
-                            } else {
-                                // [Your existing character insertion logic]
-                                input.push('<');
-                            }
-                        }
-                        // Standard Typing
-                        KeyCode::Char(c) if !key.modifiers.contains(KeyModifiers::CONTROL) && !key.modifiers.contains(KeyModifiers::ALT) => {
-                            input.insert(cursor_pos, c);
-                            cursor_pos += 1;
-                        }
-                        _ => {}
+                if key.kind != event::KeyEventKind::Press { continue; }
+                match key.code {
+                    KeyCode::Char('y') | KeyCode::Char('Y') => {
+                        self.clear_status();
+                        self.menu_state = previous_state;
+                        return Ok(Some(true));
                     }
+                    KeyCode::Char('n') | KeyCode::Char('N') => {
+                        self.clear_status();
+                        self.menu_state = previous_state;
+                        return Ok(Some(false));
+                    }
+                    KeyCode::Esc | KeyCode::Char('c') | KeyCode::Char('C') => {
+                        self.clear_status();
+                        self.menu_state = previous_state;
+                        return Ok(None);
+                    }
+                    _ => {}
+                }
+            }
+        }
+    }
+
+    fn prompt_replace(&mut self, prompt_text: &str) -> io::Result<Option<char>> {
+        let previous_state = self.menu_state; // Save the state
+        self.menu_state = MenuState::ReplaceAction;
+        self.set_status(String::from(prompt_text));
+        self.draw_screen()?;
+
+        loop {
+            if let Event::Key(key) = event::read()? {
+                if key.kind != event::KeyEventKind::Press { continue; }
+                if key.code == KeyCode::Char('c') && key.modifiers.contains(KeyModifiers::CONTROL) {
+                    self.clear_status();
+                    self.menu_state = previous_state; // Restore state on cancel
+                    return Ok(None);
+                }
+                match key.code {
+                    KeyCode::Char('y') | KeyCode::Char('Y') => { self.clear_status(); self.menu_state = previous_state; return Ok(Some('y')); }
+                    KeyCode::Char('n') | KeyCode::Char('N') => { self.clear_status(); self.menu_state = previous_state; return Ok(Some('n')); }
+                    KeyCode::Char('a') | KeyCode::Char('A') => { self.clear_status(); self.menu_state = previous_state; return Ok(Some('a')); }
+                    _ => {}
                 }
             }
         }
@@ -313,95 +321,92 @@ impl PromptExt for Editor {
         }
     }
 
-    fn prompt_replace(&mut self, prompt_text: &str) -> io::Result<Option<char>> {
-        let previous_state = self.menu_state; // Save the state
-        self.menu_state = MenuState::ReplaceAction;
-        self.set_status(String::from(prompt_text));
-        self.draw_screen()?;
+    fn prompt_edit(&mut self, prompt_text: &str, initial_text: &str) -> io::Result<Option<String>> {
+        // Use a Vec<char> for safe, character-accurate insertions and deletions
+        let mut input: Vec<char> = initial_text.chars().collect();
+        let mut cursor_idx = input.len(); // Start cursor at the end of the text
+
+        let (cols, rows) = terminal::size()?;
+
+        let theme = self.theme_set.themes.get(&self.current_theme).expect("Theme not found");
+        let colors = crate::config::derive_ui_colors(theme);
 
         loop {
+            let prompt_y = rows.saturating_sub(3);
+
+            // Reconstruct the string for display
+            let input_str: String = input.iter().collect();
+
+            let display_str = format!("{} {}", prompt_text, input_str);
+            let pad_len = (cols as usize).saturating_sub(display_str.chars().count());
+            let padded_str = format!("{}{}", display_str, " ".repeat(pad_len));
+
+            queue!(
+                stdout(),
+                cursor::MoveTo(0, prompt_y),
+                SetBackgroundColor(colors.ui_bg),
+                SetForegroundColor(colors.fg),
+                Print(padded_str),
+                ResetColor
+            )?;
+
+            // Calculate cursor position based on the INTERNAL index, not the total length
+            let prompt_len = prompt_text.chars().count();
+            let cursor_x = (prompt_len + 1 + cursor_idx) as u16;
+
+            queue!(
+                stdout(),
+                cursor::MoveTo(cursor_x, prompt_y),
+                cursor::Show
+            )?;
+
+            stdout().flush()?;
+
             if let Event::Key(key) = event::read()? {
-                if key.kind != event::KeyEventKind::Press { continue; }
-                if key.code == KeyCode::Char('c') && key.modifiers.contains(KeyModifiers::CONTROL) {
-                    self.clear_status();
-                    self.menu_state = previous_state; // Restore state on cancel
-                    return Ok(None);
-                }
                 match key.code {
-                    KeyCode::Char('y') | KeyCode::Char('Y') => { self.clear_status(); self.menu_state = previous_state; return Ok(Some('y')); }
-                    KeyCode::Char('n') | KeyCode::Char('N') => { self.clear_status(); self.menu_state = previous_state; return Ok(Some('n')); }
-                    KeyCode::Char('a') | KeyCode::Char('A') => { self.clear_status(); self.menu_state = previous_state; return Ok(Some('a')); }
-                    _ => {}
-                }
-            }
-        }
-    }
-
-    fn prompt_yn(&mut self, prompt_text: &str) -> io::Result<Option<bool>> {
-        let previous_state = self.menu_state;
-        self.menu_state = MenuState::YesNoCancel;
-        self.set_status(String::from(prompt_text));
-
-        let mut stdout_handle = stdout();
-        let (cols, rows) = term_size()?;
-        let theme = &self.theme_set.themes[&self.current_theme];
-        let ui_colors = derive_ui_colors(theme);
-
-        // Draw the prompt text right at column 0 without leading blank padding
-        queue!(
-            stdout_handle,
-            cursor::MoveTo(0, rows.saturating_sub(3)),
-            SetBackgroundColor(ui_colors.ui_bg),
-            terminal::Clear(ClearType::CurrentLine),
-            SetForegroundColor(ui_colors.fg),
-            Print(prompt_text),
-            SetBackgroundColor(Color::Reset),
-            SetForegroundColor(Color::Reset)
-        )?;
-
-        // Draw the menu items on the bottom two lines
-        let col_width = (cols as usize / 6).max(1);
-        Self::draw_menu_line(
-            &mut stdout_handle,
-            rows.saturating_sub(2),
-            cols,
-            col_width,
-            &[("^C", " Cancel"), ("Y", " Yes"), ("", ""), ("", ""), ("", ""), ("", "")],
-            ui_colors.ui_bg,
-            ui_colors.accent,
-            ui_colors.fg,
-        )?;
-        Self::draw_menu_line(
-            &mut stdout_handle,
-            rows.saturating_sub(1),
-            cols,
-            col_width,
-            &[("", ""), ("N", " No"), ("", ""), ("", ""), ("", ""), ("", "")],
-            ui_colors.ui_bg,
-            ui_colors.accent,
-            ui_colors.fg,
-        )?;
-
-        stdout_handle.flush()?;
-
-        loop {
-            if let Event::Key(key) = event::read()? {
-                if key.kind != event::KeyEventKind::Press { continue; }
-                match key.code {
-                    KeyCode::Char('y') | KeyCode::Char('Y') => {
-                        self.clear_status();
-                        self.menu_state = previous_state;
-                        return Ok(Some(true));
+                    KeyCode::Enter => {
+                        queue!(stdout(), cursor::Hide, ResetColor)?;
+                        stdout().flush()?;
+                        return Ok(Some(input.into_iter().collect())); // Convert back to String
                     }
-                    KeyCode::Char('n') | KeyCode::Char('N') => {
-                        self.clear_status();
-                        self.menu_state = previous_state;
-                        return Ok(Some(false));
-                    }
-                    KeyCode::Esc | KeyCode::Char('c') | KeyCode::Char('C') => {
-                        self.clear_status();
-                        self.menu_state = previous_state;
+                    KeyCode::Esc => {
+                        queue!(stdout(), cursor::Hide, ResetColor)?;
+                        stdout().flush()?;
                         return Ok(None);
+                    }
+                    // --- Navigation ---
+                    KeyCode::Left => {
+                        if cursor_idx > 0 { cursor_idx -= 1; }
+                    }
+                    KeyCode::Right => {
+                        if cursor_idx < input.len() { cursor_idx += 1; }
+                    }
+                    // Ctrl+B (Backward) and Ctrl+F (Forward)
+                    KeyCode::Char('b') | KeyCode::Char('B') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+                        if cursor_idx > 0 { cursor_idx -= 1; }
+                    }
+                    KeyCode::Char('f') | KeyCode::Char('F') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+                        if cursor_idx < input.len() { cursor_idx += 1; }
+                    }
+                    // --- Deletion ---
+                    KeyCode::Backspace => {
+                        if cursor_idx > 0 {
+                            cursor_idx -= 1;
+                            input.remove(cursor_idx);
+                        }
+                    }
+                    KeyCode::Delete => {
+                        if cursor_idx < input.len() {
+                            input.remove(cursor_idx); // Removes character at current cursor
+                        }
+                    }
+                    // --- Insertion ---
+                    KeyCode::Char(c) => {
+                        // Prevent Ctrl modifiers from accidentally typing text
+                        if !key.modifiers.intersects(KeyModifiers::CONTROL | KeyModifiers::ALT | KeyModifiers::META) {
+                            input.insert(cursor_idx, c);
+                            cursor_idx += 1;
+                        }
                     }
                     _ => {}
                 }

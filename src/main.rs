@@ -117,18 +117,45 @@ fn main() {
                 let header_title = format!("View Email ({})", active_email);
                 queue!(stdout, cursor::MoveTo(0, 0), SetForegroundColor(r_colors.accent), Print(header_title)).unwrap();
 
+                // let fields = ["From:", "To:", "Cc:", "Subject:"];
+                // let vals = [&email_from, &email_to, &email_cc, &email_subject];
+                //
+                // for i in 0..4 {
+                //     queue!(
+                //         stdout, cursor::MoveTo(0, (i + 1) as u16),
+                //         SetBackgroundColor(r_colors.ui_bg), SetForegroundColor(r_colors.accent), Print(format!("{:>8}", fields[i])),
+                //         SetForegroundColor(r_colors.fg), Print(" "), Print(vals[i])
+                //     ).unwrap();
+                // }
+                //
+                // queue!(stdout, cursor::MoveTo(0, 5), SetBackgroundColor(r_colors.ui_bg), SetForegroundColor(r_colors.accent), Print(" Attach: ")).unwrap();
+
                 let fields = ["From:", "To:", "Cc:", "Subject:"];
                 let vals = [&email_from, &email_to, &email_cc, &email_subject];
 
                 for i in 0..4 {
                     queue!(
-                        stdout, cursor::MoveTo(0, (i + 1) as u16),
-                        SetBackgroundColor(r_colors.ui_bg), SetForegroundColor(r_colors.accent), Print(format!("{:>8}", fields[i])),
-                        SetForegroundColor(r_colors.fg), Print(" "), Print(vals[i])
+                        stdout,
+                        cursor::MoveTo(0, (i + 1) as u16),
+                        SetBackgroundColor(r_colors.ui_bg), // Ensure background is set here
+                        SetForegroundColor(r_colors.accent),
+                        Print(format!("{:>8}", fields[i])),
+                        SetForegroundColor(r_colors.fg),
+                        Print(" "),
+                        Print(vals[i]),
+                        Clear(ClearType::UntilNewLine)
                     ).unwrap();
                 }
 
-                queue!(stdout, cursor::MoveTo(0, 5), SetBackgroundColor(r_colors.ui_bg), SetForegroundColor(r_colors.accent), Print(" Attach: ")).unwrap();
+                // Apply the same logic to the "Attach" section
+                queue!(
+                    stdout,
+                    cursor::MoveTo(0, 5),
+                    SetBackgroundColor(r_colors.ui_bg),
+                    SetForegroundColor(r_colors.accent),
+                    Print(" Attach: "),
+                    Clear(ClearType::UntilNewLine)
+                ).unwrap();
 
                 if attachments.is_empty() {
                     let dim_c = if r_colors.is_dark { Color::DarkGrey } else { Color::Grey };
