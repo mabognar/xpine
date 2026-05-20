@@ -149,7 +149,7 @@ pub fn compose_email(account: &Account, default_to: Option<&str>, default_subjec
     let mut final_body = String::new();
     let mut cancelled = false;
 
-    let address_book = crate::config::load_address_book();
+    let address_book = crate::address::load_address_book();
 
     loop {
         let (cols, rows) = term_size().unwrap_or((80, 24));

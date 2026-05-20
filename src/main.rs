@@ -1,4 +1,5 @@
 mod app;
+mod address;
 mod compose;
 mod config;
 mod editor;
@@ -73,8 +74,19 @@ fn main() {
             let attach_lines = if attachments.is_empty() { 1 } else { attachments.len() };
             reader.top_margin = (5 + attach_lines) as u16;
 
-            reader.buffer = Rope::from_str(text_body.as_str());
+            let (cols, _) = term_size().unwrap_or((80, 24));
+
+            // A 2-character margin prevents the final characters from being swallowed
+            // by a terminal emulator's right-edge auto-wrapping or scrollbars.
+            let wrap_width = (cols as usize).saturating_sub(2);
+            let wrapped_text = wrap_email_body(text_body.as_str(), wrap_width);
+
+            reader.buffer = Rope::from_str(&wrapped_text);
             reader.current_theme = theme_provider.current_theme.clone();
+
+            // Disable the character-based soft-wrap in the UI
+            // so our clean word-wrap is preserved.
+            reader.soft_wrap = false;
 
             // Set the status message if an HTML body is present
             if let Some(html) = html_body {
@@ -162,7 +174,7 @@ fn main() {
                         if !key.modifiers.contains(event::KeyModifiers::CONTROL) && !key.modifiers.contains(event::KeyModifiers::ALT) {
 
                             if key.code == event::KeyCode::Char('a') || key.code == event::KeyCode::Char('A') {
-                                if let Ok(added) = crate::config::add_to_address_book(&email_from) {
+                                if let Ok(added) = crate::address::add_to_address_book(&email_from) {
                                     if added {
                                         reader.set_status(format!("Added {} to address book.", email_from));
                                     } else {
@@ -306,4 +318,44 @@ fn main() {
     execute!(stdout, LeaveAlternateScreen).unwrap();
     disable_raw_mode().expect("Failed to disable raw mode");
     let _ = session.logout();
+}
+
+fn wrap_email_body(text: &str, width: usize) -> String {
+    let mut result = String::with_capacity(text.len());
+
+    for line in text.lines() {
+        if line.chars().count() <= width {
+            // Keep short lines entirely untouched to preserve formatting
+            result.push_str(line);
+            result.push('\n');
+        } else {
+            let mut current_width = 0;
+            let mut is_first_word = true;
+
+            // split(' ') ensures we don't collapse multiple consecutive spaces
+            for word in line.split(' ') {
+                let word_len = word.chars().count();
+
+                if current_width + word_len + 1 > width && !is_first_word {
+                    result.push('\n');
+                    current_width = 0;
+                } else if !is_first_word {
+                    result.push(' ');
+                    current_width += 1;
+                }
+
+                result.push_str(word);
+                current_width += word_len;
+                is_first_word = false;
+            }
+            result.push('\n');
+        }
+    }
+
+    // Clean up trailing newline if the original text didn't have one
+    if !text.ends_with('\n') && result.ends_with('\n') {
+        result.pop();
+    }
+
+    result
 }

@@ -38,53 +38,53 @@ pub struct UiColors {
     pub is_dark: bool,
 }
 
-pub fn derive_ui_colors(theme: &Theme) -> UiColors {
-    let raw_bg = theme.settings.background.unwrap_or(syntect::highlighting::Color { r: 0, g: 0, b: 0, a: 255 });
-    let raw_fg = theme.settings.foreground.unwrap_or(syntect::highlighting::Color { r: 255, g: 255, b: 255, a: 255 });
-
-    let bg = Color::Rgb { r: raw_bg.r, g: raw_bg.g, b: raw_bg.b };
-    let fg = Color::Rgb { r: raw_fg.r, g: raw_fg.g, b: raw_fg.b };
-    let is_dark = (raw_bg.r as u32 + raw_bg.g as u32 + raw_bg.b as u32) < 384;
-
-    let ui_bg = if is_dark {
-        Color::Rgb { r: raw_bg.r.saturating_add(20), g: raw_bg.g.saturating_add(20), b: raw_bg.b.saturating_add(20) }
-    } else {
-        Color::Rgb { r: raw_bg.r.saturating_sub(20), g: raw_bg.g.saturating_sub(20), b: raw_bg.b.saturating_sub(20) }
-    };
-
-    let selected_bg = if raw_bg.r < 128 {
-        Color::Rgb { r: raw_bg.r.saturating_add(40), g: raw_bg.g.saturating_add(40), b: raw_bg.b.saturating_add(40) }
-    } else {
-        Color::Rgb { r: raw_bg.r.saturating_sub(40), g: raw_bg.g.saturating_sub(40), b: raw_bg.b.saturating_sub(40) }
-    };
-
-    let get_theme_color = |keys: &[&str]| -> Option<Color> {
-        for item in &theme.scopes {
-            let scope_str = format!("{:?}", item.scope).to_lowercase();
-            for key in keys {
-                if scope_str.contains(key) {
-                    if let Some(c) = item.style.foreground {
-                        return Some(Color::Rgb { r: c.r, g: c.g, b: c.b });
-                    }
-                }
-            }
-        }
-        None
-    };
-
-    let flag_a = Color::Green;
-    let flag_d = Color::Magenta;
-    let flag_n = Color::Yellow;
-    let flag_star = Color::Red;
-
-    let accent = get_theme_color(&["entity.name.function", "variable"])
-        .unwrap_or(if is_dark { Color::Rgb { r: 100, g: 200, b: 255 } } else { Color::Rgb { r: 20, g: 100, b: 180 } });
-
-    let date_color = get_theme_color(&["comment", "punctuation.definition.comment"])
-        .unwrap_or(if is_dark { Color::Rgb { r: 120, g: 120, b: 120 } } else { Color::Rgb { r: 140, g: 140, b: 140 } });
-
-    UiColors { bg, fg, ui_bg, selected_bg, accent, date_color, flag_n, flag_d, flag_a, flag_star, is_dark }
-}
+// pub fn derive_ui_colors(theme: &Theme) -> UiColors {
+//     let raw_bg = theme.settings.background.unwrap_or(syntect::highlighting::Color { r: 0, g: 0, b: 0, a: 255 });
+//     let raw_fg = theme.settings.foreground.unwrap_or(syntect::highlighting::Color { r: 255, g: 255, b: 255, a: 255 });
+//
+//     let bg = Color::Rgb { r: raw_bg.r, g: raw_bg.g, b: raw_bg.b };
+//     let fg = Color::Rgb { r: raw_fg.r, g: raw_fg.g, b: raw_fg.b };
+//     let is_dark = (raw_bg.r as u32 + raw_bg.g as u32 + raw_bg.b as u32) < 384;
+//
+//     let ui_bg = if is_dark {
+//         Color::Rgb { r: raw_bg.r.saturating_add(20), g: raw_bg.g.saturating_add(20), b: raw_bg.b.saturating_add(20) }
+//     } else {
+//         Color::Rgb { r: raw_bg.r.saturating_sub(20), g: raw_bg.g.saturating_sub(20), b: raw_bg.b.saturating_sub(20) }
+//     };
+//
+//     let selected_bg = if raw_bg.r < 128 {
+//         Color::Rgb { r: raw_bg.r.saturating_add(40), g: raw_bg.g.saturating_add(40), b: raw_bg.b.saturating_add(40) }
+//     } else {
+//         Color::Rgb { r: raw_bg.r.saturating_sub(40), g: raw_bg.g.saturating_sub(40), b: raw_bg.b.saturating_sub(40) }
+//     };
+//
+//     let get_theme_color = |keys: &[&str]| -> Option<Color> {
+//         for item in &theme.scopes {
+//             let scope_str = format!("{:?}", item.scope).to_lowercase();
+//             for key in keys {
+//                 if scope_str.contains(key) {
+//                     if let Some(c) = item.style.foreground {
+//                         return Some(Color::Rgb { r: c.r, g: c.g, b: c.b });
+//                     }
+//                 }
+//             }
+//         }
+//         None
+//     };
+//
+//     let flag_a = Color::Green;
+//     let flag_d = Color::Magenta;
+//     let flag_n = Color::Yellow;
+//     let flag_star = Color::Red;
+//
+//     let accent = get_theme_color(&["entity.name.function", "variable"])
+//         .unwrap_or(if is_dark { Color::Rgb { r: 100, g: 200, b: 255 } } else { Color::Rgb { r: 20, g: 100, b: 180 } });
+//
+//     let date_color = get_theme_color(&["comment", "punctuation.definition.comment"])
+//         .unwrap_or(if is_dark { Color::Rgb { r: 120, g: 120, b: 120 } } else { Color::Rgb { r: 140, g: 140, b: 140 } });
+//
+//     UiColors { bg, fg, ui_bg, selected_bg, accent, date_color, flag_n, flag_d, flag_a, flag_star, is_dark }
+// }
 
 pub fn load_config() -> AppConfig {
     let home = dirs::home_dir().expect("Could not find home directory.");
@@ -285,84 +285,3 @@ impl ConfigExt for Editor {
     }
 }
 
-pub fn get_address_book_path() -> PathBuf {
-    let home = dirs::home_dir().expect("Could not find home directory.");
-    let xpine_dir = home.join(".xpine");
-    if !xpine_dir.exists() {
-        let _ = fs::create_dir_all(&xpine_dir);
-    }
-    xpine_dir.join("addressbook")
-}
-
-pub fn load_address_book() -> Vec<String> {
-    let path = get_address_book_path();
-    let mut addresses = Vec::new();
-
-    // 1. Read from the file
-    if let Ok(file) = fs::File::open(path) {
-        let reader = std::io::BufReader::new(file);
-        for line in reader.lines() {
-            if let Ok(addr) = line {
-                let trimmed = addr.trim().to_string();
-                if !trimmed.is_empty() {
-                    addresses.push(trimmed);
-                }
-            }
-        }
-    }
-
-    // 2. Force the correct custom sort every time it loads
-    addresses.sort_by(|a, b| {
-        let a_is_team = a.contains(':');
-        let b_is_team = b.contains(':');
-        if a_is_team == b_is_team {
-            a.cmp(b) // Sort alphabetically within their respective groups
-        } else if a_is_team {
-            std::cmp::Ordering::Greater // Teams go to the bottom
-        } else {
-            std::cmp::Ordering::Less    // Individuals go to the top
-        }
-    });
-
-    // 3. Inject the UI spacer line
-    if let Some(first_team_idx) = addresses.iter().position(|a| a.contains(':')) {
-        if first_team_idx > 0 {
-            addresses.insert(first_team_idx, String::new());
-        }
-    }
-
-    addresses
-}
-
-pub fn add_to_address_book(address: &str) -> std::io::Result<bool> {
-    let addresses = load_address_book();
-
-    // Check if the address already exists (ignoring whitespace differences)
-    if addresses.iter().any(|a| a.trim() == address.trim()) {
-        return Ok(false); // Return false indicating it's a duplicate
-    }
-
-    let path = get_address_book_path();
-    let mut file = std::fs::OpenOptions::new()
-        .create(true)
-        .append(true)
-        .open(path)?;
-
-    use std::io::Write;
-    writeln!(file, "{}", address.trim())?;
-
-    Ok(true) // Return true indicating it was added
-}
-
-pub fn save_address_book(addresses: &[String]) -> std::io::Result<()> {
-    use std::io::Write;
-    let path = get_address_book_path();
-    let mut file = std::fs::File::create(path)?;
-    for addr in addresses {
-        let trimmed = addr.trim();
-        if !trimmed.is_empty() {
-            writeln!(file, "{}", trimmed)?;
-        }
-    }
-    Ok(())
-}

@@ -50,7 +50,7 @@ pub fn handle_event(event: Event, app: &mut App, session: &mut ImapSession, them
                                 let prompt_msg = format!("Delete '{}'? (y/n)", addresses[*selected_idx]);
                                 if let Ok(Some(true)) = theme_provider.prompt_yn(&prompt_msg) {
                                     addresses.remove(*selected_idx);
-                                    let _ = crate::config::save_address_book(addresses);
+                                    let _ = crate::address::save_address_book(addresses);
                                     if *selected_idx >= addresses.len() {
                                         *selected_idx = addresses.len().saturating_sub(1);
                                     }
@@ -122,7 +122,7 @@ pub fn handle_event(event: Event, app: &mut App, session: &mut ImapSession, them
                                     app.needs_fetch = true;
                                     app.mode = AppMode::List;
                                 }
-                                1 => app.mode = AppMode::AddressBook { selected_idx: 0, addresses: crate::config::load_address_book() },
+                                1 => app.mode = AppMode::AddressBook { selected_idx: 0, addresses: crate::address::load_address_book() },
                                 2 => app.mode = AppMode::FolderList { step: 0, selected_idx: app.current_account_idx, folders: Vec::new() },
                                 3 => app.mode = AppMode::Settings { selected_idx: 0 },
                                 4 => { app.update_status("Help not yet implemented.".to_string()); app.mode = AppMode::List; },
@@ -137,7 +137,7 @@ pub fn handle_event(event: Event, app: &mut App, session: &mut ImapSession, them
                             app.needs_fetch = true;
                             app.mode = AppMode::List;
                         }
-                        KeyCode::Char('a') | KeyCode::Char('A') => app.mode = AppMode::AddressBook { selected_idx: 0, addresses: crate::config::load_address_book() },
+                        KeyCode::Char('a') | KeyCode::Char('A') => app.mode = AppMode::AddressBook { selected_idx: 0, addresses: crate::address::load_address_book() },
                         KeyCode::Char('f') | KeyCode::Char('F') => app.mode = AppMode::FolderList { step: 0, selected_idx: app.current_account_idx, folders: Vec::new() },
                         KeyCode::Char('s') | KeyCode::Char('S') => app.mode = AppMode::Settings { selected_idx: 0 },
                         KeyCode::Char('h') | KeyCode::Char('H') => { app.update_status("Help not yet implemented.".to_string()); app.mode = AppMode::List; },
@@ -474,5 +474,5 @@ fn clean_and_save_address_book(addresses: &mut Vec<String>) {
     // Save
     let mut save_list = addresses.clone();
     save_list.retain(|a| !a.trim().is_empty());
-    let _ = crate::config::save_address_book(&save_list);
+    let _ = crate::address::save_address_book(&save_list);
 }
