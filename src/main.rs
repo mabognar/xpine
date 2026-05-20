@@ -12,6 +12,7 @@ mod ui;
 pub mod theme;
 pub mod syntax;
 pub mod search;
+mod prompt;
 
 use app::{App, AppMode};
 use config::load_config;
