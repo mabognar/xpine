@@ -68,36 +68,36 @@ impl UiExt for Editor {
         } else {
             queue!(stdout, cursor::MoveTo(0, self.top_margin), SetBackgroundColor(ui_bg))?;
 
-            let title = "   xnano";
-            let file_display_string = match self.filename.as_deref() {
-                Some(name) => {
-                    let path = std::path::Path::new(name);
-                    if path.is_absolute() { name.to_string() } else if let Ok(cwd) = env::current_dir() { cwd.join(path).to_string_lossy().into_owned() } else { name.to_string() }
-                }
-                None => String::from("New Buffer"),
-            };
-            let file_section = format!("     {}", file_display_string);
-            let right_indicator_len = if self.is_modified { "[ Modified ]   ".len() } else { 0 };
-            let max_allowable_len = (cols as usize).saturating_sub(right_indicator_len);
-            let full_len = title.chars().count() + file_section.chars().count();
-
-            let mut final_file_section = file_section.clone();
-            if full_len > max_allowable_len {
-                let allowed_file_len = max_allowable_len.saturating_sub(title.chars().count());
-                if allowed_file_len > 3 {
-                    final_file_section = file_section.chars().take(allowed_file_len.saturating_sub(3)).collect();
-                    final_file_section.push_str("...");
-                } else { final_file_section = String::new(); }
-            }
-
-            let printed_left_len = title.chars().count() + final_file_section.chars().count();
-
-            if self.is_modified {
-                let right = "[ Modified ]   ";
-                queue!(stdout, SetForegroundColor(menu_key_fg), Print(title), SetForegroundColor(title_fg), Print(&final_file_section), Print(" ".repeat((cols as usize).saturating_sub(printed_left_len + right.len()))), SetForegroundColor(title_fg), Print(right), SetForegroundColor(Color::Reset), SetBackgroundColor(Color::Reset))?;
-            } else {
-                queue!(stdout, SetForegroundColor(menu_key_fg), Print(title), SetForegroundColor(title_fg), Print(&final_file_section), Print(" ".repeat((cols as usize).saturating_sub(printed_left_len))), SetForegroundColor(Color::Reset), SetBackgroundColor(Color::Reset))?;
-            }
+            // let title = "   xnano";
+            // let file_display_string = match self.filename.as_deref() {
+            //     Some(name) => {
+            //         let path = std::path::Path::new(name);
+            //         if path.is_absolute() { name.to_string() } else if let Ok(cwd) = env::current_dir() { cwd.join(path).to_string_lossy().into_owned() } else { name.to_string() }
+            //     }
+            //     None => String::from("New Buffer"),
+            // };
+            // let file_section = format!("     {}", file_display_string);
+            // let right_indicator_len = if self.is_modified { "[ Modified ]   ".len() } else { 0 };
+            // let max_allowable_len = (cols as usize).saturating_sub(right_indicator_len);
+            // let full_len = title.chars().count() + file_section.chars().count();
+            //
+            // let mut final_file_section = file_section.clone();
+            // if full_len > max_allowable_len {
+            //     let allowed_file_len = max_allowable_len.saturating_sub(title.chars().count());
+            //     if allowed_file_len > 3 {
+            //         final_file_section = file_section.chars().take(allowed_file_len.saturating_sub(3)).collect();
+            //         final_file_section.push_str("...");
+            //     } else { final_file_section = String::new(); }
+            // }
+            //
+            // let printed_left_len = title.chars().count() + final_file_section.chars().count();
+            //
+            // if self.is_modified {
+            //     let right = "[ Modified ]   ";
+            //     queue!(stdout, SetForegroundColor(menu_key_fg), Print(title), SetForegroundColor(title_fg), Print(&final_file_section), Print(" ".repeat((cols as usize).saturating_sub(printed_left_len + right.len()))), SetForegroundColor(title_fg), Print(right), SetForegroundColor(Color::Reset), SetBackgroundColor(Color::Reset))?;
+            // } else {
+            //     queue!(stdout, SetForegroundColor(menu_key_fg), Print(title), SetForegroundColor(title_fg), Print(&final_file_section), Print(" ".repeat((cols as usize).saturating_sub(printed_left_len))), SetForegroundColor(Color::Reset), SetBackgroundColor(Color::Reset))?;
+            // }
         }
 
         let syntax = if let Some(ref name) = self.filename {

@@ -8,7 +8,6 @@ mod mail;
 mod net;
 mod spell;
 mod ui;
-
 pub mod theme;
 pub mod syntax;
 pub mod search;
@@ -77,8 +76,6 @@ fn main() {
 
             let (cols, _) = term_size().unwrap_or((80, 24));
 
-            // A 2-character margin prevents the final characters from being swallowed
-            // by a terminal emulator's right-edge auto-wrapping or scrollbars.
             let wrap_width = (cols as usize).saturating_sub(2);
             let wrapped_text = wrap_email_body(text_body.as_str(), wrap_width);
 
@@ -116,19 +113,6 @@ fn main() {
 
                 let header_title = format!("View Email ({})", active_email);
                 queue!(stdout, cursor::MoveTo(0, 0), SetForegroundColor(r_colors.accent), Print(header_title)).unwrap();
-
-                // let fields = ["From:", "To:", "Cc:", "Subject:"];
-                // let vals = [&email_from, &email_to, &email_cc, &email_subject];
-                //
-                // for i in 0..4 {
-                //     queue!(
-                //         stdout, cursor::MoveTo(0, (i + 1) as u16),
-                //         SetBackgroundColor(r_colors.ui_bg), SetForegroundColor(r_colors.accent), Print(format!("{:>8}", fields[i])),
-                //         SetForegroundColor(r_colors.fg), Print(" "), Print(vals[i])
-                //     ).unwrap();
-                // }
-                //
-                // queue!(stdout, cursor::MoveTo(0, 5), SetBackgroundColor(r_colors.ui_bg), SetForegroundColor(r_colors.accent), Print(" Attach: ")).unwrap();
 
                 let fields = ["From:", "To:", "Cc:", "Subject:"];
                 let vals = [&email_from, &email_to, &email_cc, &email_subject];

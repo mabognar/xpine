@@ -26,43 +26,8 @@ pub fn fetch_emails(session: &mut ImapSession, app: &mut App, items_per_page: u3
         Err(_) => { app.needs_reconnect = true; return; }
     }
 
-    // // Determine the sequence of emails to fetch based on whether a search query is active
-    // let sequence = if let Some(ref q) = app.search_query {
-    //     // IMAP search string chaining ORs to search multiple fields
-    //     let query = format!("OR FROM \"{q}\" OR SUBJECT \"{q}\" OR TO \"{q}\" CC \"{q}\"");
-    //
-    //     match session.search(&query) {
-    //         Ok(seq_ids) if !seq_ids.is_empty() => {
-    //             app.total_messages = seq_ids.len() as u32;
-    //
-    //             // Collect and sort sequence IDs to preserve correct oldest-to-newest pagination
-    //             let mut sorted_seqs: Vec<u32> = seq_ids.into_iter().collect();
-    //             sorted_seqs.sort();
-    //
-    //             // Paginate the search results
-    //             let end_idx = sorted_seqs.len().saturating_sub((app.current_page * items_per_page) as usize);
-    //             let start_idx = end_idx.saturating_sub(items_per_page as usize - 1).max(1);
-    //
-    //             // Extract sequence IDs for the current page and join them with commas for the fetch command
-    //             let page_seqs = &sorted_seqs[(start_idx - 1)..end_idx];
-    //             page_seqs.iter().map(|id| id.to_string()).collect::<Vec<_>>().join(",")
-    //         }
-    //         _ => {
-    //             app.total_messages = 0;
-    //             return; // Break out early if no search results match
-    //         }
-    //     }
-    // } else {
-    // Determine the sequence of emails to fetch based on whether a search query is active
     let sequence = if let Some(ref q) = app.search_query {
 
-        // 1. Check if the user is searching for flagged/starred emails
-        // 2. Otherwise, use TEXT to force a broader substring match across the email
-        // let query = if q.trim() == "*" {
-        //     String::from("FLAGGED")
-        // } else {
-        //     format!("TEXT \"{}\"", q)
-        // };
         let query = if q.trim() == "*" {
             String::from("FLAGGED")
         } else {
