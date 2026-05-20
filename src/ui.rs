@@ -371,8 +371,9 @@ impl UiExt for Editor {
 
             if selected_idx >= entries.len() { selected_idx = entries.len().saturating_sub(1); }
 
-            queue!(stdout, SetBackgroundColor(ui_bg), terminal::Clear(ClearType::All))?;
-            queue!(stdout, cursor::MoveTo(0, 0), SetForegroundColor(title_fg), Print(format!("   xnano File Browser: {}", current_dir.display())))?;
+            queue!(stdout, SetBackgroundColor(ui_colors.bg), terminal::Clear(ClearType::All))?;
+            // queue!(stdout, SetBackgroundColor(ui_bg), terminal::Clear(ClearType::All))?;
+            queue!(stdout, cursor::MoveTo(0, 0), SetBackgroundColor(ui_bg), SetForegroundColor(menu_key_fg), Print(format!("xpine - File Browser: {}", current_dir.display())))?;
 
             // Draw the error message right below the title if it exists
             if !error_msg.is_empty() {
@@ -404,7 +405,7 @@ impl UiExt for Editor {
                         queue!(stdout, cursor::MoveTo(0, i as u16 + 2), SetBackgroundColor(ui_colors.selected_bg), SetForegroundColor(Color::White), Print(&display_str))?;
                     } else {
                         let fg_color = if *is_dir { menu_key_fg } else { title_fg };
-                        queue!(stdout, cursor::MoveTo(0, i as u16 + 2), SetBackgroundColor(ui_bg), SetForegroundColor(fg_color), Print(&display_str))?;
+                        queue!(stdout, cursor::MoveTo(0, i as u16 + 2), SetBackgroundColor(ui_colors.bg), SetForegroundColor(fg_color), Print(&display_str))?;
                     }
                 }
             }
