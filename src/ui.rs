@@ -67,37 +67,6 @@ impl UiExt for Editor {
             queue!(stdout, cursor::MoveTo(0, self.top_margin), SetBackgroundColor(default_cross_bg), terminal::Clear(ClearType::CurrentLine))?;
         } else {
             queue!(stdout, cursor::MoveTo(0, self.top_margin), SetBackgroundColor(ui_bg))?;
-
-            // let title = "   xnano";
-            // let file_display_string = match self.filename.as_deref() {
-            //     Some(name) => {
-            //         let path = std::path::Path::new(name);
-            //         if path.is_absolute() { name.to_string() } else if let Ok(cwd) = env::current_dir() { cwd.join(path).to_string_lossy().into_owned() } else { name.to_string() }
-            //     }
-            //     None => String::from("New Buffer"),
-            // };
-            // let file_section = format!("     {}", file_display_string);
-            // let right_indicator_len = if self.is_modified { "[ Modified ]   ".len() } else { 0 };
-            // let max_allowable_len = (cols as usize).saturating_sub(right_indicator_len);
-            // let full_len = title.chars().count() + file_section.chars().count();
-            //
-            // let mut final_file_section = file_section.clone();
-            // if full_len > max_allowable_len {
-            //     let allowed_file_len = max_allowable_len.saturating_sub(title.chars().count());
-            //     if allowed_file_len > 3 {
-            //         final_file_section = file_section.chars().take(allowed_file_len.saturating_sub(3)).collect();
-            //         final_file_section.push_str("...");
-            //     } else { final_file_section = String::new(); }
-            // }
-            //
-            // let printed_left_len = title.chars().count() + final_file_section.chars().count();
-            //
-            // if self.is_modified {
-            //     let right = "[ Modified ]   ";
-            //     queue!(stdout, SetForegroundColor(menu_key_fg), Print(title), SetForegroundColor(title_fg), Print(&final_file_section), Print(" ".repeat((cols as usize).saturating_sub(printed_left_len + right.len()))), SetForegroundColor(title_fg), Print(right), SetForegroundColor(Color::Reset), SetBackgroundColor(Color::Reset))?;
-            // } else {
-            //     queue!(stdout, SetForegroundColor(menu_key_fg), Print(title), SetForegroundColor(title_fg), Print(&final_file_section), Print(" ".repeat((cols as usize).saturating_sub(printed_left_len))), SetForegroundColor(Color::Reset), SetBackgroundColor(Color::Reset))?;
-            // }
         }
 
         let syntax = if let Some(ref name) = self.filename {
@@ -373,7 +342,22 @@ impl UiExt for Editor {
 
             queue!(stdout, SetBackgroundColor(ui_colors.bg), terminal::Clear(ClearType::All))?;
             // queue!(stdout, SetBackgroundColor(ui_bg), terminal::Clear(ClearType::All))?;
-            queue!(stdout, cursor::MoveTo(0, 0), SetBackgroundColor(ui_bg), SetForegroundColor(menu_key_fg), Print(format!("xpine - File Browser: {}", current_dir.display())))?;
+
+            // queue!(stdout, cursor::MoveTo(0, 0), SetBackgroundColor(ui_bg), SetForegroundColor(menu_key_fg),
+            //     Print(format!("xpine - File Browser: {}", current_dir.display())))?;
+
+            // 1. Prepare the title string
+            let title_text = format!("xpine - File Browser: {}", current_dir.display());
+            let title_len = title_text.chars().count();
+
+            // 2. Print the title
+            queue!(stdout, cursor::MoveTo(0, 0), SetBackgroundColor(ui_bg), SetForegroundColor(menu_key_fg), Print(&title_text))?;
+
+            // 3. Fill the rest of the line with background color
+            if (cols as usize) > title_len {
+                let padding = " ".repeat((cols as usize) - title_len);
+                queue!(stdout, SetBackgroundColor(ui_bg), Print(padding))?;
+            }
 
             // Draw the error message right below the title if it exists
             if !error_msg.is_empty() {
@@ -395,20 +379,76 @@ impl UiExt for Editor {
 
             let start_idx = scroll_offset;
 
+            // for i in 0..visible_rows_safe {
+            //     if start_idx + i < entries.len() {
+            //         let (name, is_dir) = &entries[start_idx + i];
+            //         let prefix = if *is_dir { "[DIR] " } else { "      " };
+            //         let display_str = format!("{}{}", prefix, name);
+            //
+            //         if start_idx + i == selected_idx {
+            //             queue!(stdout, cursor::MoveTo(0, i as u16 + 2), SetBackgroundColor(ui_colors.selected_bg), SetForegroundColor(Color::White), Print(&display_str))?;
+            //         } else {
+            //             let fg_color = if *is_dir { menu_key_fg } else { title_fg };
+            //             queue!(stdout, cursor::MoveTo(0, i as u16 + 2), SetBackgroundColor(ui_colors.bg), SetForegroundColor(fg_color), Print(&display_str))?;
+            //         }
+            //     }
+            // }
+
+            // // Updated code (starts printing at row 1, immediately below the title bar)
+            // for i in 0..visible_rows_safe {
+            //     if start_idx + i < entries.len() {
+            //         let (name, is_dir) = &entries[start_idx + i];
+            //         let prefix = if *is_dir { "[DIR] " } else { "      " };
+            //         let display_str = format!("{}{}", prefix, name);
+            //
+            //         // Changed i as u16 + 2 to i as u16 + 1
+            //         if start_idx + i == selected_idx {
+            //             queue!(stdout, cursor::MoveTo(0, i as u16 + 1), SetBackgroundColor(ui_colors.selected_bg), SetForegroundColor(Color::White), Print(&display_str))?;
+            //         } else {
+            //             let fg_color = if *is_dir { menu_key_fg } else { title_fg };
+            //             // queue!(stdout, cursor::MoveTo(0, i as u16 + 1), SetBackgroundColor(ui_bg), SetForegroundColor(fg_color), Print(&display_str))?;
+            //             let editor_bg = Color::Rgb {
+            //                 r: theme.settings.background.unwrap().r,
+            //                 g: theme.settings.background.unwrap().g,
+            //                 b: theme.settings.background.unwrap().b
+            //             };
+            //
+            //             if start_idx + i == selected_idx {
+            //                 queue!(stdout, cursor::MoveTo(0, i as u16 + 1), SetBackgroundColor(ui_colors.selected_bg), SetForegroundColor(fg_color), Print(&display_str))?;
+            //             } else {
+            //                 queue!(stdout, cursor::MoveTo(0, i as u16 + 1), SetBackgroundColor(editor_bg), SetForegroundColor(fg_color), Print(&display_str))?;
+            //             }
+            //         }
+            //     }
+
             for i in 0..visible_rows_safe {
                 if start_idx + i < entries.len() {
-                    let (name, is_dir) = &entries[start_idx + i];
+                    let actual_idx = start_idx + i;
+                    let is_selected = actual_idx == selected_idx;
+
+                    // 1. Choose background color
+                    let row_bg = if is_selected { ui_colors.selected_bg } else { ui_bg };
+
+                    // 2. IMPORTANT: Move cursor, set background, and Clear the entire line width
+                    queue!(stdout,
+               cursor::MoveTo(0, i as u16 + 1),
+               SetBackgroundColor(row_bg),
+               terminal::Clear(ClearType::CurrentLine)).unwrap();
+
+                    // 3. Render your text content
+                    let (name, is_dir) = &entries[actual_idx];
                     let prefix = if *is_dir { "[DIR] " } else { "      " };
                     let display_str = format!("{}{}", prefix, name);
 
-                    if start_idx + i == selected_idx {
-                        queue!(stdout, cursor::MoveTo(0, i as u16 + 2), SetBackgroundColor(ui_colors.selected_bg), SetForegroundColor(Color::White), Print(&display_str))?;
-                    } else {
-                        let fg_color = if *is_dir { menu_key_fg } else { title_fg };
-                        queue!(stdout, cursor::MoveTo(0, i as u16 + 2), SetBackgroundColor(ui_colors.bg), SetForegroundColor(fg_color), Print(&display_str))?;
-                    }
+                    let fg_color = if is_selected { Color::White } else { if *is_dir { menu_key_fg } else { title_fg } };
+
+                    queue!(stdout,
+               cursor::MoveTo(2, i as u16 + 1), // Indent the text
+               SetForegroundColor(fg_color),
+               Print(display_str)).unwrap();
                 }
             }
+
 
             let m_col = (cols as usize / 6).max(1);
             Self::draw_menu_line(&mut stdout, rows - 2, cols, m_col, &[ ("", ""),        ("P", " Prev"), ("Y", " Prev Pg"), ("Enter", " Select"), ("", ""), ("", ""), ("", "")], ui_bg, menu_key_fg, title_fg)?;
@@ -521,7 +561,7 @@ pub fn draw_app(stdout: &mut std::io::Stdout, app: &App, theme_provider: &Editor
                     let is_selected = actual_idx == *selected_idx;
                     let bg_color = if is_selected { colors.selected_bg } else { colors.bg };
 
-                    queue!(stdout, cursor::MoveTo(0, (i + 2) as u16), SetBackgroundColor(bg_color), terminal::Clear(ClearType::CurrentLine))?;
+                    queue!(stdout, cursor::MoveTo(0, (i + 1) as u16), SetBackgroundColor(bg_color), terminal::Clear(ClearType::CurrentLine))?;
 
                     let display_str = &addresses[actual_idx];
                     let padding = "  ";
@@ -571,15 +611,24 @@ pub fn draw_app(stdout: &mut std::io::Stdout, app: &App, theme_provider: &Editor
             let visible_items = (rows.saturating_sub(5)) as usize;
             let start_idx = if *selected_idx >= visible_items { *selected_idx - visible_items + 1 } else { 0 };
 
+
             for i in 0..visible_items {
                 let actual_idx = start_idx + i;
                 if actual_idx < items_count {
                     let text = if *step == 0 { app.accounts[actual_idx].email.clone() } else { folders[actual_idx].clone() };
-                    let y = 2 + i as u16;
+                    let y = 1 + i as u16; // Using the updated Y coordinate from our previous fix
                     let x = 1;
-                    let row_bg = if actual_idx == *selected_idx { colors.selected_bg } else { colors.bg };
+                    let is_selected = actual_idx == *selected_idx;
+                    let row_bg = if is_selected { colors.selected_bg } else { colors.bg };
 
-                    queue!(stdout, cursor::MoveTo(x, y), SetBackgroundColor(row_bg), SetForegroundColor(colors.fg), Print(format!("{:<40}", text)), ResetColor)?;
+                    // 1. Set the background for the whole line
+                    queue!(stdout, cursor::MoveTo(0, y), SetBackgroundColor(row_bg), terminal::Clear(ClearType::CurrentLine))?;
+
+                    // 2. Print the text with the correct foreground
+                    queue!(stdout, cursor::MoveTo(x, y), SetForegroundColor(colors.fg), Print(&text), ResetColor)?;
+
+                    // 3. If selected, we don't need extra logic because ClearType::CurrentLine
+                    // already filled the row with row_bg.
                 }
             }
 
@@ -738,7 +787,64 @@ pub fn draw_app(stdout: &mut std::io::Stdout, app: &App, theme_provider: &Editor
         }
         _ => {}
     }
+
+    if !theme_provider.status_message.is_empty() {
+        if let Some(time) = theme_provider.status_time {
+            if time.elapsed() < std::time::Duration::from_secs(3) {
+                queue!(
+                stdout,
+                cursor::MoveTo(0, rows - 3),
+                SetBackgroundColor(colors.selected_bg),
+                terminal::Clear(ClearType::UntilNewLine),
+                SetForegroundColor(colors.accent),
+                Print(format!(" {} ", theme_provider.status_message)),
+                ResetColor
+            )?;
+            }
+        }
+    }
+
     stdout.flush()?;
     Ok(())
+}
+
+fn soft_wrap_line(line: &str, max_width: usize) -> Vec<String> {
+    if line.is_empty() {
+        return vec![String::new()];
+    }
+
+    let mut wrapped_lines = Vec::new();
+    let chars: Vec<char> = line.chars().collect();
+    let mut start = 0;
+
+    while start < chars.len() {
+        let mut end = start + max_width;
+
+        // If the remaining string is shorter than max_width, it fits.
+        if end >= chars.len() {
+            wrapped_lines.push(chars[start..].iter().collect::<String>());
+            break;
+        }
+
+        // Look backwards from the 'end' to find the last space
+        let mut break_point = end;
+        while break_point > start && chars[break_point] != ' ' {
+            break_point -= 1;
+        }
+
+        if break_point == start {
+            // No space found within the limit! The word is longer than the margin.
+            // Fallback: break it exactly at max_width.
+            wrapped_lines.push(chars[start..end].iter().collect::<String>());
+            start = end;
+        } else {
+            // Break at the space (dropping the word after it to the next line)
+            wrapped_lines.push(chars[start..break_point].iter().collect::<String>());
+            // Skip the space itself on the next line
+            start = break_point + 1;
+        }
+    }
+
+    wrapped_lines
 }
 

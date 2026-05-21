@@ -71,15 +71,40 @@ pub fn handle_event(event: Event, app: &mut App, session: &mut ImapSession, them
                             }
                         }
                         KeyCode::Char('t') | KeyCode::Char('T') => {
-                            if let Ok(Some(team_name)) = theme_provider.prompt("Team Name (e.g. My Team): ", false) {
-                                let team_name = team_name.trim();
-                                if !team_name.is_empty() {
-                                    if let Ok(Some(emails)) = theme_provider.prompt_with_autocomplete("Emails (comma separated): ", addresses) {
-                                        let trimmed_emails = emails.trim().trim_end_matches(';');
-                                        if !trimmed_emails.is_empty() {
-                                            let formatted_list = format!("{}: {};", team_name, trimmed_emails);
-                                            addresses.push(formatted_list);
-                                            crate::address::clean_and_save_address_book(addresses);
+                            if k.modifiers.contains(KeyModifiers::ALT) {
+                                // // Logic for changing themes (ALT + T)
+                                // let mut themes: Vec<_> = theme_provider.theme_set.themes.keys().cloned().collect();
+                                // themes.sort();
+                                // if let Some(pos) = themes.iter().position(|t| t == &theme_provider.current_theme) {
+                                //     theme_provider.current_theme = themes[(pos + 1) % themes.len()].clone();
+                                //     theme_provider.save_config();
+                                //     app.update_status(format!("Theme: {}", theme_provider.current_theme));
+                                // }
+                                let mut themes: Vec<_> = theme_provider.theme_set.themes.keys().cloned().collect();
+                                themes.sort();
+
+                                if let Some(pos) = themes.iter().position(|t| t == &theme_provider.current_theme) {
+                                    theme_provider.current_theme = themes[(pos + 1) % themes.len()].clone();
+                                    theme_provider.save_config();
+                                    // app.update_status(format!("Theme: {}", theme_provider.current_theme));
+
+                                    // --- FIX: Change app.set_status to theme_provider.set_status ---
+                                    theme_provider.set_status(format!("Theme: {}", theme_provider.current_theme));
+
+                                    let _ = crate::ui::draw_app(stdout, app, theme_provider);
+                                }
+                            } else {
+                                // Logic for creating teams (T only)
+                                if let Ok(Some(team_name)) = theme_provider.prompt("Team Name (e.g. My Team): ", false) {
+                                    let team_name = team_name.trim();
+                                    if !team_name.is_empty() {
+                                        if let Ok(Some(emails)) = theme_provider.prompt_with_autocomplete("Emails (comma separated): ", addresses) {
+                                            let trimmed_emails = emails.trim().trim_end_matches(';');
+                                            if !trimmed_emails.is_empty() {
+                                                let formatted_list = format!("{}: {};", team_name, trimmed_emails);
+                                                addresses.push(formatted_list);
+                                                crate::address::clean_and_save_address_book(addresses);
+                                            }
                                         }
                                     }
                                 }
@@ -143,6 +168,45 @@ pub fn handle_event(event: Event, app: &mut App, session: &mut ImapSession, them
                         KeyCode::Char('s') | KeyCode::Char('S') => app.mode = AppMode::Settings { selected_idx: 0 },
                         KeyCode::Char('h') | KeyCode::Char('H') => { app.update_status("Help not yet implemented.".to_string()); app.mode = AppMode::List; },
                         KeyCode::Char('q') | KeyCode::Char('Q') => quit = true,
+                        // KeyCode::Char('t') | KeyCode::Char('T') if k.modifiers.contains(KeyModifiers::ALT) => {
+                        //     theme_provider.save_config();
+                        //     app.list_status = format!("Theme: {}", theme_provider.current_theme);
+                        //     app.list_status_time = Some(std::time::Instant::now());
+                        //     app.list_status_duration = std::time::Duration::from_secs(3);
+                        //     let mut themes: Vec<_> = theme_provider.theme_set.themes.keys().cloned().collect();
+                        //     themes.sort();
+                        //     if let Some(pos) = themes.iter().position(|t| t == &theme_provider.current_theme) {
+                        //         theme_provider.current_theme = themes[(pos + 1) % themes.len()].clone();
+                        //         theme_provider.save_config();
+                        //     }
+                        // }
+                        // Inside src/events.rs
+                        // KeyCode::Char('t') | KeyCode::Char('T') if k.modifiers.contains(KeyModifiers::ALT) => {
+                        //     let mut themes: Vec<_> = theme_provider.theme_set.themes.keys().cloned().collect();
+                        //     themes.sort();
+                        //
+                        //     if let Some(pos) = themes.iter().position(|t| t == &theme_provider.current_theme) {
+                        //         theme_provider.current_theme = themes[(pos + 1) % themes.len()].clone();
+                        //         theme_provider.save_config();
+                        //
+                        //         // --- FIX: Change app.set_status to theme_provider.set_status ---
+                        //         theme_provider.set_status(format!("Theme: {}", theme_provider.current_theme));
+                        //
+                        //         let _ = crate::ui::draw_app(stdout, app, theme_provider);
+                        //     }
+                        // }
+                        KeyCode::Char('t') | KeyCode::Char('T') if k.modifiers.contains(KeyModifiers::ALT) => {
+                            theme_provider.save_config();
+                            app.list_status = format!("Theme: {}", theme_provider.current_theme);
+                            app.list_status_time = Some(std::time::Instant::now());
+                            app.list_status_duration = std::time::Duration::from_secs(3);
+                            let mut themes: Vec<_> = theme_provider.theme_set.themes.keys().cloned().collect();
+                            themes.sort();
+                            if let Some(pos) = themes.iter().position(|t| t == &theme_provider.current_theme) {
+                                theme_provider.current_theme = themes[(pos + 1) % themes.len()].clone();
+                                theme_provider.save_config();
+                            }
+                        }
                         _ => {}
                     }
                 }
@@ -200,6 +264,14 @@ pub fn handle_event(event: Event, app: &mut App, session: &mut ImapSession, them
                                 app.mode = AppMode::List;
                             }
                         }
+                        KeyCode::Char('t') | KeyCode::Char('T') if k.modifiers.contains(KeyModifiers::ALT) => {
+                            let mut themes: Vec<_> = theme_provider.theme_set.themes.keys().cloned().collect();
+                            themes.sort();
+                            if let Some(pos) = themes.iter().position(|t| t == &theme_provider.current_theme) {
+                                theme_provider.current_theme = themes[(pos + 1) % themes.len()].clone();
+                                theme_provider.save_config();
+                            }
+                        }
                         _ => {}
                     }
                 }
@@ -210,11 +282,15 @@ pub fn handle_event(event: Event, app: &mut App, session: &mut ImapSession, them
 
                     match k.code {
                         KeyCode::Char('t') | KeyCode::Char('T') if k.modifiers.contains(KeyModifiers::ALT) => {
+                            theme_provider.save_config();
+                            app.list_status = format!("Theme: {}", theme_provider.current_theme);
+                            app.list_status_time = Some(std::time::Instant::now());
+                            app.list_status_duration = std::time::Duration::from_secs(3);
                             let mut themes: Vec<_> = theme_provider.theme_set.themes.keys().cloned().collect();
                             themes.sort();
                             if let Some(pos) = themes.iter().position(|t| t == &theme_provider.current_theme) {
                                 theme_provider.current_theme = themes[(pos + 1) % themes.len()].clone();
-                                app.update_status(format!("Theme: {}", theme_provider.current_theme));
+                                theme_provider.save_config();
                             }
                         }
                         KeyCode::Char('<') | KeyCode::Left => {

@@ -149,6 +149,17 @@ impl Editor {
         Ok(())
     }
 
+    // pub fn save_config(&self) -> io::Result<()> {
+    //     let mut config_path = dirs::home_dir().unwrap_or_default();
+    //     config_path.push(".xpinerc");
+    //
+    //     let config_data = format!(
+    //         "theme = {}\nsoft_wrap = {}\n...",
+    //         self.current_theme, self.soft_wrap
+    //     );
+    //     fs::write(config_path, config_data)
+    // }
+
     pub fn handle_keypress(&mut self, key: crossterm::event::KeyEvent) -> io::Result<EditorResult> {
         if key.kind != event::KeyEventKind::Press { return Ok(EditorResult::Continue); }
         self.highlight_match = None;
@@ -250,7 +261,11 @@ impl Editor {
 
             KeyCode::Char('l') if is_ctrl => self.go_to_line()?,
 
-            KeyCode::Char('t') if is_alt => self.cycle_theme(),
+            KeyCode::Char('t') if is_alt => {
+                self.cycle_theme();
+                self.save_config();
+            },
+
             KeyCode::Char('l') if is_alt => {
                 self.show_line_numbers = !self.show_line_numbers;
                 self.save_config();

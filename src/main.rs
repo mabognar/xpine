@@ -35,7 +35,7 @@ fn main() {
     let mut stdout = stdout();
     execute!(stdout, EnterAlternateScreen).unwrap();
 
-    let mut theme_provider = Editor::new(None);
+    let mut settings_provider = Editor::new(None);
     let mut session = net::connect(&app.active_account).unwrap();
 
     loop {
@@ -62,7 +62,7 @@ fn main() {
         }
 
         if app.needs_fetch && matches!(app.mode, AppMode::List) {
-            net::fetch_emails(&mut session, &mut app, items_per_page, theme_provider.sort_newest_first);
+            net::fetch_emails(&mut session, &mut app, items_per_page, settings_provider.sort_newest_first);
             app.last_fetch_time = Instant::now();
             app.needs_fetch = false;
         }
@@ -80,7 +80,7 @@ fn main() {
             let wrapped_text = wrap_email_body(text_body.as_str(), wrap_width);
 
             reader.buffer = Rope::from_str(&wrapped_text);
-            reader.current_theme = theme_provider.current_theme.clone();
+            reader.current_theme = settings_provider.current_theme.clone();
 
             // Disable the character-based soft-wrap in the UI
             // so our clean word-wrap is preserved.
@@ -296,7 +296,7 @@ fn main() {
                     } else if let event::Event::Resize(_, _) = ev {}
                 }
             }
-            theme_provider.current_theme = reader.current_theme;
+            settings_provider.current_theme = reader.current_theme;
 
             // Only revert to List mode if we didn't just intentionally switch to the FileBrowser
             if matches!(app.mode, AppMode::Reading { .. }) {
@@ -305,7 +305,7 @@ fn main() {
             continue;
         }
         
-        ui::draw_app(&mut stdout, &app, &theme_provider).unwrap();
+        ui::draw_app(&mut stdout, &app, &settings_provider).unwrap();
 
         let mut timeout = if app.last_fetch_time.elapsed() >= app.auto_refresh_interval { Duration::from_millis(1) } else { app.auto_refresh_interval - app.last_fetch_time.elapsed() };
 
@@ -321,7 +321,7 @@ fn main() {
         }
 
         if event::poll(timeout).unwrap() {
-            if events::handle_event(event::read().unwrap(), &mut app, &mut session, &mut theme_provider, &mut stdout) {
+            if events::handle_event(event::read().unwrap(), &mut app, &mut session, &mut settings_provider, &mut stdout) {
                 break;
             }
         }
