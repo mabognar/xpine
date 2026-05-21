@@ -282,15 +282,19 @@ pub fn handle_event(event: Event, app: &mut App, session: &mut ImapSession, them
 
                     match k.code {
                         KeyCode::Char('t') | KeyCode::Char('T') if k.modifiers.contains(KeyModifiers::ALT) => {
-                            theme_provider.save_config();
-                            app.list_status = format!("Theme: {}", theme_provider.current_theme);
-                            app.list_status_time = Some(std::time::Instant::now());
-                            app.list_status_duration = std::time::Duration::from_secs(3);
+                            // 1. Get a stable list of themes
                             let mut themes: Vec<_> = theme_provider.theme_set.themes.keys().cloned().collect();
                             themes.sort();
+
+                            // 2. Find the current position
                             if let Some(pos) = themes.iter().position(|t| t == &theme_provider.current_theme) {
-                                theme_provider.current_theme = themes[(pos + 1) % themes.len()].clone();
-                                theme_provider.save_config();
+                                // 3. Update to the next theme
+                                let next_theme = themes[(pos + 1) % themes.len()].clone();
+                                theme_provider.current_theme = next_theme;
+
+                                // 4. Update status and force an immediate redraw of the UI
+                                app.update_status(format!("Theme: {}", theme_provider.current_theme));
+                                let _ = crate::ui::draw_app(stdout, app, theme_provider);
                             }
                         }
                         KeyCode::Char('<') | KeyCode::Left => {
@@ -433,8 +437,16 @@ pub fn handle_event(event: Event, app: &mut App, session: &mut ImapSession, them
                                 app.selected_index += 1;
                             }
                         }
-                        KeyCode::Char('u') | KeyCode::Char('U') => net::toggle_imap_flag(session, &mut app.page_emails, app.selected_index, "\\Seen"),
+                        KeyCode::Char('u') | KeyCode::Char('U') => {
+                            net::toggle_imap_flag(session, &mut app.page_emails, app.selected_index, "\\Seen");
 
+                            // Move cursor down
+                            let (_, rows) = term_size().unwrap_or((80, 24));
+                            let max_visible = app.page_emails.len().min(rows.saturating_sub(3) as usize);
+                            if app.selected_index + 1 < max_visible {
+                                app.selected_index += 1;
+                            }
+                        }
                         KeyCode::Char('c') | KeyCode::Char('C') => {
                             if let Some(status) = compose_email(&app.active_account, None, None, None, &mut theme_provider.current_theme) {
                                 app.update_status(status);

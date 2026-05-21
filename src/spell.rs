@@ -98,19 +98,18 @@ impl SpellExt for Editor {
 
             let word_len = word.chars().count();
             self.highlight_match = Some((self.cursor_y, self.cursor_x, self.cursor_x + word_len));
-            self.draw_screen()?;
 
             let dict = self.dictionary.as_ref().unwrap();
             let suggestions = Self::get_suggestions(&lower_word, dict);
 
+            // Populate current suggestions and transition state context
             self.current_suggestions = suggestions.into_iter().take(4).collect();
             self.menu_state = MenuState::SpellCheck;
 
-            let choice_result = self.prompt("Replace with: ", false)?;
+            // Draw screen ONLY after suggestions and layout states are fully prepared
+            self.draw_screen()?;
 
-            // RESTORE STATE HERE
-            // self.menu_state = if is_composer { MenuState::EmailComposer } else { MenuState::Default };
-            self.menu_state = previous_state;
+            let choice_result = self.prompt("Replace with: ", false)?;
 
             let current_suggs_copy = self.current_suggestions.clone();
             self.current_suggestions.clear();
@@ -155,8 +154,7 @@ impl SpellExt for Editor {
             } else {
                 self.highlight_match = None;
                 self.set_status(String::from("Spell check cancelled"));
-                // RESTORE STATE ON CANCEL
-                // if is_composer { self.menu_state = MenuState::EmailComposer; }
+                // Restore UI state only when user exits early
                 self.menu_state = previous_state;
                 return Ok(());
             }
@@ -165,9 +163,8 @@ impl SpellExt for Editor {
         }
 
         self.set_status(format!("Spell check complete. {} corrections made.", corrections));
-        // RESTORE STATE ON FINISH
+        // Restore UI state safely now that the loop has finished entirely
         self.menu_state = previous_state;
-        // if is_composer { self.menu_state = MenuState::EmailComposer; }
         Ok(())
     }
 

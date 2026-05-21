@@ -160,6 +160,116 @@ impl Editor {
     //     fs::write(config_path, config_data)
     // }
 
+    // pub fn justify_all_text(input: &str) -> String {
+    //     let mut result = String::new();
+    //     let mut current_paragraph = Vec::new();
+    //
+    //     for line in input.lines() {
+    //         let trimmed = line.trim();
+    //
+    //         // Check if the line should be treated as a structural boundary or literal text
+    //         // e.g., an empty line, an email quote line, or a highly indented list item.
+    //         if trimmed.is_empty() || line.starts_with('>') || line.starts_with(' ') || line.starts_with('\t') {
+    //             // First, drain and flush any queued standard paragraph text up to this point
+    //             if !current_paragraph.is_empty() {
+    //                 result.push_str(&Self::flow_paragraph_words(&current_paragraph, 72));
+    //                 current_paragraph.clear();
+    //             }
+    //
+    //             // Append the literal line matching the layout boundary
+    //             result.push_str(line);
+    //             result.push_str("\n");
+    //         } else {
+    //             // Collect the line content into the active paragraph buffer
+    //             current_paragraph.push(line);
+    //         }
+    //     }
+    //
+    //     // Flush any remaining trailing paragraph blocks left in the vector
+    //     if !current_paragraph.is_empty() {
+    //         result.push_str(&Self::flow_paragraph_words(&current_paragraph, 72));
+    //     }
+    //
+    //     result
+    // }
+
+    pub fn justify_all_text(input: &str) -> String {
+        let mut result = String::new();
+        let mut current_paragraph = Vec::new();
+
+        for line in input.lines() {
+            let trimmed = line.trim();
+
+            // Check if the line is a numbered list (e.g., "1.", "23.") or bullet ("-", "*", "+")
+            let is_numbered_list = trimmed.split_whitespace().next()
+                .map(|first_word| {
+                    // Check if it ends with a dot and all characters before the dot are digits
+                    first_word.ends_with('.') && first_word[..first_word.len()-1].chars().all(|c| c.is_ascii_digit())
+                })
+                .unwrap_or(false);
+
+            let is_bullet_list = trimmed.starts_with('-') || trimmed.starts_with('*') || trimmed.starts_with('+');
+
+            // Structural layout constraints: empty rows, quotes, manual offsets, or lists
+            if trimmed.is_empty()
+                || line.starts_with('>')
+                || line.starts_with(' ')
+                || line.starts_with('\t')
+                || is_numbered_list
+                || is_bullet_list
+            {
+                // First, drain and flush any queued standard paragraph lines up to this point
+                if !current_paragraph.is_empty() {
+                    result.push_str(&Self::flow_paragraph_words(&current_paragraph, 72));
+                    current_paragraph.clear();
+                }
+
+                // Append the list item or structural line as its own standalone row
+                result.push_str(line);
+                result.push_str("\n");
+            } else {
+                // Collect standard text rows to form a paragraph
+                current_paragraph.push(line);
+            }
+        }
+
+        // Flush any remaining trailing paragraphs left in the buffer
+        if !current_paragraph.is_empty() {
+            result.push_str(&Self::flow_paragraph_words(&current_paragraph, 72));
+        }
+
+        result
+    }
+
+    fn flow_paragraph_words(lines: &[&str], max_width: usize) -> String {
+        let joined_text = lines.join(" ");
+        let words: Vec<&str> = joined_text.split_whitespace().collect();
+        if words.is_empty() {
+            return String::new();
+        }
+
+        let mut reflowed = String::new();
+        let mut current_line_len = 0;
+
+        for word in words {
+            if current_line_len + word.len() + 1 > max_width {
+                reflowed.push('\n');
+                reflowed.push_str(word);
+                current_line_len = word.len();
+            } else {
+                if current_line_len > 0 {
+                    reflowed.push(' ');
+                    current_line_len += 1;
+                }
+                reflowed.push_str(word);
+                current_line_len += word.len();
+            }
+        }
+        reflowed.push('\n');
+        reflowed.push_str("\n"); // Add a trailing empty space gap between paragraphs
+        reflowed
+    }
+
     pub fn handle_keypress(&mut self, key: crossterm::event::KeyEvent) -> io::Result<EditorResult> {
         if key.kind != event::KeyEventKind::Press { return Ok(EditorResult::Continue); }
         self.highlight_match = None;
@@ -303,12 +413,48 @@ impl Editor {
             KeyCode::Left => self.move_left(),
             KeyCode::Right => self.move_right(),
 
+            // KeyCode::Char(c) if !is_ctrl && !is_alt => {
+            //     let idx = self.get_cursor_char_idx();
+            //     self.buffer.insert_char(idx, c);
+            //     self.cursor_x += 1;
+            //     self.desired_cursor_x = self.cursor_x;
+            //     self.mark_modified();
+            // }
             KeyCode::Char(c) if !is_ctrl && !is_alt => {
                 let idx = self.get_cursor_char_idx();
                 self.buffer.insert_char(idx, c);
                 self.cursor_x += 1;
                 self.desired_cursor_x = self.cursor_x;
                 self.mark_modified();
+
+                // Alpine/Pico style automatic wrapping at a set margin (e.g., 72 columns)
+                let wrap_margin = 72;
+                if self.cursor_x > wrap_margin && c != ' ' {
+                    // Look backward for the closest space character in the current line to break on a word boundary
+                    let line_start_idx = self.buffer.line_to_char(self.cursor_y);
+                    let current_idx = self.get_cursor_char_idx();
+
+                    let mut space_idx = None;
+                    // Search backwards from the current position to the start of the line
+                    for i in (line_start_idx..current_idx).rev() {
+                        if self.buffer.char(i) == ' ' {
+                            space_idx = Some(i);
+                            break;
+                        }
+                    }
+
+                    if let Some(idx_to_break) = space_idx {
+                        // Replace the space character with a newline character
+                        self.buffer.remove(idx_to_break..(idx_to_break + 1));
+                        self.buffer.insert_char(idx_to_break, '\n');
+
+                        // Recalculate the precise cursor positions after splitting the line
+                        let new_cursor_idx = current_idx; // index shifts match perfectly since 1 char removed, 1 char inserted
+                        self.cursor_y = self.buffer.char_to_line(new_cursor_idx);
+                        self.cursor_x = new_cursor_idx - self.buffer.line_to_char(self.cursor_y);
+                        self.desired_cursor_x = self.cursor_x;
+                    }
+                }
             }
             KeyCode::Enter => {
                 let idx = self.get_cursor_char_idx();
@@ -339,7 +485,16 @@ impl Editor {
 
     pub(crate) fn scroll(&mut self) -> io::Result<()> {
         let (cols, rows) = terminal::size()?;
-        let visible_rows = rows.saturating_sub(4 + self.top_margin) as usize;
+        // let visible_rows = rows.saturating_sub(4 + self.top_margin) as usize;
+
+        let (_, rows) = crossterm::terminal::size().unwrap_or((80, 24));
+
+        let has_status = !self.status_message.trim().is_empty();
+        let status_overhead = if has_status { 1 } else { 0 };
+        let runtime_overhead = 2 + status_overhead;
+
+        let visible_rows = rows.saturating_sub((runtime_overhead + self.top_margin) as u16) as usize;
+
         let cols_u = cols as usize;
         let max_line_num_len = self.buffer.len_lines().to_string().len();
         let gutter_width = if self.show_line_numbers { max_line_num_len + 1 } else { 0 };
