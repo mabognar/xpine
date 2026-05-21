@@ -307,9 +307,32 @@ impl UiExt for Editor {
                 Self::draw_menu_line(&mut stdout, rows - 2, cols, col_width, &[("", ""), ("", ""), ("", ""), ("", ""), ("", ""), ("", "")], ui_bg, menu_key_fg, menu_text_fg)?;
                 Self::draw_menu_line(&mut stdout, rows - 1, cols, col_width, &[("^C", " Cancel"), ("", ""), ("", ""), ("", ""), ("", ""), ("", "")], ui_bg, menu_key_fg, menu_text_fg)?;
             }
+            // MenuState::SpellCheck => {
+            //     Self::draw_menu_line(&mut stdout, rows - 2, cols, col_width, &[("I", " Ignore"), ("", ""), ("", ""), ("", ""), ("", ""), ("", "")], ui_bg, menu_key_fg, menu_text_fg)?;
+            //     Self::draw_menu_line(&mut stdout, rows - 1, cols, col_width, &[("A", " Add Word"), ("^C", " Cancel"), ("", ""), ("", ""), ("", ""), ("", "")], ui_bg, menu_key_fg, menu_text_fg)?;
+            // }
             MenuState::SpellCheck => {
-                Self::draw_menu_line(&mut stdout, rows - 2, cols, col_width, &[("I", " Ignore"), ("", ""), ("", ""), ("", ""), ("", ""), ("", "")], ui_bg, menu_key_fg, menu_text_fg)?;
-                Self::draw_menu_line(&mut stdout, rows - 1, cols, col_width, &[("A", " Add Word"), ("^C", " Cancel"), ("", ""), ("", ""), ("", ""), ("", "")], ui_bg, menu_key_fg, menu_text_fg)?;
+                // Extract up to 4 suggestions safely from the editor state
+                let s1 = self.current_suggestions.get(0).cloned().unwrap_or_default();
+                let s2 = self.current_suggestions.get(1).cloned().unwrap_or_default();
+                let s3 = self.current_suggestions.get(2).cloned().unwrap_or_default();
+                let s4 = self.current_suggestions.get(3).cloned().unwrap_or_default();
+
+                let menu1 = vec![
+                    ("1", if s1.is_empty() { "" } else { s1.as_str() }),
+                    ("3", if s3.is_empty() { "" } else { s3.as_str() }),
+                    ("I", "Ignore"),
+                    ("^C", "Cancel"),
+                ];
+                let menu2 = vec![
+                    ("2", if s2.is_empty() { "" } else { s2.as_str() }),
+                    ("4", if s4.is_empty() { "" } else { s4.as_str() }),
+                    ("A", "Add to Dict"),
+                    ("", ""), // Blank to balance the menu columns
+                ];
+
+                Self::draw_menu_line(&mut stdout, rows - 2, cols, col_width, &menu1, ui_bg, menu_key_fg, menu_text_fg)?;
+                Self::draw_menu_line(&mut stdout, rows - 1, cols, col_width, &menu2, ui_bg, menu_key_fg, menu_text_fg)?;
             }
         }
 

@@ -274,6 +274,9 @@ impl Editor {
         if key.kind != event::KeyEventKind::Press { return Ok(EditorResult::Continue); }
         self.highlight_match = None;
 
+        // let is_ctrl = key.modifiers.contains(KeyModifiers::CONTROL);
+        // let is_alt = key.modifiers.contains(KeyModifiers::ALT);
+        //
         let is_ctrl = key.modifiers.contains(KeyModifiers::CONTROL);
         let is_alt = key.modifiers.contains(KeyModifiers::ALT);
 
@@ -363,7 +366,15 @@ impl Editor {
             KeyCode::Char('j') if is_ctrl => { self.justify(); self.is_justified = true; keep_justified = true; }
             KeyCode::F(4) => { self.justify(); self.is_justified = true; keep_justified = true; }
 
-            KeyCode::Char('t') if is_ctrl => self.spell_check()?,
+            // KeyCode::Char('t') if is_ctrl => self.spell_check()?,
+            KeyCode::Char('t') if is_ctrl => {
+                let _ = self.spell_check();
+                return Ok(EditorResult::Continue);
+            }
+            KeyCode::Char('T') if is_ctrl => {
+                let _ = self.spell_check();
+                return Ok(EditorResult::Continue);
+            }
             KeyCode::F(12) => self.spell_check()?,
 
             KeyCode::Char('c') if is_ctrl => self.cur_pos(),
