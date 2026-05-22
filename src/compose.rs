@@ -1,6 +1,6 @@
 use crate::config::Account;
 use crate::editor::{Editor, EditorResult, MenuState};
-use crate::config::{derive_ui_colors};
+use crate::theme::{derive_ui_colors};
 use crate::ui::UiExt;
 use std::path::Path;
 

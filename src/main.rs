@@ -1,7 +1,7 @@
 mod app;
 mod address;
 mod compose;
-mod config;
+pub mod config;
 mod editor;
 mod events;
 mod mail;
@@ -38,7 +38,7 @@ fn main() {
     if let Err(e) = crate::theme::ensure_themes_unpacked() {
         eprintln!("Warning: Failed to unpack default asset themes to disk: {}", e);
     }
-    
+
     let mut settings_provider = Editor::new(None);
     let mut session = net::connect(&app.active_account).unwrap();
 

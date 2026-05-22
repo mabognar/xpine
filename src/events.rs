@@ -22,20 +22,20 @@ pub fn handle_event(event: Event, app: &mut App, session: &mut ImapSession, them
                         KeyCode::Left | KeyCode::Char('<') | KeyCode::Char('q') | KeyCode::Char('Q') | KeyCode::Char('s') | KeyCode::Char('S') => app.mode = AppMode::MainMenu { selected_idx: 3 },
 
                         KeyCode::Char('x') | KeyCode::Char('X') | KeyCode::Right | KeyCode::Enter => {
-                            if *selected_idx == 0 { theme_provider.soft_wrap = !theme_provider.soft_wrap; theme_provider.save_config(); }
-                            else if *selected_idx == 1 { theme_provider.show_line_numbers = !theme_provider.show_line_numbers; theme_provider.save_config(); }
+                            if *selected_idx == 0 { theme_provider.soft_wrap = !theme_provider.soft_wrap; theme_provider.save_settings(); }
+                            else if *selected_idx == 1 { theme_provider.show_line_numbers = !theme_provider.show_line_numbers; theme_provider.save_settings(); }
                             else if *selected_idx == 2 {
                                 theme_provider.sort_newest_first = !theme_provider.sort_newest_first;
-                                theme_provider.save_config();
+                                theme_provider.save_settings();
                                 app.needs_fetch = true;
                             }
                         }
 
-                        KeyCode::Char('w') | KeyCode::Char('W') => { theme_provider.soft_wrap = !theme_provider.soft_wrap; theme_provider.save_config(); }
-                        KeyCode::Char('l') | KeyCode::Char('L') => { theme_provider.show_line_numbers = !theme_provider.show_line_numbers; theme_provider.save_config(); }
+                        KeyCode::Char('w') | KeyCode::Char('W') => { theme_provider.soft_wrap = !theme_provider.soft_wrap; theme_provider.save_settings(); }
+                        KeyCode::Char('l') | KeyCode::Char('L') => { theme_provider.show_line_numbers = !theme_provider.show_line_numbers; theme_provider.save_settings(); }
                         KeyCode::Char('o') | KeyCode::Char('O') => {
                             theme_provider.sort_newest_first = !theme_provider.sort_newest_first;
-                            theme_provider.save_config();
+                            theme_provider.save_settings();
                             app.needs_fetch = true;
                         }
                         KeyCode::Char('t') | KeyCode::Char('T') if k.modifiers.contains(KeyModifiers::ALT) => {
@@ -43,7 +43,7 @@ pub fn handle_event(event: Event, app: &mut App, session: &mut ImapSession, them
                             themes.sort();
                             if let Some(pos) = themes.iter().position(|t| t == &theme_provider.current_theme) {
                                 theme_provider.current_theme = themes[(pos + 1) % themes.len()].clone();
-                                theme_provider.save_config();
+                                theme_provider.save_settings();
                             }
                         }
                         _ => {}
@@ -56,7 +56,7 @@ pub fn handle_event(event: Event, app: &mut App, session: &mut ImapSession, them
                         KeyCode::Char('<') | KeyCode::Left => app.mode = AppMode::MainMenu { selected_idx: 1 },
                         KeyCode::Char('d') | KeyCode::Char('D') => {
                             if !addresses.is_empty() {
-                                let prompt_msg = format!("Delete '{}'? (y/n)", addresses[*selected_idx]);
+                                let prompt_msg = format!("Delete '{}'?", addresses[*selected_idx]);
                                 if let Ok(Some(true)) = theme_provider.prompt_yn(&prompt_msg) {
                                     addresses.remove(*selected_idx);
                                     let _ = crate::address::save_address_book(addresses);
@@ -85,7 +85,7 @@ pub fn handle_event(event: Event, app: &mut App, session: &mut ImapSession, them
 
                                 if let Some(pos) = themes.iter().position(|t| t == &theme_provider.current_theme) {
                                     theme_provider.current_theme = themes[(pos + 1) % themes.len()].clone();
-                                    theme_provider.save_config();
+                                    theme_provider.save_settings();
                                     theme_provider.set_status(format!("Theme: {}", theme_provider.current_theme));
 
                                     let _ = crate::ui::draw_app(stdout, app, theme_provider);
@@ -227,7 +227,7 @@ pub fn handle_event(event: Event, app: &mut App, session: &mut ImapSession, them
                             themes.sort();
                             if let Some(pos) = themes.iter().position(|t| t == &theme_provider.current_theme) {
                                 theme_provider.current_theme = themes[(pos + 1) % themes.len()].clone();
-                                theme_provider.save_config();
+                                theme_provider.save_settings();
                             }
                         }
                         _ => {}
@@ -253,6 +253,7 @@ pub fn handle_event(event: Event, app: &mut App, session: &mut ImapSession, them
                                 // 4. Update status and force an immediate redraw of the UI
                                 app.update_status(format!("Theme: {}", theme_provider.current_theme));
                                 let _ = crate::ui::draw_app(stdout, app, theme_provider);
+                                theme_provider.save_settings();
                             }
                         }
                         KeyCode::Char('<') | KeyCode::Left => {

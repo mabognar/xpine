@@ -9,7 +9,7 @@ use std::{env, fs};
 use std::path::PathBuf;
 use crate::config::ConfigExt;
 use crate::prompt::PromptExt;
-pub(crate) use crate::config::{derive_ui_colors};
+pub(crate) use crate::theme::{derive_ui_colors};
 
 pub trait UiExt {
     fn draw_menu_line(writer: &mut io::Stdout, row: u16, cols: u16, col_width: usize,
@@ -63,9 +63,9 @@ impl UiExt for Editor {
         let raw_theme_bg = theme.settings.background.unwrap_or(syntect::highlighting::Color { r: 0, g: 0, b: 0, a: 255 });
 
         let default_cross_bg = Color::Rgb { r: raw_theme_bg.r, g: raw_theme_bg.g, b: raw_theme_bg.b };
-        let ui_bg = Self::derive_ui_color(raw_theme_bg, is_dark);
-        let title_fg = if is_dark { Color::Reset } else { Color::Black };
         let ui_colors = derive_ui_colors(theme);
+        let ui_bg = ui_colors.ui_bg;
+        let title_fg = if is_dark { Color::Reset } else { Color::Black };
         let menu_key_fg = ui_colors.accent;
         let menu_text_fg = ui_colors.fg;
         let dollar_bg = if is_dark { Color::Rgb { r: 180, g: 180, b: 180 } } else { Color::Rgb { r: 80, g: 80, b: 80 } };

@@ -1,15 +1,10 @@
 use crate::editor::Editor;
 use crossterm::style::Color;
-use syntect::highlighting::Theme;
 use std::env;
 use std::fs;
 use std::path::{Path, PathBuf};
-use include_dir::{include_dir, Dir};
 use std::io::{BufRead, Write};
 use crate::syntax::SyntaxExt;
-use crate::theme::ThemeExt;
-
-static BUNDLED_THEMES: Dir<'_> = include_dir!("$CARGO_MANIFEST_DIR/themes");
 
 
 #[derive(Clone)]
@@ -38,54 +33,6 @@ pub struct UiColors {
     pub flag_a: Color,
     pub flag_star: Color,
     pub is_dark: bool,
-}
-
-pub fn derive_ui_colors(theme: &Theme) -> UiColors {
-    let raw_bg = theme.settings.background.unwrap_or(syntect::highlighting::Color { r: 0, g: 0, b: 0, a: 255 });
-    let raw_fg = theme.settings.foreground.unwrap_or(syntect::highlighting::Color { r: 255, g: 255, b: 255, a: 255 });
-
-    let bg = Color::Rgb { r: raw_bg.r, g: raw_bg.g, b: raw_bg.b };
-    let fg = Color::Rgb { r: raw_fg.r, g: raw_fg.g, b: raw_fg.b };
-    let is_dark = (raw_bg.r as u32 + raw_bg.g as u32 + raw_bg.b as u32) < 384;
-
-    let ui_bg = if is_dark {
-        Color::Rgb { r: raw_bg.r.saturating_add(20), g: raw_bg.g.saturating_add(20), b: raw_bg.b.saturating_add(20) }
-    } else {
-        Color::Rgb { r: raw_bg.r.saturating_sub(20), g: raw_bg.g.saturating_sub(20), b: raw_bg.b.saturating_sub(20) }
-    };
-
-    let selected_bg = if raw_bg.r < 128 {
-        Color::Rgb { r: raw_bg.r.saturating_add(40), g: raw_bg.g.saturating_add(40), b: raw_bg.b.saturating_add(40) }
-    } else {
-        Color::Rgb { r: raw_bg.r.saturating_sub(40), g: raw_bg.g.saturating_sub(40), b: raw_bg.b.saturating_sub(40) }
-    };
-
-    let get_theme_color = |keys: &[&str]| -> Option<Color> {
-        for item in &theme.scopes {
-            let scope_str = format!("{:?}", item.scope).to_lowercase();
-            for key in keys {
-                if scope_str.contains(key) {
-                    if let Some(c) = item.style.foreground {
-                        return Some(Color::Rgb { r: c.r, g: c.g, b: c.b });
-                    }
-                }
-            }
-        }
-        None
-    };
-
-    let flag_a = Color::Green;
-    let flag_d = Color::Magenta;
-    let flag_n = Color::Yellow;
-    let flag_star = Color::Red;
-
-    let accent = get_theme_color(&["entity.name.function", "variable"])
-        .unwrap_or(if is_dark { Color::Rgb { r: 100, g: 200, b: 255 } } else { Color::Rgb { r: 20, g: 100, b: 180 } });
-
-    let date_color = get_theme_color(&["comment", "punctuation.definition.comment"])
-        .unwrap_or(if is_dark { Color::Rgb { r: 120, g: 120, b: 120 } } else { Color::Rgb { r: 140, g: 140, b: 140 } });
-
-    UiColors { bg, fg, ui_bg, selected_bg, accent, date_color, flag_n, flag_d, flag_a, flag_star, is_dark }
 }
 
 pub fn load_config() -> AppConfig {
@@ -162,13 +109,10 @@ pub fn load_config() -> AppConfig {
 
 pub trait ConfigExt {
     fn get_base_dir() -> Option<PathBuf>;
-    // fn initialize_themes() -> std::io::Result<()>;
-    fn get_config_path() -> Option<PathBuf>;
+    fn get_settings_path() -> Option<PathBuf>;
     fn get_theme_dir() -> Option<PathBuf>;
-    fn load_config() -> (String, bool, bool, bool);
-    fn save_config(&self);
-    // fn is_dark_theme(theme: &Theme) -> bool;
-    fn derive_ui_color(bg: syntect::highlighting::Color, is_dark: bool) -> Color;
+    fn load_settings() -> (String, bool, bool, bool);
+    fn save_settings(&self);
     fn cycle_theme(&mut self);
     fn update_cursor_color(&self);
 }
@@ -186,26 +130,11 @@ impl ConfigExt for Editor {
         }
     }
 
-    // fn initialize_themes() -> std::io::Result<()> {
-    //     // ... (Keep existing implementation)
-    //     if let Some(theme_dir) = Self::get_theme_dir() {
-    //         if fs::read_dir(&theme_dir)?.next().is_none() {
-    //             for file in BUNDLED_THEMES.files() {
-    //                 let path = theme_dir.join(file.path());
-    //                 fs::write(path, file.contents())?;
-    //             }
-    //         }
-    //     }
-    //     Ok(())
-    // }
-
-    fn get_config_path() -> Option<PathBuf> {
-        // Save UI configuration to "settings" to avoid overwriting "xpinerc"
+    fn get_settings_path() -> Option<PathBuf> {
         Self::get_base_dir().map(|p| p.join("settings"))
     }
 
     fn get_theme_dir() -> Option<PathBuf> {
-        // ... (Keep existing implementation)
         Self::get_base_dir().map(|p| {
             let theme_path = p.join("themes");
             let _ = fs::create_dir_all(&theme_path);
@@ -213,14 +142,13 @@ impl ConfigExt for Editor {
         })
     }
 
-    fn load_config() -> (String, bool, bool, bool) {
-        // Set Default-Dark as the fallback theme on first install
+    fn load_settings() -> (String, bool, bool, bool) {
         let mut theme = String::from("Default-Dark");
         let mut line_numbers = false;
         let mut soft_wrap = false;
         let mut sort_newest_first = false;
 
-        if let Some(path) = Self::get_config_path() {
+        if let Some(path) = Self::get_settings_path() {
             if let Ok(content) = fs::read_to_string(path) {
                 for line in content.lines() {
                     let parts: Vec<&str> = line.splitn(2, '=').collect();
@@ -239,8 +167,8 @@ impl ConfigExt for Editor {
         (theme, line_numbers, soft_wrap, sort_newest_first)
     }
 
-    fn save_config(&self) {
-        if let Some(path) = Self::get_config_path() {
+    fn save_settings(&self) {
+        if let Some(path) = Self::get_settings_path() {
             let content = format!(
                 "theme={}\nline_numbers={}\nsoft_wrap={}\nsort_newest_first={}\n",
                 self.current_theme, self.show_line_numbers, self.soft_wrap, self.sort_newest_first
@@ -249,21 +177,6 @@ impl ConfigExt for Editor {
         }
     }
 
-    // fn is_dark_theme(theme: &Theme) -> bool {
-    //     let bg = theme.settings.background.unwrap_or(syntect::highlighting::Color { r: 0, g: 0, b: 0, a: 255 });
-    //     let luminance = 0.299 * (bg.r as f32) + 0.587 * (bg.g as f32) + 0.114 * (bg.b as f32);
-    //     luminance < 128.0
-    // }
-
-    fn derive_ui_color(bg: syntect::highlighting::Color, is_dark: bool) -> Color {
-        let offset: i16 = if is_dark { 20 } else { -20 };
-        let r = (bg.r as i16 + offset).clamp(0, 255) as u8;
-        let g = (bg.g as i16 + offset).clamp(0, 255) as u8;
-        let b = (bg.b as i16 + offset).clamp(0, 255) as u8;
-        Color::Rgb { r, g, b }
-    }
-
-    
     fn cycle_theme(&mut self) {
         let mut themes: Vec<String> = self.theme_set.themes.keys().cloned().collect();
         themes.sort();
@@ -272,7 +185,7 @@ impl ConfigExt for Editor {
             let next_idx = (current_idx + 1) % themes.len();
             self.current_theme = themes[next_idx].clone();
 
-            self.save_config();
+            self.save_settings();
             self.clear_cache();
 
             self.status_message = format!("Theme changed to: {}", self.current_theme);

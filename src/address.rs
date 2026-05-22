@@ -81,7 +81,7 @@ pub fn save_address_book(addresses: &[String]) -> std::io::Result<()> {
     Ok(())
 }
 
-pub(crate) fn clean_and_save_address_book(addresses: &mut Vec<String>) {
+pub fn clean_and_save_address_book(addresses: &mut Vec<String>) {
     // Remove any existing empty spacers so they don't duplicate
     addresses.retain(|a| !a.trim().is_empty());
 
@@ -112,7 +112,7 @@ pub(crate) fn clean_and_save_address_book(addresses: &mut Vec<String>) {
     let _ = crate::address::save_address_book(&save_list);
 }
 
-pub(crate) fn expand_address_lists(input: &str, address_book: &[String]) -> String {
+pub fn expand_address_lists(input: &str, address_book: &[String]) -> String {
     let mut expanded = Vec::new();
 
     for part in input.split(',') {

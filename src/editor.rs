@@ -85,7 +85,7 @@ impl Editor {
         let (theme_set, themes_found, error_occurred) = Self::load_theme_set();
         let initial_status = if themes_found > 0 { String::new() } else if let Some(err) = error_occurred { err } else { String::new() };
 
-        let (mut starting_theme, line_numbers, soft_wrap, sort_newest_first) = Self::load_config();
+        let (mut starting_theme, line_numbers, soft_wrap, sort_newest_first) = Self::load_settings();
         if !theme_set.themes.contains_key(&starting_theme) {
             starting_theme = String::from("base16-ocean.dark");
         }
@@ -112,7 +112,7 @@ impl Editor {
             menu_page: 1,
         }
     }
-    
+
     pub fn handle_keypress(&mut self, key: crossterm::event::KeyEvent) -> io::Result<EditorResult> {
         if key.kind != event::KeyEventKind::Press { return Ok(EditorResult::Continue); }
         self.highlight_match = None;
@@ -224,17 +224,17 @@ impl Editor {
 
             KeyCode::Char('t') if is_alt => {
                 self.cycle_theme();
-                self.save_config();
+                self.save_settings();
             },
 
             KeyCode::Char('l') if is_alt => {
                 self.show_line_numbers = !self.show_line_numbers;
-                self.save_config();
+                self.save_settings();
                 self.set_status(if self.show_line_numbers { "Line numbers enabled".into() } else { "Line numbers disabled".into() });
             }
             KeyCode::Char('s') if is_alt => {
                 self.soft_wrap = !self.soft_wrap;
-                self.save_config();
+                self.save_settings();
                 self.set_status(if self.soft_wrap { "Soft wrap enabled".into() } else { "Soft wrap disabled".into() });
             }
 

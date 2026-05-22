@@ -1,5 +1,6 @@
 use crate::editor::{Editor, MenuState};
-use crate::ui::{derive_ui_colors, UiExt}; // UiExt is needed if prompt uses draw_menu_line
+use crate::theme::{derive_ui_colors};
+use crate::ui::UiExt; 
 use crossterm::{cursor, event::{self, Event, KeyCode, KeyModifiers, KeyEventKind},
                 execute, queue, style::{Color, Print, ResetColor, SetBackgroundColor, SetForegroundColor},
                 terminal::{self, ClearType, size as term_size}};
@@ -337,7 +338,7 @@ impl PromptExt for Editor {
         let (cols, rows) = terminal::size()?;
 
         let theme = self.theme_set.themes.get(&self.current_theme).expect("Theme not found");
-        let colors = crate::config::derive_ui_colors(theme);
+        let colors = crate::theme::derive_ui_colors(theme);
 
         loop {
             let prompt_y = rows.saturating_sub(3);

@@ -7,10 +7,6 @@ pub struct Account {
     pub smtp_server: String,
 }
 
-pub struct AppConfig {
-    pub accounts: Vec<Account>,
-}
-
 pub struct EmailMeta {
     pub id: u32,
     pub subject: String,
