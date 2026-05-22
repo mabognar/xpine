@@ -12,6 +12,7 @@ pub mod theme;
 pub mod syntax;
 pub mod search;
 mod prompt;
+mod auth;
 
 use app::{App, AppMode};
 use config::load_config;
@@ -28,6 +29,7 @@ use std::io::stdout;
 use std::time::{Duration, Instant};
 
 fn main() {
+
     let config = load_config();
     let mut app = App::new(config.accounts);
 

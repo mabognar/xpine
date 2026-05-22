@@ -2,9 +2,11 @@ use crate::config::Account;
 use crate::editor::{Editor, EditorResult, MenuState};
 use crate::theme::{derive_ui_colors};
 use crate::ui::UiExt;
+use crate::auth; // Brought in auth module
 use std::path::Path;
 
-use lettre::transport::smtp::authentication::Credentials as SmtpCredentials;
+// Updated the lettre imports to bring in Mechanism and standard Credentials
+use lettre::transport::smtp::authentication::{Credentials, Mechanism};
 use lettre::{Message, SmtpTransport, Transport};
 use ropey::Rope;
 use std::fs;
@@ -36,7 +38,6 @@ fn find_suggestion(input: &str, address_book: &[String]) -> Option<String> {
     for addr in address_book {
         if addr.to_lowercase().starts_with(&last_part.to_lowercase()) {
             let remainder = &addr[last_part.len()..];
-            // Fix: Only return a suggestion if there is actually text left to autocomplete
             if !remainder.is_empty() {
                 return Some(remainder.to_string());
             }
@@ -104,9 +105,8 @@ pub fn compose_email(account: &Account, default_to: Option<&str>, default_subjec
 
         if state.attachments.is_empty() {
             let dim_c = if colors.is_dark { Color::DarkGrey } else { Color::Grey };
-            queue!(stdout, SetForegroundColor(dim_c), Print("(Press ^A to attach a file)")).unwrap(); // Update to ^A
+            queue!(stdout, SetForegroundColor(dim_c), Print("(Press ^A to attach a file)")).unwrap();
         } else {
-            // Apply the viewer's red attachment color
             let att_color = if colors.is_dark {
                 Color::Rgb { r: 255, g: 80, b: 80 }
             } else {
@@ -245,30 +245,12 @@ pub fn compose_email(account: &Account, default_to: Option<&str>, default_subjec
         .from(format!("<{}>", account.email).parse().unwrap())
         .subject(state.subject);
 
-    // let parse_and_add = |mut b: lettre::message::MessageBuilder, input: &str, field_type: &str| -> lettre::message::MessageBuilder {
-    //     for addr in input.split(',') {
-    //         // Strip whitespace AND the trailing semicolon, then convert to an owned String
-    //         let mut trimmed = addr.trim().trim_end_matches(';').to_string();
-    //
-    //         // Gmail deduplication bypass: If the recipient is the sender,
-    //         // append a plus-alias so Gmail actually places a copy in the Inbox.
-    //         if trimmed.eq_ignore_ascii_case(&account.email) && trimmed.to_lowercase().ends_with("@gmail.com") {
-    //             if let Some((user, domain)) = trimmed.split_once('@') {
-    //                 // Only append if they haven't already explicitly used an alias
-    //                 if !user.contains('+') {
-    //                     trimmed = format!("{}+me@{}", user, domain);
-    //                 }
-    //             }
-    //         }
-
     let parse_and_add = |mut b: lettre::message::MessageBuilder, input: &str, field_type: &str| -> lettre::message::MessageBuilder {
         for addr in input.split(',') {
-            // Strip whitespace AND the trailing semicolon, then convert to an owned String
             let mut trimmed = addr.trim().trim_end_matches(';').to_string();
 
-            if trimmed.eq_ignore_ascii_case(&account.email) {
+            if trimmed.eq_ignore_ascii_case(&account.email) && trimmed.to_lowercase().ends_with("@gmail.com") {
                 if let Some((user, domain)) = trimmed.split_once('@') {
-                    // Only append if they haven't already explicitly used an alias
                     if !user.contains('+') {
                         trimmed = format!("{}+me@{}", user, domain);
                     }
@@ -322,8 +304,31 @@ pub fn compose_email(account: &Account, default_to: Option<&str>, default_subjec
 
     match builder.multipart(multipart) {
         Ok(email_msg) => {
-            let creds = SmtpCredentials::new(account.email.clone(), account.password.clone());
-            let mailer = SmtpTransport::relay(&account.smtp_server).unwrap().credentials(creds).build();
+            let client_id = std::env::var("GOOGLE_CLIENT_ID").unwrap_or_else(|_| "YOUR_ID".to_string());
+            let client_secret = std::env::var("GOOGLE_CLIENT_SECRET").unwrap_or_else(|_| "YOUR_SECRET".to_string());
+
+            let mailer = if let Some(refresh_token) = &account.refresh_token {
+                let new_tokens = auth::refresh_access_token(&client_id, &client_secret, refresh_token)
+                    .expect("Failed to refresh OAuth token for SMTP");
+
+                let creds = Credentials::new(account.email.clone(), new_tokens.access_token);
+
+                SmtpTransport::relay(&account.smtp_server)
+                    .unwrap()
+                    .credentials(creds)
+                    .authentication(vec![Mechanism::Xoauth2])
+                    .build()
+            } else if let Some(password) = &account.password {
+                let creds = Credentials::new(account.email.clone(), password.clone());
+
+                SmtpTransport::relay(&account.smtp_server)
+                    .unwrap()
+                    .credentials(creds)
+                    .build()
+            } else {
+                panic!("Account must have either a password or a refresh token to send mail");
+            };
+
             match mailer.send(&email_msg) {
                 Ok(_) => Some("Message Sent".to_string()),
                 Err(e) => {
@@ -346,4 +351,3 @@ pub fn compose_email(account: &Account, default_to: Option<&str>, default_subjec
         }
     }
 }
-
