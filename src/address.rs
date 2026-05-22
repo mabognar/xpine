@@ -113,20 +113,28 @@ pub fn clean_and_save_address_book(addresses: &mut Vec<String>) {
 }
 
 pub fn expand_address_lists(input: &str, address_book: &[String]) -> String {
+    // 1. Pre-process: If the user autocompleted a team, it will contain the full
+    // "teamname: email1, email2;" string. We must replace the full string
+    // with just the emails before splitting by comma.
+    let mut processed_input = input.to_string();
+    for addr in address_book {
+        if let Some((_, emails)) = addr.split_once(':') {
+            // Replace the full team definition with just the emails
+            processed_input = processed_input.replace(addr, emails.trim());
+        }
+    }
+
     let mut expanded = Vec::new();
 
-    for part in input.split(',') {
+    // 2. Now it is safe to split by comma
+    for part in processed_input.split(',') {
         let part = part.trim();
         let mut matched_list = false;
 
+        // 3. Check if they just typed the team name manually (e.g., "me")
         for addr in address_book {
-            // Check if this address book entry is a List (contains a colon)
             if let Some((list_name, emails)) = addr.split_once(':') {
-                // If the user typed the list name or the autocomplete inserted it
-                if part.to_lowercase() == list_name.trim().to_lowercase()
-                    || part.to_lowercase() == addr.trim().to_lowercase()
-                {
-                    // Extract just the emails from the list, strip the trailing ';'
+                if part.to_lowercase() == list_name.trim().to_lowercase() {
                     expanded.push(emails.trim().trim_end_matches(';').to_string());
                     matched_list = true;
                     break;
@@ -141,3 +149,33 @@ pub fn expand_address_lists(input: &str, address_book: &[String]) -> String {
 
     expanded.join(", ")
 }
+
+// pub fn expand_address_lists(input: &str, address_book: &[String]) -> String {
+//     let mut expanded = Vec::new();
+//
+//     for part in input.split(',') {
+//         let part = part.trim();
+//         let mut matched_list = false;
+//
+//         for addr in address_book {
+//             // Check if this address book entry is a List (contains a colon)
+//             if let Some((list_name, emails)) = addr.split_once(':') {
+//                 // If the user typed the list name or the autocomplete inserted it
+//                 if part.to_lowercase() == list_name.trim().to_lowercase()
+//                     || part.to_lowercase() == addr.trim().to_lowercase()
+//                 {
+//                     // Extract just the emails from the list, strip the trailing ';'
+//                     expanded.push(emails.trim().trim_end_matches(';').to_string());
+//                     matched_list = true;
+//                     break;
+//                 }
+//             }
+//         }
+//
+//         if !matched_list && !part.is_empty() {
+//             expanded.push(part.to_string());
+//         }
+//     }
+//
+//     expanded.join(", ")
+// }

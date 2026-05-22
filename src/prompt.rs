@@ -397,11 +397,14 @@ impl PromptExt for Editor {
                     KeyCode::Char('f') | KeyCode::Char('F') if key.modifiers.contains(KeyModifiers::CONTROL) => {
                         if cursor_idx < input.len() { cursor_idx += 1; }
                     }
-                    // --- Deletion ---
                     KeyCode::Backspace => {
                         if cursor_idx > 0 {
                             cursor_idx -= 1;
                             input.remove(cursor_idx);
+                        } else if input.is_empty() {
+                            queue!(stdout(), cursor::Hide, ResetColor)?;
+                            stdout().flush()?;
+                            return Ok(Some(String::new()));
                         }
                     }
                     KeyCode::Delete => {

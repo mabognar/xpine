@@ -245,14 +245,28 @@ pub fn compose_email(account: &Account, default_to: Option<&str>, default_subjec
         .from(format!("<{}>", account.email).parse().unwrap())
         .subject(state.subject);
 
+    // let parse_and_add = |mut b: lettre::message::MessageBuilder, input: &str, field_type: &str| -> lettre::message::MessageBuilder {
+    //     for addr in input.split(',') {
+    //         // Strip whitespace AND the trailing semicolon, then convert to an owned String
+    //         let mut trimmed = addr.trim().trim_end_matches(';').to_string();
+    //
+    //         // Gmail deduplication bypass: If the recipient is the sender,
+    //         // append a plus-alias so Gmail actually places a copy in the Inbox.
+    //         if trimmed.eq_ignore_ascii_case(&account.email) && trimmed.to_lowercase().ends_with("@gmail.com") {
+    //             if let Some((user, domain)) = trimmed.split_once('@') {
+    //                 // Only append if they haven't already explicitly used an alias
+    //                 if !user.contains('+') {
+    //                     trimmed = format!("{}+me@{}", user, domain);
+    //                 }
+    //             }
+    //         }
+
     let parse_and_add = |mut b: lettre::message::MessageBuilder, input: &str, field_type: &str| -> lettre::message::MessageBuilder {
         for addr in input.split(',') {
             // Strip whitespace AND the trailing semicolon, then convert to an owned String
             let mut trimmed = addr.trim().trim_end_matches(';').to_string();
 
-            // Gmail deduplication bypass: If the recipient is the sender,
-            // append a plus-alias so Gmail actually places a copy in the Inbox.
-            if trimmed.eq_ignore_ascii_case(&account.email) && trimmed.to_lowercase().ends_with("@gmail.com") {
+            if trimmed.eq_ignore_ascii_case(&account.email) {
                 if let Some((user, domain)) = trimmed.split_once('@') {
                     // Only append if they haven't already explicitly used an alias
                     if !user.contains('+') {

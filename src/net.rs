@@ -26,12 +26,21 @@ pub fn fetch_emails(session: &mut ImapSession, app: &mut App, items_per_page: u3
         Err(_) => { app.needs_reconnect = true; return; }
     }
 
+    // let sequence = if let Some(ref q) = app.search_query {
+    //
+    //     let query = if q.trim() == "*" {
+    //         String::from("FLAGGED")
+    //     } else {
+    //         format!("OR FROM \"{}\" OR SUBJECT \"{}\" CC \"{}\"", q, q, q)
+    //     };
+
     let sequence = if let Some(ref q) = app.search_query {
 
         let query = if q.trim() == "*" {
             String::from("FLAGGED")
         } else {
-            format!("OR FROM \"{}\" OR SUBJECT \"{}\" OR To \"{}\" CC \"{}\"", q, q, q, q)
+            // ONLY search within the From and Subject fields
+            format!("OR FROM \"{}\" SUBJECT \"{}\"", q, q)
         };
 
         match session.search(&query) {

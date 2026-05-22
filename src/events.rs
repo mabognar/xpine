@@ -294,7 +294,7 @@ pub fn handle_event(event: Event, app: &mut App, session: &mut ImapSession, them
                             let current_query = app.search_query.clone().unwrap_or_default();
 
                             // Pass current_query to prompt_edit
-                            if let Ok(Some(query)) = theme_provider.prompt_edit("Search: ", &current_query) {
+                            if let Ok(Some(query)) = theme_provider.prompt_edit("Search:", &current_query) {
                                 let trimmed = query.trim();
 
                                 if !trimmed.is_empty() {
