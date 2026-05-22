@@ -4,24 +4,9 @@ use chrono::{DateTime, Local, Utc};
 use native_tls::TlsConnector;
 use imap::Session;
 use std::net::TcpStream;
-use crate::config::Account;
-use crate::auth; // Brought in the auth module
+use crate::config::Account; // Or crate::mail::Account depending on your imports
 
 pub type ImapSession = Session<native_tls::TlsStream<TcpStream>>;
-
-// 1. Define the XOAUTH2 struct for IMAP
-struct XOAuth2 {
-    user: String,
-    access_token: String,
-}
-
-// 2. Implement the IMAP format required by Google
-impl imap::Authenticator for XOAuth2 {
-    type Response = Vec<u8>;
-    fn process(&self, _data: &[u8]) -> Self::Response {
-        format!("user={}\x01auth=Bearer {}\x01\x01", self.user, self.access_token).into_bytes()
-    }
-}
 
 pub fn connect(account: &Account) -> Result<ImapSession, imap::Error> {
     let domain = account.imap_server.as_str();
@@ -29,30 +14,8 @@ pub fn connect(account: &Account) -> Result<ImapSession, imap::Error> {
     let tls = TlsConnector::builder().build().unwrap();
 
     // Connect using the dynamic domain and port
-    let mut client = imap::connect((domain, port), domain, &tls).unwrap();
-
-    // Pull credentials from your environment variables so they aren't hardcoded
-    let client_id = std::env::var("GOOGLE_CLIENT_ID").unwrap_or_else(|_| "YOUR_ID".to_string());
-    let client_secret = std::env::var("GOOGLE_CLIENT_SECRET").unwrap_or_else(|_| "YOUR_SECRET".to_string());
-
-    if let Some(refresh_token) = &account.refresh_token {
-        // If we have a refresh token, get a temporary access token silently
-        let new_tokens = auth::refresh_access_token(&client_id, &client_secret, refresh_token)
-            .expect("Failed to refresh OAuth token for IMAP");
-
-        let authenticator = XOAuth2 {
-            user: account.email.clone(),
-            access_token: new_tokens.access_token,
-        };
-
-        client.authenticate("XOAUTH2", &authenticator).map_err(|(e, _)| e)
-        // client.authenticate("XOAUTH2", authenticator).map_err(|(e, _)| e)
-    } else if let Some(password) = &account.password {
-        // Fallback to app password if no refresh token is found
-        client.login(&account.email, password).map_err(|(e, _)| e)
-    } else {
-        panic!("Account must have either a PASSWORD or a REFRESH_TOKEN");
-    }
+    let client = imap::connect((domain, port), domain, &tls).unwrap();
+    client.login(&account.email, &account.password).map_err(|(e, _)| e)
 }
 
 pub fn fetch_emails(session: &mut ImapSession, app: &mut App, items_per_page: u32, sort_newest_first: bool) {
@@ -63,12 +26,21 @@ pub fn fetch_emails(session: &mut ImapSession, app: &mut App, items_per_page: u3
         Err(_) => { app.needs_reconnect = true; return; }
     }
 
+    // let sequence = if let Some(ref q) = app.search_query {
+    //
+    //     let query = if q.trim() == "*" {
+    //         String::from("FLAGGED")
+    //     } else {
+    //         format!("OR FROM \"{}\" OR SUBJECT \"{}\" CC \"{}\"", q, q, q)
+    //     };
+
     let sequence = if let Some(ref q) = app.search_query {
 
         let query = if q.trim() == "*" {
             String::from("FLAGGED")
         } else {
-            format!("OR FROM \"{}\" OR SUBJECT \"{}\" OR To \"{}\" CC \"{}\"", q, q, q, q)
+            // ONLY search within the From and Subject fields
+            format!("OR FROM \"{}\" SUBJECT \"{}\"", q, q)
         };
 
         match session.search(&query) {
