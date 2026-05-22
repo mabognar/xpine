@@ -213,39 +213,6 @@ impl UiExt for Editor {
             terminal_y += 1; file_y += 1;
         }
 
-        // queue!(stdout, cursor::MoveTo(0, rows - 3))?;
-        // if !self.status_message.is_empty() {
-        //     queue!(stdout, SetBackgroundColor(ui_bg), SetForegroundColor(menu_key_fg))?;
-        //     let mut printed_len = 0;
-        //
-        //     if self.menu_state == MenuState::SpellCheck {
-        //         if !self.current_suggestions.is_empty() {
-        //             // let visible_rows = rows.saturating_sub((4 + self.top_margin) as u16) as usize;
-        //             // --- NEW ---
-        //             let has_status = !self.status_message.is_empty();
-        //             let status_overhead = if has_status { 1 } else { 0 };
-        //
-        //             // 2 rows for menu keys + dynamic status row overhead + 1 for content bounds.
-        //             // Removing the old hardcoded extra padding row.
-        //             let runtime_overhead = 2 + status_overhead + 1;
-        //             let visible_rows = rows.saturating_sub((runtime_overhead + self.top_margin) as u16) as usize;
-        //             for (i, sug) in self.current_suggestions.iter().enumerate() {
-        //                 let num_str = format!("{}", i + 1);
-        //                 queue!(stdout, SetForegroundColor(menu_key_fg), Print(&num_str), SetForegroundColor(title_fg), Print(format!(" {}   ", sug)))?;
-        //                 printed_len += num_str.len() + 1 + sug.len() + 3;
-        //             }
-        //         } else {
-        //             queue!(stdout, Print("No suggestions   "))?; printed_len += "No suggestions   ".len();
-        //         }
-        //     }
-        //
-        //     queue!(stdout, Print(&self.status_message))?; printed_len += self.status_message.len();
-        //     queue!(stdout, Print(" ".repeat((cols as usize).saturating_sub(printed_len))), SetBackgroundColor(Color::Reset), SetForegroundColor(Color::Reset))?;
-        // } else {
-        //     // queue!(stdout, SetBackgroundColor(ui_bg), terminal::Clear(ClearType::CurrentLine))?;
-        //     queue!(stdout, SetBackgroundColor(default_cross_bg), terminal::Clear(ClearType::CurrentLine))?;
-        // }
-
         if has_status {
             queue!(stdout, cursor::MoveTo(0, rows - 3))?;
             queue!(stdout, SetBackgroundColor(ui_bg), SetForegroundColor(menu_key_fg))?;
@@ -266,11 +233,6 @@ impl UiExt for Editor {
             queue!(stdout, Print(&self.status_message))?; printed_len += self.status_message.len();
             queue!(stdout, Print(" ".repeat((cols as usize).saturating_sub(printed_len))), SetBackgroundColor(Color::Reset), SetForegroundColor(Color::Reset))?;
         }
-    // } else {
-    //         // If empty, draw a blank spacer line that shares your standard background color
-    //         // instead of default_cross_bg, hiding any colored block leaks cleanly.
-    //         queue!(stdout, cursor::MoveTo(0, rows - 3), SetBackgroundColor(default_cross_bg), terminal::Clear(ClearType::CurrentLine))?;
-    //     }
 
         let col_width = ((cols as usize) / 6).max(1);
 
@@ -647,9 +609,6 @@ pub fn draw_app(stdout: &mut std::io::Stdout, app: &App, theme_provider: &Editor
 
                     // 2. Print the text with the correct foreground
                     queue!(stdout, cursor::MoveTo(x, y), SetForegroundColor(colors.fg), Print(&text), ResetColor)?;
-
-                    // 3. If selected, we don't need extra logic because ClearType::CurrentLine
-                    // already filled the row with row_bg.
                 }
             }
 
@@ -803,39 +762,34 @@ pub fn draw_app(stdout: &mut std::io::Stdout, app: &App, theme_provider: &Editor
             // --- UPDATED CODE: 1 blank line gap, custom column alignments, and theme colorization ---
             let theme_y = 2 + options.len() as u16;
 
-            // 1. Move to column 1 to print "Meta+T" in the hotkey accent color
             queue!(
-            stdout,
-            cursor::MoveTo(2, theme_y),
-            SetBackgroundColor(colors.bg),
-            SetForegroundColor(colors.accent),
-            Print("Meta+T"),
-            ResetColor
-        )?;
+                stdout,
+                cursor::MoveTo(2, theme_y),
+                SetBackgroundColor(colors.bg),
+                SetForegroundColor(colors.accent),
+                Print("Meta+T"),
+                ResetColor
+            )?;
 
-            // 2. Move to column 10 (leaving 3 spaces) to print "Theme: " in standard fg color
             queue!(
-            stdout,
-            cursor::MoveTo(10, theme_y),
-            SetBackgroundColor(colors.bg),
-            SetForegroundColor(colors.fg),
-            Print("Theme: "),
-            ResetColor
-        )?;
+                stdout,
+                cursor::MoveTo(10, theme_y),
+                SetBackgroundColor(colors.bg),
+                SetForegroundColor(colors.fg),
+                Print("Theme: "),
+                ResetColor
+            )?;
 
-            // 3. Keep cursor position and print the chosen theme name in the hotkey accent color
             queue!(
-            stdout,
-            SetBackgroundColor(colors.bg),
-            SetForegroundColor(colors.accent),
-            Print(format!("{}", theme_provider.current_theme)),
-            ResetColor
-        )?;
-            // -------------------------------------------------------------------------------------
+                stdout,
+                SetBackgroundColor(colors.bg),
+                SetForegroundColor(colors.accent),
+                Print(format!("{}", theme_provider.current_theme)),
+                ResetColor
+            )?;
 
             let m_col = (cols as usize / 6).max(1);
 
-            // Updated bottom menu blocks to add Meta+T to the displayed hotkey combinations
             Editor::draw_menu_line(stdout, rows - 2, cols, m_col, &[("", ""),          ("P", " Prev"), ("X", " Select"), ("", ""), ("", ""), ("", "")], colors.ui_bg, colors.accent, colors.fg)?;
             Editor::draw_menu_line(stdout, rows - 1, cols, m_col, &[("<", " Back"),    ("N", " Next"), ("Meta+T", " Theme"), ("", ""), ("", ""), ("", "")], colors.ui_bg, colors.accent, colors.fg)?;
         }
@@ -846,59 +800,19 @@ pub fn draw_app(stdout: &mut std::io::Stdout, app: &App, theme_provider: &Editor
         if let Some(time) = theme_provider.status_time {
             if time.elapsed() < std::time::Duration::from_secs(3) {
                 queue!(
-                stdout,
-                cursor::MoveTo(0, rows - 3),
-                SetBackgroundColor(colors.selected_bg),
-                terminal::Clear(ClearType::UntilNewLine),
-                SetForegroundColor(colors.accent),
-                Print(format!(" {} ", theme_provider.status_message)),
-                ResetColor
-            )?;
+                    stdout,
+                    cursor::MoveTo(0, rows - 3),
+                    SetBackgroundColor(colors.selected_bg),
+                    terminal::Clear(ClearType::UntilNewLine),
+                    SetForegroundColor(colors.accent),
+                    Print(format!(" {} ", theme_provider.status_message)),
+                    ResetColor
+                )?;
             }
         }
     }
 
     stdout.flush()?;
     Ok(())
-}
-
-fn soft_wrap_line(line: &str, max_width: usize) -> Vec<String> {
-    if line.is_empty() {
-        return vec![String::new()];
-    }
-
-    let mut wrapped_lines = Vec::new();
-    let chars: Vec<char> = line.chars().collect();
-    let mut start = 0;
-
-    while start < chars.len() {
-        let mut end = start + max_width;
-
-        // If the remaining string is shorter than max_width, it fits.
-        if end >= chars.len() {
-            wrapped_lines.push(chars[start..].iter().collect::<String>());
-            break;
-        }
-
-        // Look backwards from the 'end' to find the last space
-        let mut break_point = end;
-        while break_point > start && chars[break_point] != ' ' {
-            break_point -= 1;
-        }
-
-        if break_point == start {
-            // No space found within the limit! The word is longer than the margin.
-            // Fallback: break it exactly at max_width.
-            wrapped_lines.push(chars[start..end].iter().collect::<String>());
-            start = end;
-        } else {
-            // Break at the space (dropping the word after it to the next line)
-            wrapped_lines.push(chars[start..break_point].iter().collect::<String>());
-            // Skip the space itself on the next line
-            start = break_point + 1;
-        }
-    }
-
-    wrapped_lines
 }
 

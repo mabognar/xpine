@@ -7,6 +7,7 @@ use std::path::{Path, PathBuf};
 use include_dir::{include_dir, Dir};
 use std::io::{BufRead, Write};
 use crate::syntax::SyntaxExt;
+use crate::theme::ThemeExt;
 
 static BUNDLED_THEMES: Dir<'_> = include_dir!("$CARGO_MANIFEST_DIR/themes");
 
@@ -262,6 +263,7 @@ impl ConfigExt for Editor {
         Color::Rgb { r, g, b }
     }
 
+    
     fn cycle_theme(&mut self) {
         let mut themes: Vec<String> = self.theme_set.themes.keys().cloned().collect();
         themes.sort();

@@ -46,40 +46,6 @@ impl PromptExt for Editor {
                 SetForegroundColor(Color::Reset)
             )?;
 
-            // let col_width = (cols as usize / 6).max(1);
-            // if allow_browser {
-            //     Self::draw_menu_line(
-            //         &mut stdout_handle,
-            //         rows.saturating_sub(2),
-            //         cols,
-            //         col_width,
-            //         &[("^T", " To Files"), ("", ""), ("", ""), ("", ""), ("", ""), ("", "")],
-            //         ui_colors.ui_bg,
-            //         ui_colors.accent,
-            //         ui_colors.fg,
-            //     )?;
-            // } else {
-            //     Self::draw_menu_line(
-            //         &mut stdout_handle,
-            //         rows.saturating_sub(2),
-            //         cols,
-            //         col_width,
-            //         &[("", ""), ("", ""), ("", ""), ("", ""), ("", ""), ("", "")],
-            //         ui_colors.ui_bg,
-            //         ui_colors.accent,
-            //         ui_colors.fg,
-            //     )?;
-            // }
-            // Self::draw_menu_line(
-            //     &mut stdout_handle,
-            //     rows.saturating_sub(1),
-            //     cols,
-            //     col_width,
-            //     &[("^C", " Cancel"), ("", ""), ("", ""), ("", ""), ("", ""), ("", "")],
-            //     ui_colors.ui_bg,
-            //     ui_colors.accent,
-            //     ui_colors.fg,
-            // )?;
             let col_width = (cols as usize / 6).max(1);
 
             if self.menu_state == MenuState::SpellCheck {

@@ -7,7 +7,7 @@ use std::io::{self, BufWriter};
 use ropey::Rope;
 use syntect::highlighting::{Style, ThemeSet};
 use syntect::parsing::SyntaxSet;
-use crossterm::{execute, terminal, event::{self, Event, KeyCode, KeyModifiers}};
+use crossterm::{terminal, event::{self, KeyCode, KeyModifiers}};
 use crate::prompt::PromptExt;
 
 // Extension Traits
@@ -112,43 +112,7 @@ impl Editor {
             menu_page: 1,
         }
     }
-
-    pub fn run(&mut self) -> io::Result<()> {
-        terminal::enable_raw_mode()?;
-        let mut stdout = io::stdout();
-        execute!(stdout, terminal::EnterAlternateScreen)?;
-        self.update_cursor_color();
-
-        loop {
-            if let Some(time) = self.status_time {
-                if time.elapsed() >= Duration::from_secs(3) { self.clear_status(); }
-            }
-            self.draw_screen()?;
-            if self.should_quit { break; }
-
-            let timeout = if let Some(time) = self.status_time {
-                let elapsed = time.elapsed();
-                if elapsed >= Duration::from_secs(3) { Duration::from_millis(1) }
-                else { Duration::from_secs(3) - elapsed }
-            } else { Duration::from_secs(3600) };
-
-            if event::poll(timeout)? {
-                if let Event::Key(key) = event::read()? {
-                    match self.handle_keypress(key)? {
-                        EditorResult::Send(_) | EditorResult::Cancel => break,
-                        EditorResult::Continue => {}
-                    }
-                }
-            } else { self.clear_status(); }
-        }
-
-        execute!(stdout, terminal::LeaveAlternateScreen)?;
-        terminal::disable_raw_mode()?;
-        print!("\x1b]112\x07");
-        let _ = io::Write::flush(&mut io::stdout());
-        Ok(())
-    }
-
+    
     pub fn handle_keypress(&mut self, key: crossterm::event::KeyEvent) -> io::Result<EditorResult> {
         if key.kind != event::KeyEventKind::Press { return Ok(EditorResult::Continue); }
         self.highlight_match = None;
