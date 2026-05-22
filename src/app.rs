@@ -1,12 +1,10 @@
 use crate::config::Account;
 use crate::mail::EmailMeta;
 use std::time::{Duration, Instant};
-use std::path::{Path, PathBuf};
-use std::fs;
 
 pub enum AppMode {
-    List,
-    Reading {
+    EmailList,
+    EmailRead {
         text_body: String,
         html_body: Option<String>,
         attachments: Vec<(String, Vec<u8>)>,
@@ -58,7 +56,7 @@ pub struct App {
 impl App {
     pub fn new(accounts: Vec<Account>) -> Self {
         Self {
-            mode: AppMode::List,
+            mode: AppMode::EmailList,
             current_account_idx: 0,
             active_account: accounts[0].clone(),
             current_folder: String::from("INBOX"),

@@ -38,6 +38,14 @@ pub fn handle_event(event: Event, app: &mut App, session: &mut ImapSession, them
                             theme_provider.save_config();
                             app.needs_fetch = true;
                         }
+                        KeyCode::Char('t') | KeyCode::Char('T') if k.modifiers.contains(KeyModifiers::ALT) => {
+                            let mut themes: Vec<_> = theme_provider.theme_set.themes.keys().cloned().collect();
+                            themes.sort();
+                            if let Some(pos) = themes.iter().position(|t| t == &theme_provider.current_theme) {
+                                theme_provider.current_theme = themes[(pos + 1) % themes.len()].clone();
+                                theme_provider.save_config();
+                            }
+                        }
                         _ => {}
                     }
                 }
@@ -138,7 +146,7 @@ pub fn handle_event(event: Event, app: &mut App, session: &mut ImapSession, them
                     match k.code {
                         KeyCode::Up | KeyCode::Char('p') | KeyCode::Char('P') => *selected_idx = selected_idx.saturating_sub(1),
                         KeyCode::Down | KeyCode::Char('n') | KeyCode::Char('N') => *selected_idx = (*selected_idx + 1).min(5),
-                        KeyCode::Char('m') | KeyCode::Char('M') => app.mode = AppMode::List,
+                        KeyCode::Char('m') | KeyCode::Char('M') => app.mode = AppMode::EmailList,
                         KeyCode::Enter | KeyCode::Char('>') | KeyCode::Right => {
                             match *selected_idx {
                                 0 => {
@@ -146,12 +154,12 @@ pub fn handle_event(event: Event, app: &mut App, session: &mut ImapSession, them
                                     app.current_page = 0;
                                     app.restore_index_from_end = Some(0);
                                     app.needs_fetch = true;
-                                    app.mode = AppMode::List;
+                                    app.mode = AppMode::EmailList;
                                 }
                                 1 => app.mode = AppMode::AddressBook { selected_idx: 0, addresses: crate::address::load_address_book() },
                                 2 => app.mode = AppMode::FolderList { step: 0, selected_idx: app.current_account_idx, folders: Vec::new() },
                                 3 => app.mode = AppMode::Settings { selected_idx: 0 },
-                                4 => { app.update_status("Help not yet implemented.".to_string()); app.mode = AppMode::List; },
+                                4 => { app.update_status("Help not yet implemented.".to_string()); app.mode = AppMode::EmailList; },
                                 5 => quit = true,
                                 _ => {}
                             }
@@ -161,12 +169,12 @@ pub fn handle_event(event: Event, app: &mut App, session: &mut ImapSession, them
                             app.current_page = 0;
                             app.restore_index_from_end = Some(0);
                             app.needs_fetch = true;
-                            app.mode = AppMode::List;
+                            app.mode = AppMode::EmailList;
                         }
                         KeyCode::Char('a') | KeyCode::Char('A') => app.mode = AppMode::AddressBook { selected_idx: 0, addresses: crate::address::load_address_book() },
                         KeyCode::Char('f') | KeyCode::Char('F') => app.mode = AppMode::FolderList { step: 0, selected_idx: app.current_account_idx, folders: Vec::new() },
                         KeyCode::Char('s') | KeyCode::Char('S') => app.mode = AppMode::Settings { selected_idx: 0 },
-                        KeyCode::Char('h') | KeyCode::Char('H') => { app.update_status("Help not yet implemented.".to_string()); app.mode = AppMode::List; },
+                        KeyCode::Char('h') | KeyCode::Char('H') => { app.update_status("Help not yet implemented.".to_string()); app.mode = AppMode::EmailList; },
                         KeyCode::Char('q') | KeyCode::Char('Q') => quit = true,
                         // KeyCode::Char('t') | KeyCode::Char('T') if k.modifiers.contains(KeyModifiers::ALT) => {
                         //     theme_provider.save_config();
@@ -261,7 +269,7 @@ pub fn handle_event(event: Event, app: &mut App, session: &mut ImapSession, them
                                 app.current_page = 0;
                                 app.restore_index_from_end = Some(0);
                                 app.needs_fetch = true;
-                                app.mode = AppMode::List;
+                                app.mode = AppMode::EmailList;
                             }
                         }
                         KeyCode::Char('t') | KeyCode::Char('T') if k.modifiers.contains(KeyModifiers::ALT) => {
@@ -275,7 +283,7 @@ pub fn handle_event(event: Event, app: &mut App, session: &mut ImapSession, them
                         _ => {}
                     }
                 }
-                AppMode::List => {
+                AppMode::EmailList => {
                     let (_, rows) = term_size().unwrap_or((80, 24));
                     let items_per_page = (rows.saturating_sub(3) as u32).max(1);
                     let total_pages = if app.total_messages == 0 { 1 } else { (app.total_messages + items_per_page - 1) / items_per_page };
@@ -518,7 +526,7 @@ pub fn handle_event(event: Event, app: &mut App, session: &mut ImapSession, them
                                     app.page_emails[app.selected_index].is_read = true;
                                 }
 
-                                app.mode = AppMode::Reading { text_body: t_body, html_body: h_body, attachments: atts };
+                                app.mode = AppMode::EmailRead { text_body: t_body, html_body: h_body, attachments: atts };
                             }
                         }
                         KeyCode::Char('q') | KeyCode::Esc => quit = true,

@@ -10,6 +10,7 @@ use crate::syntax::SyntaxExt;
 
 static BUNDLED_THEMES: Dir<'_> = include_dir!("$CARGO_MANIFEST_DIR/themes");
 
+
 #[derive(Clone)]
 pub struct Account {
     pub email: String,
@@ -90,7 +91,7 @@ pub fn load_config() -> AppConfig {
     let home = dirs::home_dir().expect("Could not find home directory.");
     let config_dir = home.join(".xpine");
     let config_path = config_dir.join("xpinerc");
-    
+
     if !config_path.exists() {
         fs::create_dir_all(&config_dir).expect("Failed to create .email directory.");
         // Add the new variables to the template
@@ -160,12 +161,12 @@ pub fn load_config() -> AppConfig {
 
 pub trait ConfigExt {
     fn get_base_dir() -> Option<PathBuf>;
-    fn initialize_themes() -> std::io::Result<()>;
+    // fn initialize_themes() -> std::io::Result<()>;
     fn get_config_path() -> Option<PathBuf>;
     fn get_theme_dir() -> Option<PathBuf>;
     fn load_config() -> (String, bool, bool, bool);
     fn save_config(&self);
-    fn is_dark_theme(theme: &Theme) -> bool;
+    // fn is_dark_theme(theme: &Theme) -> bool;
     fn derive_ui_color(bg: syntect::highlighting::Color, is_dark: bool) -> Color;
     fn cycle_theme(&mut self);
     fn update_cursor_color(&self);
@@ -184,18 +185,18 @@ impl ConfigExt for Editor {
         }
     }
 
-    fn initialize_themes() -> std::io::Result<()> {
-        // ... (Keep existing implementation)
-        if let Some(theme_dir) = Self::get_theme_dir() {
-            if fs::read_dir(&theme_dir)?.next().is_none() {
-                for file in BUNDLED_THEMES.files() {
-                    let path = theme_dir.join(file.path());
-                    fs::write(path, file.contents())?;
-                }
-            }
-        }
-        Ok(())
-    }
+    // fn initialize_themes() -> std::io::Result<()> {
+    //     // ... (Keep existing implementation)
+    //     if let Some(theme_dir) = Self::get_theme_dir() {
+    //         if fs::read_dir(&theme_dir)?.next().is_none() {
+    //             for file in BUNDLED_THEMES.files() {
+    //                 let path = theme_dir.join(file.path());
+    //                 fs::write(path, file.contents())?;
+    //             }
+    //         }
+    //     }
+    //     Ok(())
+    // }
 
     fn get_config_path() -> Option<PathBuf> {
         // Save UI configuration to "settings" to avoid overwriting "xpinerc"
@@ -236,7 +237,7 @@ impl ConfigExt for Editor {
         }
         (theme, line_numbers, soft_wrap, sort_newest_first)
     }
-    
+
     fn save_config(&self) {
         if let Some(path) = Self::get_config_path() {
             let content = format!(
@@ -247,11 +248,11 @@ impl ConfigExt for Editor {
         }
     }
 
-    fn is_dark_theme(theme: &Theme) -> bool {
-        let bg = theme.settings.background.unwrap_or(syntect::highlighting::Color { r: 0, g: 0, b: 0, a: 255 });
-        let luminance = 0.299 * (bg.r as f32) + 0.587 * (bg.g as f32) + 0.114 * (bg.b as f32);
-        luminance < 128.0
-    }
+    // fn is_dark_theme(theme: &Theme) -> bool {
+    //     let bg = theme.settings.background.unwrap_or(syntect::highlighting::Color { r: 0, g: 0, b: 0, a: 255 });
+    //     let luminance = 0.299 * (bg.r as f32) + 0.587 * (bg.g as f32) + 0.114 * (bg.b as f32);
+    //     luminance < 128.0
+    // }
 
     fn derive_ui_color(bg: syntect::highlighting::Color, is_dark: bool) -> Color {
         let offset: i16 = if is_dark { 20 } else { -20 };

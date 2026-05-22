@@ -59,7 +59,7 @@ impl UiExt for Editor {
         let visible_rows = rows.saturating_sub((runtime_overhead + self.top_margin) as u16) as usize;
 
         let theme = &self.theme_set.themes[&self.current_theme];
-        let is_dark = Self::is_dark_theme(theme);
+        let is_dark = crate::theme::is_dark_theme(theme);
         let raw_theme_bg = theme.settings.background.unwrap_or(syntect::highlighting::Color { r: 0, g: 0, b: 0, a: 255 });
 
         let default_cross_bg = Color::Rgb { r: raw_theme_bg.r, g: raw_theme_bg.g, b: raw_theme_bg.b };
@@ -657,7 +657,7 @@ pub fn draw_app(stdout: &mut std::io::Stdout, app: &App, theme_provider: &Editor
             Editor::draw_menu_line(stdout, rows - 2, cols, m_col, &[("M", " Main Menu"), ("P", " Prev"), ("Y", " Prev Pg"), (">", " Select"),  ("", ""), ("", "")], colors.ui_bg, colors.accent, colors.fg)?;
             Editor::draw_menu_line(stdout, rows - 1, cols, m_col, &[("<", " Back"),      ("N", " Next"), ("V", " Next Pg"), ("", ""), ("", ""), ("", "")], colors.ui_bg, colors.accent, colors.fg)?;
         }
-        AppMode::List => {
+        AppMode::EmailList => {
             let header_title = format!("xpine - {} ({})", app.current_folder, app.active_account.email);
 
             // Draw the base title
@@ -770,20 +770,20 @@ pub fn draw_app(stdout: &mut std::io::Stdout, app: &App, theme_provider: &Editor
             let header_title = "xpine - Settings";
 
             queue!(
-                stdout,
-                cursor::MoveTo(0, 0),
-                SetBackgroundColor(colors.ui_bg),
-                terminal::Clear(ClearType::CurrentLine),
-                SetForegroundColor(colors.accent),
-                Print(header_title),
-                SetBackgroundColor(colors.bg),
-                SetForegroundColor(colors.fg)
-            )?;
+            stdout,
+            cursor::MoveTo(0, 0),
+            SetBackgroundColor(colors.ui_bg),
+            terminal::Clear(ClearType::CurrentLine),
+            SetForegroundColor(colors.accent),
+            Print(header_title),
+            SetBackgroundColor(colors.bg),
+            SetForegroundColor(colors.fg)
+        )?;
 
             let options = [
-                ("Soft Wrap", theme_provider.soft_wrap),
-                ("Show Line Numbers", theme_provider.show_line_numbers),
-                ("Sort Newest First", theme_provider.sort_newest_first),
+                ("    Soft Wrap", theme_provider.soft_wrap),
+                ("    Show Line Numbers", theme_provider.show_line_numbers),
+                ("    Sort Newest First", theme_provider.sort_newest_first),
             ];
 
             for (i, (title, is_enabled)) in options.iter().enumerate() {
@@ -800,11 +800,44 @@ pub fn draw_app(stdout: &mut std::io::Stdout, app: &App, theme_provider: &Editor
                 queue!(stdout, Print(format!("{} {:<20} ", checkbox, title)), ResetColor)?;
             }
 
+            // --- UPDATED CODE: 1 blank line gap, custom column alignments, and theme colorization ---
+            let theme_y = 2 + options.len() as u16;
+
+            // 1. Move to column 1 to print "Meta+T" in the hotkey accent color
+            queue!(
+            stdout,
+            cursor::MoveTo(2, theme_y),
+            SetBackgroundColor(colors.bg),
+            SetForegroundColor(colors.accent),
+            Print("Meta+T"),
+            ResetColor
+        )?;
+
+            // 2. Move to column 10 (leaving 3 spaces) to print "Theme: " in standard fg color
+            queue!(
+            stdout,
+            cursor::MoveTo(10, theme_y),
+            SetBackgroundColor(colors.bg),
+            SetForegroundColor(colors.fg),
+            Print("Theme: "),
+            ResetColor
+        )?;
+
+            // 3. Keep cursor position and print the chosen theme name in the hotkey accent color
+            queue!(
+            stdout,
+            SetBackgroundColor(colors.bg),
+            SetForegroundColor(colors.accent),
+            Print(format!("{}", theme_provider.current_theme)),
+            ResetColor
+        )?;
+            // -------------------------------------------------------------------------------------
+
             let m_col = (cols as usize / 6).max(1);
 
-            // Add the "O" (Order) hotkey to the menu bar description
-            Editor::draw_menu_line(stdout, rows - 2, cols, m_col, &[("", ""),       ("P", " Prev"), ("X", " Select"), ("", ""), ("", ""), ("", "")], colors.ui_bg, colors.accent, colors.fg)?;
-            Editor::draw_menu_line(stdout, rows - 1, cols, m_col, &[("<", " Back"), ("N", " Next"), ("", ""), ("", ""), ("", ""), ("", "")], colors.ui_bg, colors.accent, colors.fg)?;
+            // Updated bottom menu blocks to add Meta+T to the displayed hotkey combinations
+            Editor::draw_menu_line(stdout, rows - 2, cols, m_col, &[("", ""),          ("P", " Prev"), ("X", " Select"), ("", ""), ("", ""), ("", "")], colors.ui_bg, colors.accent, colors.fg)?;
+            Editor::draw_menu_line(stdout, rows - 1, cols, m_col, &[("<", " Back"),    ("N", " Next"), ("Meta+T", " Theme"), ("", ""), ("", ""), ("", "")], colors.ui_bg, colors.accent, colors.fg)?;
         }
         _ => {}
     }

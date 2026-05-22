@@ -149,134 +149,10 @@ impl Editor {
         Ok(())
     }
 
-    // pub fn save_config(&self) -> io::Result<()> {
-    //     let mut config_path = dirs::home_dir().unwrap_or_default();
-    //     config_path.push(".xpinerc");
-    //
-    //     let config_data = format!(
-    //         "theme = {}\nsoft_wrap = {}\n...",
-    //         self.current_theme, self.soft_wrap
-    //     );
-    //     fs::write(config_path, config_data)
-    // }
-
-    // pub fn justify_all_text(input: &str) -> String {
-    //     let mut result = String::new();
-    //     let mut current_paragraph = Vec::new();
-    //
-    //     for line in input.lines() {
-    //         let trimmed = line.trim();
-    //
-    //         // Check if the line should be treated as a structural boundary or literal text
-    //         // e.g., an empty line, an email quote line, or a highly indented list item.
-    //         if trimmed.is_empty() || line.starts_with('>') || line.starts_with(' ') || line.starts_with('\t') {
-    //             // First, drain and flush any queued standard paragraph text up to this point
-    //             if !current_paragraph.is_empty() {
-    //                 result.push_str(&Self::flow_paragraph_words(&current_paragraph, 72));
-    //                 current_paragraph.clear();
-    //             }
-    //
-    //             // Append the literal line matching the layout boundary
-    //             result.push_str(line);
-    //             result.push_str("\n");
-    //         } else {
-    //             // Collect the line content into the active paragraph buffer
-    //             current_paragraph.push(line);
-    //         }
-    //     }
-    //
-    //     // Flush any remaining trailing paragraph blocks left in the vector
-    //     if !current_paragraph.is_empty() {
-    //         result.push_str(&Self::flow_paragraph_words(&current_paragraph, 72));
-    //     }
-    //
-    //     result
-    // }
-
-    pub fn justify_all_text(input: &str) -> String {
-        let mut result = String::new();
-        let mut current_paragraph = Vec::new();
-
-        for line in input.lines() {
-            let trimmed = line.trim();
-
-            // Check if the line is a numbered list (e.g., "1.", "23.") or bullet ("-", "*", "+")
-            let is_numbered_list = trimmed.split_whitespace().next()
-                .map(|first_word| {
-                    // Check if it ends with a dot and all characters before the dot are digits
-                    first_word.ends_with('.') && first_word[..first_word.len()-1].chars().all(|c| c.is_ascii_digit())
-                })
-                .unwrap_or(false);
-
-            let is_bullet_list = trimmed.starts_with('-') || trimmed.starts_with('*') || trimmed.starts_with('+');
-
-            // Structural layout constraints: empty rows, quotes, manual offsets, or lists
-            if trimmed.is_empty()
-                || line.starts_with('>')
-                || line.starts_with(' ')
-                || line.starts_with('\t')
-                || is_numbered_list
-                || is_bullet_list
-            {
-                // First, drain and flush any queued standard paragraph lines up to this point
-                if !current_paragraph.is_empty() {
-                    result.push_str(&Self::flow_paragraph_words(&current_paragraph, 72));
-                    current_paragraph.clear();
-                }
-
-                // Append the list item or structural line as its own standalone row
-                result.push_str(line);
-                result.push_str("\n");
-            } else {
-                // Collect standard text rows to form a paragraph
-                current_paragraph.push(line);
-            }
-        }
-
-        // Flush any remaining trailing paragraphs left in the buffer
-        if !current_paragraph.is_empty() {
-            result.push_str(&Self::flow_paragraph_words(&current_paragraph, 72));
-        }
-
-        result
-    }
-
-    fn flow_paragraph_words(lines: &[&str], max_width: usize) -> String {
-        let joined_text = lines.join(" ");
-        let words: Vec<&str> = joined_text.split_whitespace().collect();
-        if words.is_empty() {
-            return String::new();
-        }
-
-        let mut reflowed = String::new();
-        let mut current_line_len = 0;
-
-        for word in words {
-            if current_line_len + word.len() + 1 > max_width {
-                reflowed.push('\n');
-                reflowed.push_str(word);
-                current_line_len = word.len();
-            } else {
-                if current_line_len > 0 {
-                    reflowed.push(' ');
-                    current_line_len += 1;
-                }
-                reflowed.push_str(word);
-                current_line_len += word.len();
-            }
-        }
-        reflowed.push('\n');
-        reflowed.push_str("\n"); // Add a trailing empty space gap between paragraphs
-        reflowed
-    }
-
     pub fn handle_keypress(&mut self, key: crossterm::event::KeyEvent) -> io::Result<EditorResult> {
         if key.kind != event::KeyEventKind::Press { return Ok(EditorResult::Continue); }
         self.highlight_match = None;
 
-        // let is_ctrl = key.modifiers.contains(KeyModifiers::CONTROL);
-        // let is_alt = key.modifiers.contains(KeyModifiers::ALT);
-        //
         let is_ctrl = key.modifiers.contains(KeyModifiers::CONTROL);
         let is_alt = key.modifiers.contains(KeyModifiers::ALT);
 
@@ -424,13 +300,6 @@ impl Editor {
             KeyCode::Left => self.move_left(),
             KeyCode::Right => self.move_right(),
 
-            // KeyCode::Char(c) if !is_ctrl && !is_alt => {
-            //     let idx = self.get_cursor_char_idx();
-            //     self.buffer.insert_char(idx, c);
-            //     self.cursor_x += 1;
-            //     self.desired_cursor_x = self.cursor_x;
-            //     self.mark_modified();
-            // }
             KeyCode::Char(c) if !is_ctrl && !is_alt => {
                 let idx = self.get_cursor_char_idx();
                 self.buffer.insert_char(idx, c);
@@ -813,6 +682,83 @@ impl Editor {
             }
         }
         Ok(())
+    }
+
+    pub fn justify_all_text(input: &str) -> String {
+        let mut result = String::new();
+        let mut current_paragraph = Vec::new();
+
+        for line in input.lines() {
+            let trimmed = line.trim();
+
+            // Check if the line is a numbered list (e.g., "1.", "23.") or bullet ("-", "*", "+")
+            let is_numbered_list = trimmed.split_whitespace().next()
+                .map(|first_word| {
+                    // Check if it ends with a dot and all characters before the dot are digits
+                    first_word.ends_with('.') && first_word[..first_word.len()-1].chars().all(|c| c.is_ascii_digit())
+                })
+                .unwrap_or(false);
+
+            let is_bullet_list = trimmed.starts_with('-') || trimmed.starts_with('*') || trimmed.starts_with('+');
+
+            // Structural layout constraints: empty rows, quotes, manual offsets, or lists
+            if trimmed.is_empty()
+                || line.starts_with('>')
+                || line.starts_with(' ')
+                || line.starts_with('\t')
+                || is_numbered_list
+                || is_bullet_list
+            {
+                // First, drain and flush any queued standard paragraph lines up to this point
+                if !current_paragraph.is_empty() {
+                    result.push_str(&Self::flow_paragraph_words(&current_paragraph, 72));
+                    current_paragraph.clear();
+                }
+
+                // Append the list item or structural line as its own standalone row
+                result.push_str(line);
+                result.push_str("\n");
+            } else {
+                // Collect standard text rows to form a paragraph
+                current_paragraph.push(line);
+            }
+        }
+
+        // Flush any remaining trailing paragraphs left in the buffer
+        if !current_paragraph.is_empty() {
+            result.push_str(&Self::flow_paragraph_words(&current_paragraph, 72));
+        }
+
+        result
+    }
+
+    fn flow_paragraph_words(lines: &[&str], max_width: usize) -> String {
+        let joined_text = lines.join(" ");
+        let words: Vec<&str> = joined_text.split_whitespace().collect();
+        if words.is_empty() {
+            return String::new();
+        }
+
+        let mut reflowed = String::new();
+        let mut current_line_len = 0;
+
+        for word in words {
+            if current_line_len + word.len() + 1 > max_width {
+                reflowed.push('\n');
+                reflowed.push_str(word);
+                current_line_len = word.len();
+            } else {
+                if current_line_len > 0 {
+                    reflowed.push(' ');
+                    current_line_len += 1;
+                }
+                reflowed.push_str(word);
+                current_line_len += word.len();
+            }
+        }
+        reflowed.push('\n');
+        // reflowed.push_str("\n"); // Add a trailing empty space gap between paragraphs
+        reflowed
     }
 
 }

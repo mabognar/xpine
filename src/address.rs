@@ -111,3 +111,33 @@ pub(crate) fn clean_and_save_address_book(addresses: &mut Vec<String>) {
     save_list.retain(|a| !a.trim().is_empty());
     let _ = crate::address::save_address_book(&save_list);
 }
+
+pub(crate) fn expand_address_lists(input: &str, address_book: &[String]) -> String {
+    let mut expanded = Vec::new();
+
+    for part in input.split(',') {
+        let part = part.trim();
+        let mut matched_list = false;
+
+        for addr in address_book {
+            // Check if this address book entry is a List (contains a colon)
+            if let Some((list_name, emails)) = addr.split_once(':') {
+                // If the user typed the list name or the autocomplete inserted it
+                if part.to_lowercase() == list_name.trim().to_lowercase()
+                    || part.to_lowercase() == addr.trim().to_lowercase()
+                {
+                    // Extract just the emails from the list, strip the trailing ';'
+                    expanded.push(emails.trim().trim_end_matches(';').to_string());
+                    matched_list = true;
+                    break;
+                }
+            }
+        }
+
+        if !matched_list && !part.is_empty() {
+            expanded.push(part.to_string());
+        }
+    }
+
+    expanded.join(", ")
+}

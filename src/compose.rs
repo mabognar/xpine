@@ -27,36 +27,6 @@ struct ComposeState {
     active_idx: usize,
 }
 
-fn expand_address_lists(input: &str, address_book: &[String]) -> String {
-    let mut expanded = Vec::new();
-
-    for part in input.split(',') {
-        let part = part.trim();
-        let mut matched_list = false;
-
-        for addr in address_book {
-            // Check if this address book entry is a List (contains a colon)
-            if let Some((list_name, emails)) = addr.split_once(':') {
-                // If the user typed the list name or the autocomplete inserted it
-                if part.to_lowercase() == list_name.trim().to_lowercase()
-                    || part.to_lowercase() == addr.trim().to_lowercase()
-                {
-                    // Extract just the emails from the list, strip the trailing ';'
-                    expanded.push(emails.trim().trim_end_matches(';').to_string());
-                    matched_list = true;
-                    break;
-                }
-            }
-        }
-
-        if !matched_list && !part.is_empty() {
-            expanded.push(part.to_string());
-        }
-    }
-
-    expanded.join(", ")
-}
-
 fn find_suggestion(input: &str, address_book: &[String]) -> Option<String> {
     if input.is_empty() { return None; }
 
@@ -302,9 +272,9 @@ pub fn compose_email(account: &Account, default_to: Option<&str>, default_subjec
         b
     };
 
-    let final_to = expand_address_lists(&state.to, &address_book);
-    let final_cc = expand_address_lists(&state.cc, &address_book);
-    let final_bcc = expand_address_lists(&state.bcc, &address_book);
+    let final_to = crate::address::expand_address_lists(&state.to, &address_book);
+    let final_cc = crate::address::expand_address_lists(&state.cc, &address_book);
+    let final_bcc = crate::address::expand_address_lists(&state.bcc, &address_book);
 
     builder = parse_and_add(builder, &final_to, "to");
     builder = parse_and_add(builder, &final_cc, "cc");
@@ -362,3 +332,4 @@ pub fn compose_email(account: &Account, default_to: Option<&str>, default_subjec
         }
     }
 }
+

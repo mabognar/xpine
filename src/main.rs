@@ -35,6 +35,10 @@ fn main() {
     let mut stdout = stdout();
     execute!(stdout, EnterAlternateScreen).unwrap();
 
+    if let Err(e) = crate::theme::ensure_themes_unpacked() {
+        eprintln!("Warning: Failed to unpack default asset themes to disk: {}", e);
+    }
+    
     let mut settings_provider = Editor::new(None);
     let mut session = net::connect(&app.active_account).unwrap();
 
@@ -61,13 +65,13 @@ fn main() {
             app.needs_fetch = true;
         }
 
-        if app.needs_fetch && matches!(app.mode, AppMode::List) {
+        if app.needs_fetch && matches!(app.mode, AppMode::EmailList) {
             net::fetch_emails(&mut session, &mut app, items_per_page, settings_provider.sort_newest_first);
             app.last_fetch_time = Instant::now();
             app.needs_fetch = false;
         }
 
-        if let AppMode::Reading { text_body, html_body, attachments } = &app.mode {
+        if let AppMode::EmailRead { text_body, html_body, attachments } = &app.mode {
             let mut reader = Editor::new(None);
             reader.menu_state = MenuState::EmailReader;
 
@@ -299,8 +303,8 @@ fn main() {
             settings_provider.current_theme = reader.current_theme;
 
             // Only revert to List mode if we didn't just intentionally switch to the FileBrowser
-            if matches!(app.mode, AppMode::Reading { .. }) {
-                app.mode = AppMode::List;
+            if matches!(app.mode, AppMode::EmailRead { .. }) {
+                app.mode = AppMode::EmailList;
             }
             continue;
         }
