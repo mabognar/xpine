@@ -24,6 +24,9 @@ pub enum AppMode {
         selected_idx: usize,
         addresses: Vec<String>,
     },
+    EmailAccounts {
+        selected_idx: usize,
+    },
 }
 
 #[derive(Clone)]
@@ -55,16 +58,35 @@ pub struct App {
 
 impl App {
     pub fn new(accounts: Vec<Account>) -> Self {
-        Self {
-            mode: AppMode::EmailList,
+        let is_empty = accounts.is_empty();
+
+        let (active_account, mode, needs_fetch) = if is_empty {
+            (
+                Account {
+                    email: String::new(),
+                    password: String::new(),
+                    imap_server: String::new(),
+                    imap_port: 993,
+                    smtp_server: String::new(),
+                },
+                // Assuming '3' is the index for "E Email Accounts" in your Main Menu array
+                AppMode::MainMenu { selected_idx: 3 },
+                false, // Don't fetch if no accounts exist
+            )
+        } else {
+            (accounts[0].clone(), AppMode::EmailList, true)
+        };
+
+        let mut app = Self {
+            mode,
             current_account_idx: 0,
-            active_account: accounts[0].clone(),
+            active_account,
             current_folder: String::from("INBOX"),
             total_messages: 0,
             current_page: 0,
             selected_index: 0,
             page_emails: Vec::new(),
-            needs_fetch: true,
+            needs_fetch,
             needs_reconnect: false,
             restore_index_from_end: Some(0),
             list_status: String::new(),
@@ -75,9 +97,15 @@ impl App {
             accounts,
             menu_page: 1,
             search_query: None,
-        }
-    }
+        };
 
+        if is_empty {
+            app.update_status("No email account specified. Press 'E' to add email account.".to_string());
+        }
+
+        app
+    }
+    
     pub fn update_status(&mut self, msg: String) {
         self.list_status = msg;
         self.list_status_time = Some(Instant::now());

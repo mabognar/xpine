@@ -38,7 +38,7 @@ impl PromptExt for Editor {
             queue!(
                 stdout_handle,
                 cursor::MoveTo(0, rows.saturating_sub(3)),
-                SetBackgroundColor(ui_colors.ui_bg),
+                SetBackgroundColor(ui_colors.menu_bg),
                 Clear(ClearType::CurrentLine),
                 SetForegroundColor(ui_colors.fg),
                 Print(prompt_text),
@@ -58,31 +58,31 @@ impl PromptExt for Editor {
                 Self::draw_menu_line(
                     &mut stdout_handle, rows.saturating_sub(2), cols, col_width,
                     &[("1 ", if s1.is_empty() { "" } else { s1.as_str() }), ("3 ", if s3.is_empty() { "" } else { s3.as_str() }), ("I", " Ignore"), ("^C", " Cancel")],
-                    ui_colors.ui_bg, ui_colors.accent, ui_colors.fg,
+                    ui_colors.menu_bg, ui_colors.accent, ui_colors.fg,
                 )?;
                 Self::draw_menu_line(
                     &mut stdout_handle, rows.saturating_sub(1), cols, col_width,
                     &[("2 ", if s2.is_empty() { "" } else { s2.as_str() }), ("4 ", if s4.is_empty() { "" } else { s4.as_str() }), ("A", " Add Dict"), ("", "")],
-                    ui_colors.ui_bg, ui_colors.accent, ui_colors.fg,
+                    ui_colors.menu_bg, ui_colors.accent, ui_colors.fg,
                 )?;
             } else {
                 if allow_browser {
                     Self::draw_menu_line(
                         &mut stdout_handle, rows.saturating_sub(2), cols, col_width,
                         &[("^T", " To Files"), ("", ""), ("", ""), ("", ""), ("", ""), ("", "")],
-                        ui_colors.ui_bg, ui_colors.accent, ui_colors.fg,
+                        ui_colors.menu_bg, ui_colors.accent, ui_colors.fg,
                     )?;
                 } else {
                     Self::draw_menu_line(
                         &mut stdout_handle, rows.saturating_sub(2), cols, col_width,
                         &[("", ""), ("", ""), ("", ""), ("", ""), ("", ""), ("", "")],
-                        ui_colors.ui_bg, ui_colors.accent, ui_colors.fg,
+                        ui_colors.menu_bg, ui_colors.accent, ui_colors.fg,
                     )?;
                 }
                 Self::draw_menu_line(
                     &mut stdout_handle, rows.saturating_sub(1), cols, col_width,
                     &[("^C", " Cancel"), ("", ""), ("", ""), ("", ""), ("", ""), ("", "")],
-                    ui_colors.ui_bg, ui_colors.accent, ui_colors.fg,
+                    ui_colors.menu_bg, ui_colors.accent, ui_colors.fg,
                 )?;
             }
 
@@ -191,7 +191,7 @@ impl PromptExt for Editor {
         queue!(
             stdout_handle,
             cursor::MoveTo(0, rows.saturating_sub(3)),
-            SetBackgroundColor(ui_colors.ui_bg),
+            SetBackgroundColor(ui_colors.menu_bg),
             terminal::Clear(ClearType::CurrentLine),
             SetForegroundColor(ui_colors.fg),
             Print(prompt_text),
@@ -207,7 +207,7 @@ impl PromptExt for Editor {
             cols,
             col_width,
             &[("Y", " Yes"), ("", ""), ("", ""), ("", ""), ("", ""), ("", "")],
-            ui_colors.ui_bg,
+            ui_colors.menu_bg,
             ui_colors.accent,
             ui_colors.fg,
         )?;
@@ -217,7 +217,7 @@ impl PromptExt for Editor {
             cols,
             col_width,
             &[("N", " No"), ("", ""), ("", ""), ("", ""), ("", ""), ("", "")],
-            ui_colors.ui_bg,
+            ui_colors.menu_bg,
             ui_colors.accent,
             ui_colors.fg,
         )?;
@@ -299,7 +299,7 @@ impl PromptExt for Editor {
             queue!(
                 stdout,
                 cursor::MoveTo(0, rows - 1),
-                SetBackgroundColor(colors.ui_bg),
+                SetBackgroundColor(colors.menu_bg),
                 terminal::Clear(ClearType::CurrentLine),
                 SetForegroundColor(colors.accent),
                 Print(prompt_text),
@@ -353,7 +353,7 @@ impl PromptExt for Editor {
             queue!(
                 stdout(),
                 cursor::MoveTo(0, prompt_y),
-                SetBackgroundColor(colors.ui_bg),
+                SetBackgroundColor(colors.menu_bg),
                 SetForegroundColor(colors.fg),
                 Print(padded_str),
                 ResetColor
@@ -433,7 +433,7 @@ pub fn prompt_cancel(stdout: &mut std::io::Stdout, colors: &UiColors) -> bool {
     execute!(
         stdout,
         cursor::MoveTo(0, rows.saturating_sub(3)),
-        SetBackgroundColor(colors.ui_bg),
+        SetBackgroundColor(colors.menu_bg),
         Clear(ClearType::UntilNewLine),
         SetForegroundColor(colors.accent),
         Print("Are you sure you want to cancel? "),
@@ -447,7 +447,7 @@ pub fn prompt_cancel(stdout: &mut std::io::Stdout, colors: &UiColors) -> bool {
         cols,
         col_width,
         &[("Y", " Yes"), ("", ""), ("", ""), ("", ""), ("", ""), ("", "")],
-        colors.ui_bg,
+        colors.menu_bg,
         colors.accent,
         colors.fg,
     ).unwrap();
@@ -457,7 +457,7 @@ pub fn prompt_cancel(stdout: &mut std::io::Stdout, colors: &UiColors) -> bool {
         cols,
         col_width,
         &[("N", " No"), ("", ""), ("", ""), ("", ""), ("", ""), ("", "")],
-        colors.ui_bg,
+        colors.menu_bg,
         colors.accent,
         colors.fg,
     ).unwrap();

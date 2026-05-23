@@ -64,7 +64,7 @@ impl UiExt for Editor {
 
         let default_cross_bg = Color::Rgb { r: raw_theme_bg.r, g: raw_theme_bg.g, b: raw_theme_bg.b };
         let ui_colors = derive_ui_colors(theme);
-        let ui_bg = ui_colors.ui_bg;
+        let ui_bg = ui_colors.menu_bg;
         let title_fg = if is_dark { Color::Reset } else { Color::Black };
         let menu_key_fg = ui_colors.accent;
         let menu_text_fg = ui_colors.fg;
@@ -336,7 +336,7 @@ impl UiExt for Editor {
 
             let theme = &self.theme_set.themes[&self.current_theme];
             let ui_colors = derive_ui_colors(theme);
-            let ui_bg = ui_colors.ui_bg;
+            let ui_bg = ui_colors.menu_bg;
             let title_fg = ui_colors.fg;
             let menu_key_fg = ui_colors.accent;
 
@@ -533,7 +533,7 @@ pub fn draw_app(stdout: &mut std::io::Stdout, app: &App, theme_provider: &Editor
     match &app.mode {
         AppMode::AddressBook { selected_idx, addresses } => {
             let title = "xpine - Address Book";
-            queue!(stdout, cursor::MoveTo(0, 0), SetBackgroundColor(colors.ui_bg), SetForegroundColor(colors.accent), Print(title), Print(" ".repeat((cols as usize).saturating_sub(title.chars().count()))), ResetColor)?;
+            queue!(stdout, cursor::MoveTo(0, 0), SetBackgroundColor(colors.menu_bg), SetForegroundColor(colors.accent), Print(title), Print(" ".repeat((cols as usize).saturating_sub(title.chars().count()))), ResetColor)?;
 
             let items_per_page = (rows.saturating_sub(4) as usize).max(1);
             let start_idx = if *selected_idx >= items_per_page { selected_idx - items_per_page + 1 } else { 0 };
@@ -575,7 +575,7 @@ pub fn draw_app(stdout: &mut std::io::Stdout, app: &App, theme_provider: &Editor
                 cols,
                 m_col,
                 &[("<", " Back"), ("P", " Prev"), ("Y", " Prev Pg"), ("A", " Add"), ("E", " Edit"), ("", "")],
-                colors.ui_bg, colors.accent, colors.fg
+                colors.menu_bg, colors.accent, colors.fg
             )?;
             Editor::draw_menu_line(
                 stdout,
@@ -583,12 +583,92 @@ pub fn draw_app(stdout: &mut std::io::Stdout, app: &App, theme_provider: &Editor
                 cols,
                 m_col,
                 &[("", ""), ("N", " Next"), ("V", " Next Pg"), ("T", " Team"), ("D", " Delete"), ("", "")],
-                colors.ui_bg, colors.accent, colors.fg
+                colors.menu_bg, colors.accent, colors.fg
+            )?;
+        }
+        AppMode::EmailAccounts { selected_idx } => {
+            let title = "xpine - Email Accounts";
+            let title_len = title.chars().count();
+
+            // Draw the top title bar
+            queue!(
+                stdout,
+                cursor::MoveTo(0, 0),
+                SetBackgroundColor(colors.menu_bg),
+                SetForegroundColor(colors.accent),
+                Print(title),
+                Print(" ".repeat((cols as usize).saturating_sub(title_len))),
+                ResetColor
+            )?;
+
+            // Calculate pagination
+            let items_per_page = (rows.saturating_sub(4) as usize).max(1);
+            let start_idx = if *selected_idx >= items_per_page {
+                selected_idx - items_per_page + 1
+            } else {
+                0
+            };
+
+            // Draw the list of email accounts
+            for i in 0..items_per_page {
+                let actual_idx = start_idx + i;
+                if actual_idx < app.accounts.len() {
+                    let is_selected = actual_idx == *selected_idx;
+                    let bg_color = if is_selected { colors.selected_bg } else { colors.bg };
+
+                    let acc = &app.accounts[actual_idx];
+                    // Format: user@email.com (imap.server.com)
+                    let display_str = format!("  {} ({})", acc.email, acc.imap_server);
+
+                    queue!(
+                stdout,
+                cursor::MoveTo(0, (i + 1) as u16),
+                SetBackgroundColor(bg_color),
+                SetForegroundColor(colors.fg),
+                Print(format!("{:<width$}", display_str, width = cols as usize)),
+                ResetColor
+            )?;
+                } else {
+                    // Clear remaining empty rows
+                    queue!(
+                stdout,
+                cursor::MoveTo(0, (i + 1) as u16),
+                SetBackgroundColor(colors.bg),
+                terminal::Clear(ClearType::UntilNewLine)
+            )?;
+                }
+            }
+
+            let m_col = (cols as usize / 6).max(1);
+            Editor::draw_menu_line(
+                stdout, rows - 2, cols, m_col,
+                // Changed "N New Account" to "A Add Account"
+                &[("", ""), ("A", " Add Acct"), ("D", " Del Acct"), ("P", " Prev"), ("", ""), ("", "")],
+                colors.menu_bg, colors.accent, colors.fg
+            )?;
+            Editor::draw_menu_line(
+                stdout, rows - 1, cols, m_col,
+                // Added ("N", " Next") here to match the navigation
+                &[("<", " Back"), ("E", " Edit Acct"), ("", ""), ("N", " Next"), ("", ""), ("", "")],
+                colors.menu_bg, colors.accent, colors.fg
+            )?;
+
+            queue!(
+                stdout,
+                SetBackgroundColor(colors.bg),    // Set background to theme color
+                SetForegroundColor(Color::Red),      // Set text to red
+                cursor::MoveTo(0, rows - 6),
+                Print("  - App Specific Passwords are required for GMail, Outlook, & Yahoo"),
+                cursor::MoveTo(0, rows - 5),
+                Print("  - Generate online with your email provider (Google for help)"),
+                cursor::MoveTo(0, rows - 4),
+                Print("  - Enter the App Specific Password WITHOUT spaces"),
+                ResetColor                           // Reset all colors
             )?;
         }
         AppMode::FolderList { step, selected_idx, folders } => {
             let header_title = if *step == 0 { "xpine - Select Account".to_string() } else { format!("xpine - Folders ({})", app.active_account.email) };
-            queue!(stdout, cursor::MoveTo(0, 0), SetBackgroundColor(colors.ui_bg), terminal::Clear(ClearType::UntilNewLine), SetForegroundColor(colors.accent), Print(header_title), ResetColor)?;
+            queue!(stdout, cursor::MoveTo(0, 0), SetBackgroundColor(colors.menu_bg), terminal::Clear(ClearType::UntilNewLine), SetForegroundColor(colors.accent), Print(header_title), ResetColor)?;
 
             let items_count = if *step == 0 { app.accounts.len() } else { folders.len() };
             let visible_items = (rows.saturating_sub(5)) as usize;
@@ -613,8 +693,8 @@ pub fn draw_app(stdout: &mut std::io::Stdout, app: &App, theme_provider: &Editor
             }
 
             let m_col = (cols as usize / 6).max(1);
-            Editor::draw_menu_line(stdout, rows - 2, cols, m_col, &[("M", " Main Menu"), ("P", " Prev"), ("Y", " Prev Pg"), (">", " Select"),  ("", ""), ("", "")], colors.ui_bg, colors.accent, colors.fg)?;
-            Editor::draw_menu_line(stdout, rows - 1, cols, m_col, &[("<", " Back"),      ("N", " Next"), ("V", " Next Pg"), ("", ""), ("", ""), ("", "")], colors.ui_bg, colors.accent, colors.fg)?;
+            Editor::draw_menu_line(stdout, rows - 2, cols, m_col, &[("M", " Main Menu"), ("P", " Prev"), ("Y", " Prev Pg"), (">", " Select"),  ("", ""), ("", "")], colors.menu_bg, colors.accent, colors.fg)?;
+            Editor::draw_menu_line(stdout, rows - 1, cols, m_col, &[("<", " Back"),      ("N", " Next"), ("V", " Next Pg"), ("", ""), ("", ""), ("", "")], colors.menu_bg, colors.accent, colors.fg)?;
         }
         AppMode::EmailList => {
             let header_title = format!("xpine - {} ({})", app.current_folder, app.active_account.email);
@@ -623,7 +703,7 @@ pub fn draw_app(stdout: &mut std::io::Stdout, app: &App, theme_provider: &Editor
             queue!(
                 stdout,
                 cursor::MoveTo(0, 0),
-                SetBackgroundColor(colors.ui_bg),
+                SetBackgroundColor(colors.menu_bg),
                 terminal::Clear(ClearType::UntilNewLine),
                 cursor::MoveTo(0, 0),
                 SetForegroundColor(colors.accent),
@@ -685,11 +765,11 @@ pub fn draw_app(stdout: &mut std::io::Stdout, app: &App, theme_provider: &Editor
 
             let r_col = (cols as usize / 6).max(1);
             if app.menu_page == 1 {
-                Editor::draw_menu_line(stdout, rows - 2, cols, r_col, &[("<", " Back"), (">", " View"), ("C", " Compose"), ("R", " Reply"),   ("D", " Delete"), ("O", " Other (1/2)")], colors.ui_bg, colors.accent, colors.fg)?;
-                Editor::draw_menu_line(stdout, rows - 1, cols, r_col, &[("Q", " Quit"), ("M", " Menu"), ("*", " Flag"),    ("F", " Forward"), ("X", " Expunge"), ("Tab", " Acct")], colors.ui_bg, colors.accent, colors.fg)?;
+                Editor::draw_menu_line(stdout, rows - 2, cols, r_col, &[("<", " Back"), (">", " View"), ("C", " Compose"), ("R", " Reply"),   ("D", " Delete"), ("O", " Other (1/2)")], colors.menu_bg, colors.accent, colors.fg)?;
+                Editor::draw_menu_line(stdout, rows - 1, cols, r_col, &[("Q", " Quit"), ("M", " Menu"), ("*", " Flag"),    ("F", " Forward"), ("X", " Expunge"), ("Tab", " Acct")], colors.menu_bg, colors.accent, colors.fg)?;
             } else {
-                Editor::draw_menu_line(stdout, rows - 2, cols, r_col, &[("U", " (Un)Read"), ("P", " Prev"), ("Y", " Prev Pg"), ("Meta+T", " Theme"), ("", ""), ("O", " Other (2/2)")], colors.ui_bg, colors.accent, colors.fg)?;
-                Editor::draw_menu_line(stdout, rows - 1, cols, r_col, &[("S", " Search"), ("N", " Next"), ("V", " Next Pg"), ("", ""), ("", ""), ("", "")], colors.ui_bg, colors.accent, colors.fg)?;
+                Editor::draw_menu_line(stdout, rows - 2, cols, r_col, &[("U", " (Un)Read"), ("P", " Prev"), ("Y", " Prev Pg"), ("Meta+T", " Theme"), ("", ""), ("O", " Other (2/2)")], colors.menu_bg, colors.accent, colors.fg)?;
+                Editor::draw_menu_line(stdout, rows - 1, cols, r_col, &[("S", " Search"), ("N", " Next"), ("V", " Next Pg"), ("", ""), ("", ""), ("", "")], colors.menu_bg, colors.accent, colors.fg)?;
             }
 
             if let Some(time) = app.list_status_time {
@@ -703,15 +783,16 @@ pub fn draw_app(stdout: &mut std::io::Stdout, app: &App, theme_provider: &Editor
         AppMode::MainMenu { selected_idx } => {
             let menu_options = [
                 ("I", "INBOX", "Go to the default Inbox"),
-                ("A", "ADDRESS BOOK", "Update your address book"),
-                ("F", "FOLDER LIST", "Select a different folder"),
-                ("S", "SETTINGS", "Configure xpine Options"),
+                ("A", "ADDRESS BOOK", "Update address book"),
+                ("F", "FOLDER LIST", "Select folder"),
+                ("S", "SETTINGS", "Configure xpine"),
+                ("E", "EMAIL ACCOUNTS", "Edit/Add email accounts"),
                 ("H", "HELP", "Get help using xpine"),
                 ("Q", "QUIT", "Leave the xpine program"),
             ];
 
             let header_title = format!("xpine - Main Menu ({})", app.active_account.email);
-            queue!(stdout, cursor::MoveTo(0, 0), SetBackgroundColor(colors.ui_bg), terminal::Clear(ClearType::UntilNewLine), SetForegroundColor(colors.accent), Print(header_title), ResetColor)?;
+            queue!(stdout, cursor::MoveTo(0, 0), SetBackgroundColor(colors.menu_bg), terminal::Clear(ClearType::UntilNewLine), SetForegroundColor(colors.accent), Print(header_title), ResetColor)?;
 
             for (i, (key, title, desc)) in menu_options.iter().enumerate() {
                 let y = (rows / 2).saturating_sub(menu_options.len() as u16) + (i * 2) as u16;
@@ -722,8 +803,20 @@ pub fn draw_app(stdout: &mut std::io::Stdout, app: &App, theme_provider: &Editor
             }
 
             let m_col = (cols as usize / 6).max(1);
-            Editor::draw_menu_line(stdout, rows - 2, cols, m_col, &[("", ""),       ("P", " Prev"), (">", " Select"), ("", ""), ("", ""), ("", "")], colors.ui_bg, colors.accent, colors.fg)?;
-            Editor::draw_menu_line(stdout, rows - 1, cols, m_col, &[("Q", " Quit"), ("N", " Next"), ("", ""), ("", ""), ("", ""), ("", "")], colors.ui_bg, colors.accent, colors.fg)?;
+            Editor::draw_menu_line(stdout, rows - 2, cols, m_col, &[("", ""),       ("P", " Prev"), (">", " Select"), ("", ""), ("", ""), ("", "")], colors.menu_bg, colors.accent, colors.fg)?;
+            Editor::draw_menu_line(stdout, rows - 1, cols, m_col, &[("Q", " Quit"), ("N", " Next"), ("", ""), ("", ""), ("", ""), ("", "")], colors.menu_bg, colors.accent, colors.fg)?;
+
+            if app.accounts.is_empty() {
+                let msg = "No email account. Please type 'E' and Add an email account.";
+                // Adjust the Y coordinate (rows - 3) based on where your status bar is
+                queue!(
+                    stdout,
+                    cursor::MoveTo(0, rows.saturating_sub(3)),
+                    SetForegroundColor(Color::Red),
+                    Print(msg),
+                    ResetColor
+                )?;
+            }
         }
         AppMode::Settings { selected_idx } => {
             let header_title = "xpine - Settings";
@@ -731,7 +824,7 @@ pub fn draw_app(stdout: &mut std::io::Stdout, app: &App, theme_provider: &Editor
             queue!(
             stdout,
             cursor::MoveTo(0, 0),
-            SetBackgroundColor(colors.ui_bg),
+            SetBackgroundColor(colors.menu_bg),
             terminal::Clear(ClearType::CurrentLine),
             SetForegroundColor(colors.accent),
             Print(header_title),
@@ -790,8 +883,8 @@ pub fn draw_app(stdout: &mut std::io::Stdout, app: &App, theme_provider: &Editor
 
             let m_col = (cols as usize / 6).max(1);
 
-            Editor::draw_menu_line(stdout, rows - 2, cols, m_col, &[("", ""),          ("P", " Prev"), ("X", " Select"), ("", ""), ("", ""), ("", "")], colors.ui_bg, colors.accent, colors.fg)?;
-            Editor::draw_menu_line(stdout, rows - 1, cols, m_col, &[("<", " Back"),    ("N", " Next"), ("Meta+T", " Theme"), ("", ""), ("", ""), ("", "")], colors.ui_bg, colors.accent, colors.fg)?;
+            Editor::draw_menu_line(stdout, rows - 2, cols, m_col, &[("", ""),          ("P", " Prev"), ("X", " Select"), ("", ""), ("", ""), ("", "")], colors.menu_bg, colors.accent, colors.fg)?;
+            Editor::draw_menu_line(stdout, rows - 1, cols, m_col, &[("<", " Back"),    ("N", " Next"), ("Meta+T", " Theme"), ("", ""), ("", ""), ("", "")], colors.menu_bg, colors.accent, colors.fg)?;
         }
         _ => {}
     }

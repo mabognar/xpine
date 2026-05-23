@@ -76,7 +76,7 @@ pub fn compose_email(account: &Account, default_to: Option<&str>, default_subjec
         let colors = derive_ui_colors(theme);
 
         for i in 0..6 {
-            queue!(stdout, cursor::MoveTo(0, i as u16), SetBackgroundColor(colors.ui_bg), Clear(ClearType::UntilNewLine)).unwrap();
+            queue!(stdout, cursor::MoveTo(0, i as u16), SetBackgroundColor(colors.menu_bg), Clear(ClearType::UntilNewLine)).unwrap();
         }
 
         let header_title = format!("Compose Email ({})", account.email);
@@ -88,7 +88,7 @@ pub fn compose_email(account: &Account, default_to: Option<&str>, default_subjec
         for i in 0..4 {
             queue!(
                 stdout, cursor::MoveTo(0, (i + 1) as u16),
-                SetBackgroundColor(colors.ui_bg), SetForegroundColor(colors.accent), Print(format!("{:>8}", fields[i])),
+                SetBackgroundColor(colors.menu_bg), SetForegroundColor(colors.accent), Print(format!("{:>8}", fields[i])),
                 SetForegroundColor(colors.fg), Print(" "), Print(vals[i])
             ).unwrap();
 
@@ -100,7 +100,7 @@ pub fn compose_email(account: &Account, default_to: Option<&str>, default_subjec
             }
         }
 
-        queue!(stdout, cursor::MoveTo(0, 5), SetBackgroundColor(colors.ui_bg), SetForegroundColor(colors.accent), Print(" Attach: "), SetForegroundColor(colors.fg)).unwrap();
+        queue!(stdout, cursor::MoveTo(0, 5), SetBackgroundColor(colors.menu_bg), SetForegroundColor(colors.accent), Print(" Attach: "), SetForegroundColor(colors.fg)).unwrap();
 
         if state.attachments.is_empty() {
             let dim_c = if colors.is_dark { Color::DarkGrey } else { Color::Grey };
@@ -126,8 +126,8 @@ pub fn compose_email(account: &Account, default_to: Option<&str>, default_subjec
 
         if state.active_idx < 4 {
             let m_col = (cols as usize / 6).max(1);
-            Editor::draw_menu_line(&mut stdout, rows - 2, cols, m_col, &[("^X", " Send"),   (" ^P", " Prev"), ("^A", " Attach"), ("", ""), ("", "")], colors.ui_bg, colors.accent, colors.fg).unwrap();
-            Editor::draw_menu_line(&mut stdout, rows - 1, cols, m_col, &[("^C", " Cancel"), ("Tab", " Next"), ("", ""), ("", ""), ("", ""), ("", "")], colors.ui_bg, colors.accent, colors.fg).unwrap();
+            Editor::draw_menu_line(&mut stdout, rows - 2, cols, m_col, &[("^X", " Send"),   (" ^P", " Prev"), ("^A", " Attach"), ("", ""), ("", "")], colors.menu_bg, colors.accent, colors.fg).unwrap();
+            Editor::draw_menu_line(&mut stdout, rows - 1, cols, m_col, &[("^C", " Cancel"), ("Tab", " Next"), ("", ""), ("", ""), ("", ""), ("", "")], colors.menu_bg, colors.accent, colors.fg).unwrap();
 
             queue!(stdout, cursor::Show).unwrap();
             let cursor_y = (state.active_idx as u16) + 1;

@@ -87,7 +87,7 @@ pub fn derive_ui_colors(theme: &Theme) -> UiColors {
     let date_color = get_theme_color(&["comment", "punctuation.definition.comment"])
         .unwrap_or(if is_dark { Color::Rgb { r: 120, g: 120, b: 120 } } else { Color::Rgb { r: 140, g: 140, b: 140 } });
 
-    UiColors { bg, fg, ui_bg, selected_bg, accent, date_color, flag_n, flag_d, flag_a, flag_star, is_dark }
+    UiColors { bg, fg, menu_bg: ui_bg, selected_bg, accent, date_color, flag_n, flag_d, flag_a, flag_star, is_dark }
 }
 
 

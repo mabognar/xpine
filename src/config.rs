@@ -6,6 +6,25 @@ use std::path::{Path, PathBuf};
 use std::io::{BufRead, Write};
 use crate::syntax::SyntaxExt;
 
+// In a new file or in your config.rs
+pub struct ProviderDefaults {
+    pub imap: &'static str,
+    pub smtp: &'static str,
+    pub port: u16,
+}
+
+pub fn get_provider_defaults(email: &str) -> Option<ProviderDefaults> {
+    if email.ends_with("@gmail.com") {
+        Some(ProviderDefaults { imap: "imap.gmail.com", smtp: "smtp.gmail.com", port: 993 })
+    } else if email.ends_with("@outlook.com") || email.ends_with("@hotmail.com") {
+        Some(ProviderDefaults { imap: "outlook.office365.com", smtp: "smtp.office365.com", port: 993 })
+    } else if email.ends_with("@yahoo.com") {
+        Some(ProviderDefaults { imap: "imap.mail.yahoo.com", smtp: "smtp.mail.yahoo.com", port: 993 })
+    } else {
+        None
+    }
+}
+
 
 #[derive(Clone)]
 pub struct Account {
@@ -24,7 +43,7 @@ pub struct AppConfig {
 pub struct UiColors {
     pub bg: Color,
     pub fg: Color,
-    pub ui_bg: Color,
+    pub menu_bg: Color,
     pub selected_bg: Color,
     pub accent: Color,
     pub date_color: Color,
@@ -41,15 +60,10 @@ pub fn load_config() -> AppConfig {
     let config_path = config_dir.join("xpinerc");
 
     if !config_path.exists() {
-        fs::create_dir_all(&config_dir).expect("Failed to create .email directory.");
-        // Add the new variables to the template
-        let template = "# Account 1\nEMAIL=statgod@gmail.com\nPASSWORD=your_16_char_app_password\nIMAP_SERVER=imap.gmail.com\nIMAP_PORT=993\nSMTP_SERVER=smtp.gmail.com\n\n# Account 2\nEMAIL=second@gmail.com\nPASSWORD=app_password\nIMAP_SERVER=imap.gmail.com\nIMAP_PORT=993\nSMTP_SERVER=smtp.gmail.com\n";
-        fs::write(&config_path, template).expect("Failed to write .emailrc template.");
-
-        println!("No configuration found.");
-        println!("Created a new config template at: {:?}", config_path);
-        println!("Please edit this file with your actual credentials and run the program again.");
-        std::process::exit(0);
+        fs::create_dir_all(&config_dir).expect("Failed to create .xpine directory.");
+        // Create an empty file so it can be written to later
+        fs::write(&config_path, "").expect("Failed to write xpinerc.");
+        return AppConfig { accounts: Vec::new() };
     }
 
     let contents = fs::read_to_string(&config_path).expect("Failed to read .emailrc");
@@ -99,10 +113,10 @@ pub fn load_config() -> AppConfig {
         });
     }
 
-    if accounts.is_empty() || accounts[0].password == "your_16_char_app_password" {
-        println!("Invalid or default credentials found in {:?}", config_path);
-        std::process::exit(1);
-    }
+    // if accounts.is_empty() || accounts[0].password == "your_16_char_app_password" {
+    //     println!("Invalid or default credentials found in {:?}", config_path);
+    //     std::process::exit(1);
+    // }
 
     AppConfig { accounts }
 }
@@ -201,3 +215,20 @@ impl ConfigExt for Editor {
     }
 }
 
+pub fn save_config(accounts: &[Account]) {
+    let home = dirs::home_dir().expect("Could not find home directory.");
+    let config_path = home.join(".xpine").join("xpinerc");
+
+    let mut out = String::new();
+    for (i, acc) in accounts.iter().enumerate() {
+        out.push_str(&format!("# Account {}\n", i + 1));
+        out.push_str(&format!("EMAIL={}\n", acc.email));
+        out.push_str(&format!("PASSWORD={}\n", acc.password));
+        out.push_str(&format!("IMAP_SERVER={}\n", acc.imap_server));
+        out.push_str(&format!("IMAP_PORT={}\n", acc.imap_port));
+        out.push_str(&format!("SMTP_SERVER={}\n", acc.smtp_server));
+        out.push('\n');
+    }
+
+    std::fs::write(config_path, out).expect("Failed to write config file.");
+}

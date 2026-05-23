@@ -40,14 +40,24 @@ fn main() {
     }
 
     let mut settings_provider = Editor::new(None);
-    let mut session = net::connect(&app.active_account).unwrap();
+    // let mut session = net::connect(&app.active_account).unwrap();
+    // In main.rs, ensure this is how you initialize the session:
+    let mut session = if app.accounts.is_empty() {
+        None
+    } else {
+        net::connect(&app.active_account).ok()
+    };
 
     loop {
         if app.needs_reconnect {
-            app.active_account = app.accounts[app.current_account_idx].clone();
-            let _ = session.logout();
-            session = net::connect(&app.active_account).expect("IMAP Login failed");
-            app.needs_fetch = true;
+            if !app.accounts.is_empty() {
+                app.active_account = app.accounts[app.current_account_idx].clone();
+                if let Some(mut s) = session.take() {
+                    let _ = s.logout();
+                }
+                session = net::connect(&app.active_account).ok();
+                app.needs_fetch = true;
+            }
             app.needs_reconnect = false;
             app.last_fetch_time = Instant::now();
         }
@@ -66,7 +76,9 @@ fn main() {
         }
 
         if app.needs_fetch && matches!(app.mode, AppMode::EmailList) {
-            net::fetch_emails(&mut session, &mut app, items_per_page, settings_provider.sort_newest_first);
+            if let Some(ref mut s) = session {
+                net::fetch_emails(s, &mut app, items_per_page, settings_provider.sort_newest_first);
+            }
             app.last_fetch_time = Instant::now();
             app.needs_fetch = false;
         }
@@ -112,7 +124,7 @@ fn main() {
                 let r_colors = ui::derive_ui_colors(r_theme);
 
                 for i in 0..(5 + attach_lines) {
-                    queue!(stdout, cursor::MoveTo(0, i as u16), SetBackgroundColor(r_colors.ui_bg), Clear(ClearType::UntilNewLine)).unwrap();
+                    queue!(stdout, cursor::MoveTo(0, i as u16), SetBackgroundColor(r_colors.menu_bg), Clear(ClearType::UntilNewLine)).unwrap();
                 }
 
                 let header_title = format!("View Email ({})", active_email);
@@ -125,7 +137,7 @@ fn main() {
                     queue!(
                         stdout,
                         cursor::MoveTo(0, (i + 1) as u16),
-                        SetBackgroundColor(r_colors.ui_bg), // Ensure background is set here
+                        SetBackgroundColor(r_colors.menu_bg), // Ensure background is set here
                         SetForegroundColor(r_colors.accent),
                         Print(format!("{:>8}", fields[i])),
                         SetForegroundColor(r_colors.fg),
@@ -139,7 +151,7 @@ fn main() {
                 queue!(
                     stdout,
                     cursor::MoveTo(0, 5),
-                    SetBackgroundColor(r_colors.ui_bg),
+                    SetBackgroundColor(r_colors.menu_bg),
                     SetForegroundColor(r_colors.accent),
                     Print(" Attach: "),
                     Clear(ClearType::UntilNewLine)
@@ -160,7 +172,7 @@ fn main() {
                         let size_str = if size_kb < 1024.0 { format!("{:.0}K", size_kb) } else { format!("{:.1}M", size_kb / 1024.0) };
                         let att_str = format!("{}. {} ({})", i + 1, n, size_str);
 
-                        queue!(stdout, cursor::MoveTo(9, (5 + i) as u16), SetBackgroundColor(r_colors.ui_bg), SetForegroundColor(att_color), Print(att_str)).unwrap();
+                        queue!(stdout, cursor::MoveTo(9, (5 + i) as u16), SetBackgroundColor(r_colors.menu_bg), SetForegroundColor(att_color), Print(att_str)).unwrap();
                     }
                 }
                 queue!(stdout, ResetColor).unwrap();
@@ -200,8 +212,21 @@ fn main() {
                                 continue;
                             }
 
+                            // if key.code == event::KeyCode::Char('r') || key.code == event::KeyCode::Char('R') {
+                            //     let _ = session.store(&fetch_seq, "+FLAGS (\\Answered)");
+                            //     app.page_emails[app.selected_index].is_answered = true;
+                            //
+                            //     let sub = if email_subject.to_lowercase().starts_with("re:") { email_subject.clone() } else { format!("Re: {}", email_subject) };
+                            //     if let Some(s) = compose::compose_email(&app.active_account, Some(&reply_to), Some(&sub), None, &mut reader.current_theme) {
+                            //         reader.set_status(s);
+                            //     }
+                            //     continue;
+                            // }
                             if key.code == event::KeyCode::Char('r') || key.code == event::KeyCode::Char('R') {
-                                let _ = session.store(&fetch_seq, "+FLAGS (\\Answered)");
+                                // Safely unwrap the optional session before marking as answered
+                                if let Some(ref mut sess) = session {
+                                    let _ = sess.store(&fetch_seq, "+FLAGS (\\Answered)");
+                                }
                                 app.page_emails[app.selected_index].is_answered = true;
 
                                 let sub = if email_subject.to_lowercase().starts_with("re:") { email_subject.clone() } else { format!("Re: {}", email_subject) };
@@ -333,7 +358,9 @@ fn main() {
 
     execute!(stdout, LeaveAlternateScreen).unwrap();
     disable_raw_mode().expect("Failed to disable raw mode");
-    let _ = session.logout();
+    if let Some(mut s) = session {
+        let _ = s.logout();
+    }
 }
 
 fn wrap_email_body(text: &str, width: usize) -> String {
@@ -375,3 +402,4 @@ fn wrap_email_body(text: &str, width: usize) -> String {
 
     result
 }
+
