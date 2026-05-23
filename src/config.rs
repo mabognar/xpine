@@ -16,8 +16,8 @@ pub struct ProviderDefaults {
 pub fn get_provider_defaults(email: &str) -> Option<ProviderDefaults> {
     if email.ends_with("@gmail.com") {
         Some(ProviderDefaults { imap: "imap.gmail.com", smtp: "smtp.gmail.com", port: 993 })
-    } else if email.ends_with("@outlook.com") || email.ends_with("@hotmail.com") {
-        Some(ProviderDefaults { imap: "outlook.office365.com", smtp: "smtp.office365.com", port: 993 })
+    // } else if email.ends_with("@outlook.com") || email.ends_with("@hotmail.com") {
+    //     Some(ProviderDefaults { imap: "outlook.office365.com", smtp: "smtp.office365.com", port: 993 })
     } else if email.ends_with("@yahoo.com") {
         Some(ProviderDefaults { imap: "imap.mail.yahoo.com", smtp: "smtp.mail.yahoo.com", port: 993 })
     } else {

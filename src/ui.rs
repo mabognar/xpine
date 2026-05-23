@@ -658,7 +658,7 @@ pub fn draw_app(stdout: &mut std::io::Stdout, app: &App, theme_provider: &Editor
                 SetBackgroundColor(colors.bg),    // Set background to theme color
                 SetForegroundColor(Color::Red),      // Set text to red
                 cursor::MoveTo(0, rows - 6),
-                Print("  - App Specific Passwords are required for GMail, Outlook, & Yahoo"),
+                Print("  - App Specific Passwords are required for GMail & Yahoo"),
                 cursor::MoveTo(0, rows - 5),
                 Print("  - Generate online with your email provider (Google for help)"),
                 cursor::MoveTo(0, rows - 4),
