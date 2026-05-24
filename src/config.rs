@@ -1,12 +1,11 @@
 use crate::editor::Editor;
 use crossterm::style::Color;
+use serde::{Deserialize, Serialize};
 use std::env;
 use std::fs;
 use std::path::{Path, PathBuf};
-use std::io::{BufRead, Write};
 use crate::syntax::SyntaxExt;
 
-// In a new file or in your config.rs
 pub struct ProviderDefaults {
     pub imap: &'static str,
     pub smtp: &'static str,
@@ -25,18 +24,51 @@ pub fn get_provider_defaults(email: &str) -> Option<ProviderDefaults> {
     }
 }
 
-
-#[derive(Clone)]
+#[derive(Clone, Deserialize, Serialize)]
 pub struct Account {
     pub email: String,
     pub password: String,
+    #[serde(default = "default_imap")]
     pub imap_server: String,
+    #[serde(default = "default_imap_port")]
     pub imap_port: u16,
+    #[serde(default = "default_smtp")]
     pub smtp_server: String,
 }
 
+fn default_imap() -> String { "imap.gmail.com".to_string() }
+fn default_imap_port() -> u16 { 993 }
+fn default_smtp() -> String { "smtp.gmail.com".to_string() }
+
+#[derive(Deserialize, Serialize, Default)]
 pub struct AppConfig {
+    #[serde(default)]
     pub accounts: Vec<Account>,
+}
+
+#[derive(Deserialize, Serialize)]
+pub struct EditorSettings {
+    #[serde(default = "default_theme")]
+    pub theme: String,
+    #[serde(default)]
+    pub line_numbers: bool,
+    #[serde(default)]
+    pub soft_wrap: bool,
+    #[serde(default)]
+    pub sort_newest_first: bool,
+}
+
+fn default_theme() -> String { "Default-Dark".to_string() }
+
+impl Default for EditorSettings {
+    fn default() -> Self {
+        Self {
+            theme: default_theme(),
+            line_numbers: false,
+            soft_wrap: false,
+            sort_newest_first: false,
+        }
+    }
 }
 
 #[derive(Clone, Copy)]
@@ -61,64 +93,21 @@ pub fn load_config() -> AppConfig {
 
     if !config_path.exists() {
         fs::create_dir_all(&config_dir).expect("Failed to create .xpine directory.");
-        // Create an empty file so it can be written to later
-        fs::write(&config_path, "").expect("Failed to write xpinerc.");
+        // Create an empty file with a TOML template so it can be written to later
+        let template = "[[accounts]]\nemail = \"\"\npassword = \"\"\n";
+        fs::write(&config_path, template).expect("Failed to write xpinerc.");
         return AppConfig { accounts: Vec::new() };
     }
 
-    let contents = fs::read_to_string(&config_path).expect("Failed to read .emailrc");
-    let mut accounts = Vec::new();
+    let contents = fs::read_to_string(&config_path).expect("Failed to read xpinerc");
 
-    // Set fallback defaults in case an existing user's file is missing these fields
-    let mut current_email = String::new();
-    let mut current_password = String::new();
-    let mut current_imap_server = String::from("imap.gmail.com");
-    let mut current_imap_port = 993;
-    let mut current_smtp_server = String::from("smtp.gmail.com");
-
-    for line in contents.lines() {
-        if line.trim().is_empty() || line.starts_with('#') { continue; }
-        if let Some((key, value)) = line.split_once('=') {
-            let val = value.trim().to_string();
-            match key.trim().to_uppercase().as_str() {
-                "EMAIL" => {
-                    // Push the previous account when we hit a new EMAIL line
-                    if !current_email.is_empty() && !current_password.is_empty() {
-                        accounts.push(Account {
-                            email: current_email.clone(), password: current_password.clone(),
-                            imap_server: current_imap_server.clone(), imap_port: current_imap_port, smtp_server: current_smtp_server.clone(),
-                        });
-                        // Reset defaults for the next account block
-                        current_password.clear();
-                        current_imap_server = String::from("imap.gmail.com");
-                        current_imap_port = 993;
-                        current_smtp_server = String::from("smtp.gmail.com");
-                    }
-                    current_email = val;
-                }
-                "PASSWORD" => current_password = val,
-                "IMAP_SERVER" => current_imap_server = val,
-                "IMAP_PORT" => if let Ok(p) = val.parse() { current_imap_port = p },
-                "SMTP_SERVER" => current_smtp_server = val,
-                _ => {}
-            }
+    match toml::from_str(&contents) {
+        Ok(config) => config,
+        Err(e) => {
+            eprintln!("Failed to parse xpinerc: {}", e);
+            AppConfig { accounts: Vec::new() }
         }
     }
-
-    // Push the final account at the end of the file
-    if !current_email.is_empty() && !current_password.is_empty() {
-        accounts.push(Account {
-            email: current_email, password: current_password,
-            imap_server: current_imap_server, imap_port: current_imap_port, smtp_server: current_smtp_server,
-        });
-    }
-
-    // if accounts.is_empty() || accounts[0].password == "your_16_char_app_password" {
-    //     println!("Invalid or default credentials found in {:?}", config_path);
-    //     std::process::exit(1);
-    // }
-
-    AppConfig { accounts }
 }
 
 pub trait ConfigExt {
@@ -137,7 +126,6 @@ impl ConfigExt for Editor {
         if home.is_empty() {
             None
         } else {
-            // Update to use the .xpine directory
             let path = Path::new(&home).join(".xpine");
             let _ = fs::create_dir_all(&path);
             Some(path)
@@ -157,40 +145,46 @@ impl ConfigExt for Editor {
     }
 
     fn load_settings() -> (String, bool, bool, bool) {
-        let mut theme = String::from("Default-Dark");
-        let mut line_numbers = false;
-        let mut soft_wrap = false;
-        let mut sort_newest_first = false;
+        let default_settings = EditorSettings::default();
 
         if let Some(path) = Self::get_settings_path() {
             if let Ok(content) = fs::read_to_string(path) {
-                for line in content.lines() {
-                    let parts: Vec<&str> = line.splitn(2, '=').collect();
-                    if parts.len() == 2 {
-                        match parts[0] {
-                            "theme" => theme = parts[1].to_string(),
-                            "line_numbers" => line_numbers = parts[1] == "true",
-                            "soft_wrap" => soft_wrap = parts[1] == "true",
-                            "sort_newest_first" => sort_newest_first = parts[1] == "true",
-                            _ => {}
-                        }
-                    }
+                // Parse the TOML, falling back to defaults if parsing fails
+                if let Ok(settings) = toml::from_str::<EditorSettings>(&content) {
+                    return (
+                        settings.theme,
+                        settings.line_numbers,
+                        settings.soft_wrap,
+                        settings.sort_newest_first
+                    );
                 }
             }
         }
-        (theme, line_numbers, soft_wrap, sort_newest_first)
+
+        // Return defaults if the file doesn't exist or couldn't be parsed
+        (
+            default_settings.theme,
+            default_settings.line_numbers,
+            default_settings.soft_wrap,
+            default_settings.sort_newest_first
+        )
     }
 
     fn save_settings(&self) {
         if let Some(path) = Self::get_settings_path() {
-            let content = format!(
-                "theme={}\nline_numbers={}\nsoft_wrap={}\nsort_newest_first={}\n",
-                self.current_theme, self.show_line_numbers, self.soft_wrap, self.sort_newest_first
-            );
-            let _ = fs::write(path, content);
+            let settings = EditorSettings {
+                theme: self.current_theme.clone(),
+                line_numbers: self.show_line_numbers,
+                soft_wrap: self.soft_wrap,
+                sort_newest_first: self.sort_newest_first,
+            };
+
+            if let Ok(toml_string) = toml::to_string_pretty(&settings) {
+                let _ = fs::write(path, toml_string);
+            }
         }
     }
-
+    
     fn cycle_theme(&mut self) {
         let mut themes: Vec<String> = self.theme_set.themes.keys().cloned().collect();
         themes.sort();
@@ -219,16 +213,8 @@ pub fn save_config(accounts: &[Account]) {
     let home = dirs::home_dir().expect("Could not find home directory.");
     let config_path = home.join(".xpine").join("xpinerc");
 
-    let mut out = String::new();
-    for (i, acc) in accounts.iter().enumerate() {
-        out.push_str(&format!("# Account {}\n", i + 1));
-        out.push_str(&format!("EMAIL={}\n", acc.email));
-        out.push_str(&format!("PASSWORD={}\n", acc.password));
-        out.push_str(&format!("IMAP_SERVER={}\n", acc.imap_server));
-        out.push_str(&format!("IMAP_PORT={}\n", acc.imap_port));
-        out.push_str(&format!("SMTP_SERVER={}\n", acc.smtp_server));
-        out.push('\n');
+    let config = AppConfig { accounts: accounts.to_vec() };
+    if let Ok(toml_string) = toml::to_string_pretty(&config) {
+        std::fs::write(config_path, toml_string).expect("Failed to write config file.");
     }
-
-    std::fs::write(config_path, out).expect("Failed to write config file.");
 }
