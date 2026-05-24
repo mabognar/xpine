@@ -27,7 +27,15 @@ pub fn get_provider_defaults(email: &str) -> Option<ProviderDefaults> {
 #[derive(Clone, Deserialize, Serialize)]
 pub struct Account {
     pub email: String,
-    pub password: String,
+
+    // Standard Auth
+    pub password: Option<String>,
+
+    // Google OAuth 2.0
+    pub client_id: Option<String>,
+    pub client_secret: Option<String>,
+    pub refresh_token: Option<String>,
+
     #[serde(default = "default_imap")]
     pub imap_server: String,
     #[serde(default = "default_imap_port")]
@@ -184,7 +192,7 @@ impl ConfigExt for Editor {
             }
         }
     }
-    
+
     fn cycle_theme(&mut self) {
         let mut themes: Vec<String> = self.theme_set.themes.keys().cloned().collect();
         themes.sort();

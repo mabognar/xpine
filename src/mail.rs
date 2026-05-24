@@ -1,11 +1,34 @@
-#[derive(Clone)]
-pub struct Account {
-    pub email: String,
-    pub password: String,
-    pub imap_server: String,
-    pub imap_port: u16,
-    pub smtp_server: String,
-}
+// #[derive(Clone)]
+// pub struct Account {
+//     pub email: String,
+//     pub password: String,
+//     pub imap_server: String,
+//     pub imap_port: u16,
+//     pub smtp_server: String,
+// }
+
+use crate::config::Account;
+use serde::{Deserialize, Serialize};
+
+// #[derive(Clone, Deserialize, Serialize)]
+// pub struct Account {
+//     pub email: String,
+//
+//     // Standard Auth
+//     pub password: Option<String>,
+//
+//     // Google OAuth 2.0
+//     pub client_id: Option<String>,
+//     pub client_secret: Option<String>,
+//     pub refresh_token: Option<String>,
+//
+//     #[serde(default = "default_imap")]
+//     pub imap_server: String,
+//     #[serde(default = "default_imap_port")]
+//     pub imap_port: u16,
+//     #[serde(default = "default_smtp")]
+//     pub smtp_server: String,
+// }
 
 pub struct EmailMeta {
     pub id: u32,

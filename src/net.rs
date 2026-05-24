@@ -5,8 +5,56 @@ use native_tls::TlsConnector;
 use imap::Session;
 use std::net::TcpStream;
 use crate::config::Account; // Or crate::mail::Account depending on your imports
+use reqwest::blocking::Client;
+use serde::Deserialize;
 
 pub type ImapSession = Session<native_tls::TlsStream<TcpStream>>;
+
+#[derive(Deserialize)]
+struct TokenResponse {
+    access_token: String,
+    // expires_in: u64, // Not strictly needed right now since we fetch fresh
+    // token_type: String,
+}
+
+struct OAuth2 {
+    user: String,
+    access_token: String,
+}
+
+impl imap::Authenticator for OAuth2 {
+    type Response = String;
+    #[allow(unused_variables)]
+    fn process(&self, data: &[u8]) -> Self::Response {
+        // The XOAUTH2 format required by Gmail: user={email}^Aauth=Bearer {token}^A^A
+        format!(
+            "user={}\x01auth=Bearer {}\x01\x01",
+            self.user, self.access_token
+        )
+    }
+}
+
+fn get_google_access_token(client_id: &str, client_secret: &str, refresh_token: &str) -> Result<String, String> {
+    let client = Client::new();
+    let params = [
+        ("client_id", client_id),
+        ("client_secret", client_secret),
+        ("refresh_token", refresh_token),
+        ("grant_type", "refresh_token"),
+    ];
+
+    let res = client.post("https://oauth2.googleapis.com/token")
+        .form(&params)
+        .send()
+        .map_err(|e| format!("Network error: {}", e))?;
+
+    if res.status().is_success() {
+        let token_res: TokenResponse = res.json().map_err(|e| format!("Parse error: {}", e))?;
+        Ok(token_res.access_token)
+    } else {
+        Err(format!("OAuth error: {:?}", res.text().unwrap_or_default()))
+    }
+}
 
 pub fn connect(account: &Account) -> Result<ImapSession, imap::Error> {
     let domain = account.imap_server.as_str();
@@ -15,7 +63,33 @@ pub fn connect(account: &Account) -> Result<ImapSession, imap::Error> {
 
     // Connect using the dynamic domain and port
     let client = imap::connect((domain, port), domain, &tls).unwrap();
-    client.login(&account.email, &account.password).map_err(|(e, _)| e)
+
+    // Try OAuth 2.0 First
+    if let (Some(client_id), Some(client_secret), Some(refresh_token)) =
+        (&account.client_id, &account.client_secret, &account.refresh_token) {
+
+        match get_google_access_token(client_id, client_secret, refresh_token) {
+            Ok(access_token) => {
+                let auth = OAuth2 {
+                    user: account.email.clone(),
+                    access_token,
+                };
+                // Authenticate using the custom XOAUTH2 implementation
+                return client.authenticate("XOAUTH2", &auth).map_err(|(e, _)| e);
+            }
+            Err(e) => {
+                eprintln!("Failed to get OAuth token: {}", e);
+                // If it fails, it will drop down to try the password fallback
+            }
+        }
+    }
+
+    // Fallback to standard app passwords
+    if let Some(password) = &account.password {
+        client.login(&account.email, password).map_err(|(e, _)| e)
+    } else {
+        Err(imap::Error::Bad("No password or valid OAuth credentials provided in xpinerc".to_string()))
+    }
 }
 
 pub fn fetch_emails(session: &mut ImapSession, app: &mut App, items_per_page: u32, sort_newest_first: bool) {

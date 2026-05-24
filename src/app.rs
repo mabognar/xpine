@@ -64,7 +64,10 @@ impl App {
             (
                 Account {
                     email: String::new(),
-                    password: String::new(),
+                    password: None,      // Updated to Option
+                    client_id: None,     // Added OAuth 2.0 field
+                    client_secret: None, // Added OAuth 2.0 field
+                    refresh_token: None, // Added OAuth 2.0 field
                     imap_server: String::new(),
                     imap_port: 993,
                     smtp_server: String::new(),
@@ -105,7 +108,7 @@ impl App {
 
         app
     }
-    
+
     pub fn update_status(&mut self, msg: String) {
         self.list_status = msg;
         self.list_status_time = Some(Instant::now());

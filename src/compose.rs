@@ -3,9 +3,9 @@ use crate::editor::{Editor, EditorResult, MenuState};
 use crate::theme::{derive_ui_colors};
 use crate::ui::UiExt;
 use std::path::Path;
-
-use lettre::transport::smtp::authentication::Credentials as SmtpCredentials;
+use lettre::transport::smtp::authentication::{Credentials as SmtpCredentials, Mechanism};
 use lettre::{Message, SmtpTransport, Transport};
+
 use ropey::Rope;
 use std::fs;
 use std::io::{stdout, Write};
@@ -322,28 +322,35 @@ pub fn compose_email(account: &Account, default_to: Option<&str>, default_subjec
 
     match builder.multipart(multipart) {
         Ok(email_msg) => {
-            let creds = SmtpCredentials::new(account.email.clone(), account.password.clone());
-            let mailer = SmtpTransport::relay(&account.smtp_server).unwrap().credentials(creds).build();
+            // Safely extract the token from Option<String> and ensure it's not empty
+            let token = match &account.password {
+                Some(t) if !t.is_empty() => t.clone(),
+                _ => return Some("Error: Token is empty or missing. Ensure it is saved to app.active_account.password!".to_string()),
+            };
+
+            let creds = SmtpCredentials::new(account.email.clone(), token);
+
+            // Explicitly force the XOAUTH2 mechanism
+            let mailer = SmtpTransport::relay(&account.smtp_server)
+                .unwrap()
+                .credentials(creds)
+                .authentication(vec![Mechanism::Xoauth2])
+                .build();
+
             match mailer.send(&email_msg) {
                 Ok(_) => Some("Message Sent".to_string()),
                 Err(e) => {
                     execute!(stdout, Clear(ClearType::All), cursor::MoveTo(0, 0)).unwrap();
                     queue!(stdout, Print(format!("-> Failed to send message: {:?}\r\n", e))).unwrap();
-                    queue!(stdout, Print("\r\nPress Enter to return to the mailbox...")).unwrap();
+                    execute!(stdout, cursor::MoveTo(0, 2)).unwrap();
+                    queue!(stdout, Print("Press any key to continue...")).unwrap();
                     stdout.flush().unwrap();
-                    loop { if let Ok(Event::Key(k)) = event::read() { if k.code == KeyCode::Enter { break; } } }
-                    None
+                    let _ = crossterm::event::read();
+                    Some("Failed to send message.".to_string())
                 }
             }
         }
-        Err(e) => {
-            execute!(stdout, Clear(ClearType::All), cursor::MoveTo(0, 0)).unwrap();
-            queue!(stdout, Print(format!("-> Failed to build message: {:?}\r\n", e))).unwrap();
-            queue!(stdout, Print("\r\nPress Enter to return to the mailbox...")).unwrap();
-            stdout.flush().unwrap();
-            loop { if let Ok(Event::Key(k)) = event::read() { if k.code == KeyCode::Enter { break; } } }
-            None
-        }
+        Err(_) => Some("Failed to build message.".to_string()),
     }
 }
 

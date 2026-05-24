@@ -150,11 +150,21 @@ pub fn handle_event(event: Event, app: &mut App, session: &mut Option<ImapSessio
 
                                                 let new_acc = crate::config::Account {
                                                     email: email.trim().to_string(),
-                                                    password: password.trim().to_string(),
+                                                    password: Some(password.trim().to_string()), // Wrapped in Some()
+                                                    client_id: None,                             // Added OAuth fields
+                                                    client_secret: None,
+                                                    refresh_token: None,
                                                     imap_server: imap_server.trim().to_string(),
                                                     imap_port: imap_port.trim().parse().unwrap_or(993),
                                                     smtp_server: smtp_server.trim().to_string(),
                                                 };
+                                                // let new_acc = crate::config::Account {
+                                                //     email: email.trim().to_string(),
+                                                //     password: password.trim().to_string(),
+                                                //     imap_server: imap_server.trim().to_string(),
+                                                //     imap_port: imap_port.trim().parse().unwrap_or(993),
+                                                //     smtp_server: smtp_server.trim().to_string(),
+                                                // };
 
                                                 app.accounts.push(new_acc);
                                                 crate::config::save_config(&app.accounts);
@@ -178,13 +188,23 @@ pub fn handle_event(event: Event, app: &mut App, session: &mut Option<ImapSessio
                             if !app.accounts.is_empty() {
                                 let acc = &app.accounts[*selected_idx].clone();
                                 if let Ok(Some(email)) = theme_provider.prompt_edit("Email: ", &acc.email) {
-                                    if let Ok(Some(password)) = theme_provider.prompt_edit("Password: ", &acc.password) {
+
+                                    // Extract the password string safely, defaulting to empty if it's an OAuth account
+                                    let current_pass = acc.password.clone().unwrap_or_default();
+
+                                    if let Ok(Some(password)) = theme_provider.prompt_edit("Password: ", &current_pass) {
                                         if let Ok(Some(imap_server)) = theme_provider.prompt_edit("IMAP Server: ", &acc.imap_server) {
                                             if let Ok(Some(imap_port)) = theme_provider.prompt_edit("IMAP Port: ", &acc.imap_port.to_string()) {
                                                 if let Ok(Some(smtp_server)) = theme_provider.prompt_edit("SMTP Server: ", &acc.smtp_server) {
                                                     app.accounts[*selected_idx] = crate::config::Account {
                                                         email: email.trim().to_string(),
-                                                        password: password.trim().to_string(),
+                                                        password: Some(password.trim().to_string()), // Wrapped in Some()
+
+                                                        // Preserve any existing OAuth tokens so they aren't lost on edit
+                                                        client_id: acc.client_id.clone(),
+                                                        client_secret: acc.client_secret.clone(),
+                                                        refresh_token: acc.refresh_token.clone(),
+
                                                         imap_server: imap_server.trim().to_string(),
                                                         imap_port: imap_port.trim().parse().unwrap_or(993),
                                                         smtp_server: smtp_server.trim().to_string(),
