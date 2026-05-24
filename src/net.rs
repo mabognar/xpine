@@ -34,7 +34,7 @@ impl imap::Authenticator for OAuth2 {
     }
 }
 
-fn get_google_access_token(client_id: &str, client_secret: &str, refresh_token: &str) -> Result<String, String> {
+pub fn get_google_access_token(client_id: &str, client_secret: &str, refresh_token: &str) -> Result<String, String> {
     let client = Client::new();
     let params = [
         ("client_id", client_id),
@@ -56,7 +56,7 @@ fn get_google_access_token(client_id: &str, client_secret: &str, refresh_token: 
     }
 }
 
-pub fn connect(account: &Account) -> Result<ImapSession, imap::Error> {
+pub fn connect(account: &mut Account) -> Result<ImapSession, imap::Error> {
     let domain = account.imap_server.as_str();
     let port = account.imap_port;
     let tls = TlsConnector::builder().build().unwrap();

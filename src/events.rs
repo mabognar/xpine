@@ -542,9 +542,11 @@ pub fn handle_event(event: Event, app: &mut App, session: &mut Option<ImapSessio
                                     if let Some(mut s) = session.take() {
                                         let _ = s.logout();
                                     }
-                                    *session = net::connect(&app.active_account).ok();
-                                }
 
+                                    // CHANGE THIS LINE: Pass a mutable reference here
+                                    *session = net::connect(&mut app.active_account).ok();
+                                }
+                                
                                 let mut fetched = Vec::new();
                                 if let Some(sess) = session {
                                     if let Ok(mailboxes) = sess.list(Some(""), Some("*")) {

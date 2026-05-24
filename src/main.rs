@@ -45,7 +45,7 @@ fn main() {
     let mut session = if app.accounts.is_empty() {
         None
     } else {
-        net::connect(&app.active_account).ok()
+        net::connect(&mut app.active_account).ok()
     };
 
     loop {
@@ -55,7 +55,7 @@ fn main() {
                 if let Some(mut s) = session.take() {
                     let _ = s.logout();
                 }
-                session = net::connect(&app.active_account).ok();
+                session = net::connect(&mut app.active_account).ok();
                 app.needs_fetch = true;
             }
             app.needs_reconnect = false;
