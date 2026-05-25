@@ -45,34 +45,70 @@ fn find_suggestion(input: &str, address_book: &[String]) -> Option<String> {
     None
 }
 
+// pub fn compose_email(account: &Account, default_to: Option<&str>, default_subject: Option<&str>, default_body: Option<&str>, current_theme: &mut String) -> Option<String> {
+//
+//     // 1. Fetch a fresh token on-demand
+//     // let token = match crate::net::get_google_access_token(client_id, client_secret, refresh_token) {
+//     //     Ok(t) => t,
+//     //     Err(e) => return Some(format!("Error: Failed to refresh OAuth token: {}", e)),
+//     // };
+//     // 1. Convert the Options to &str
+//     let client_id = account.client_id.as_deref().unwrap_or("");
+//     let client_secret = account.client_secret.as_deref().unwrap_or("");
+//     let refresh_token = account.refresh_token.as_deref().unwrap_or("");
+//
+//     // 2. Now pass the &str values to the function
+//     let token = match crate::net::get_google_access_token(client_id, client_secret, refresh_token) {
+//         Ok(t) => t,
+//         Err(e) => {
+//             return Some(format!("Error: Failed to refresh OAuth token: {}", e));
+//         }
+//     };
+//
+//     // 2. Build the transport using this fresh token
+//     let creds = SmtpCredentials::new(account.email.clone(), token);
+//
+//     let mailer = SmtpTransport::relay(&account.smtp_server)
+//         .unwrap()
+//         .credentials(creds)
+//         .authentication(vec![Mechanism::Xoauth2])
+//         .build();
+
 pub fn compose_email(account: &Account, default_to: Option<&str>, default_subject: Option<&str>, default_body: Option<&str>, current_theme: &mut String) -> Option<String> {
 
-    // 1. Fetch a fresh token on-demand
-    // let token = match crate::net::get_google_access_token(client_id, client_secret, refresh_token) {
-    //     Ok(t) => t,
-    //     Err(e) => return Some(format!("Error: Failed to refresh OAuth token: {}", e)),
-    // };
-    // 1. Convert the Options to &str
-    let client_id = account.client_id.as_deref().unwrap_or("");
-    let client_secret = account.client_secret.as_deref().unwrap_or("");
-    let refresh_token = account.refresh_token.as_deref().unwrap_or("");
+    let mut is_oauth = false;
 
-    // 2. Now pass the &str values to the function
-    let token = match crate::net::get_google_access_token(client_id, client_secret, refresh_token) {
-        Ok(t) => t,
-        Err(e) => {
-            return Some(format!("Error: Failed to refresh OAuth token: {}", e));
-        }
+    // 1. Determine which credentials to use (OAuth2 vs Password)
+    let creds = if let (Some(client_id), Some(client_secret), Some(refresh_token)) =
+        (&account.client_id, &account.client_secret, &account.refresh_token) {
+
+        let token = match crate::net::get_google_access_token(client_id, client_secret, refresh_token) {
+            Ok(t) => t,
+            Err(e) => return Some(format!("Error: Failed to refresh OAuth token: {}", e)),
+        };
+        is_oauth = true;
+        SmtpCredentials::new(account.email.clone(), token)
+
+    } else if let Some(password) = &account.password {
+
+        // Fallback to standard app passwords
+        SmtpCredentials::new(account.email.clone(), password.clone())
+
+    } else {
+        return Some("Error: No valid authentication method (OAuth2 or Password) provided.".to_string());
     };
 
-    // 2. Build the transport using this fresh token
-    let creds = SmtpCredentials::new(account.email.clone(), token);
-
-    let mailer = SmtpTransport::relay(&account.smtp_server)
+    // 2. Build the transport using the appropriate credentials
+    let mut mailer_builder = SmtpTransport::relay(&account.smtp_server)
         .unwrap()
-        .credentials(creds)
-        .authentication(vec![Mechanism::Xoauth2])
-        .build();
+        .credentials(creds);
+
+    // Only force XOAUTH2 if we successfully retrieved an OAuth token
+    if is_oauth {
+        mailer_builder = mailer_builder.authentication(vec![Mechanism::Xoauth2]);
+    }
+
+    let mailer = mailer_builder.build();
 
     let mut state = ComposeState {
         to: default_to.unwrap_or("").to_string(),
@@ -348,31 +384,56 @@ pub fn compose_email(account: &Account, default_to: Option<&str>, default_subjec
         }
     }
     
+    // match builder.multipart(multipart) {
+    //     Ok(email_msg) => {
+    //         // 1. Extract credentials from the account struct.
+    //         // We use as_deref().unwrap_or("") to safely turn Option<String> into &str
+    //         let client_id = account.client_id.as_deref().unwrap_or("");
+    //         let client_secret = account.client_secret.as_deref().unwrap_or("");
+    //         let refresh_token = account.refresh_token.as_deref().unwrap_or("");
+    //
+    //         // 2. Fetch a fresh token on-demand using your existing net.rs function
+    //         let token = match crate::net::get_google_access_token(client_id, client_secret, refresh_token) {
+    //             Ok(t) => t,
+    //             Err(e) => {
+    //                 // This returns the error to your UI instead of crashing/panicking
+    //                 return Some(format!("Error: Failed to refresh OAuth token: {}", e));
+    //             }
+    //         };
+    //
+    //         // 3. Proceed to send using the fresh token
+    //         let creds = SmtpCredentials::new(account.email.clone(), token);
+    //         let mailer = SmtpTransport::relay(&account.smtp_server)
+    //             .unwrap()
+    //             .credentials(creds)
+    //             .authentication(vec![lettre::transport::smtp::authentication::Mechanism::Xoauth2])
+    //             .build();
+    //
+    //         match mailer.send(&email_msg) {
+    //             Ok(_) => Some("Message Sent".to_string()),
+    //             Err(e) => {
+    //                 execute!(stdout, Clear(ClearType::All), cursor::MoveTo(0, 0)).unwrap();
+    //                 queue!(stdout, Print(format!("-> Failed to send message: {:?}\r\n", e))).unwrap();
+    //                 queue!(stdout, Print("\r\nPress Enter to return to the mailbox...")).unwrap();
+    //                 stdout.flush().unwrap();
+    //                 loop { if let Ok(Event::Key(k)) = event::read() { if k.code == KeyCode::Enter { break; } } }
+    //                 None
+    //             }
+    //         }
+    //     }
+    //     Err(e) => {
+    //         execute!(stdout, Clear(ClearType::All), cursor::MoveTo(0, 0)).unwrap();
+    //         queue!(stdout, Print(format!("-> Failed to build message: {:?}\r\n", e))).unwrap();
+    //         queue!(stdout, Print("\r\nPress Enter to return to the mailbox...")).unwrap();
+    //         stdout.flush().unwrap();
+    //         loop { if let Ok(Event::Key(k)) = event::read() { if k.code == KeyCode::Enter { break; } } }
+    //         None
+    //     }
+    // }
     match builder.multipart(multipart) {
         Ok(email_msg) => {
-            // 1. Extract credentials from the account struct.
-            // We use as_deref().unwrap_or("") to safely turn Option<String> into &str
-            let client_id = account.client_id.as_deref().unwrap_or("");
-            let client_secret = account.client_secret.as_deref().unwrap_or("");
-            let refresh_token = account.refresh_token.as_deref().unwrap_or("");
-
-            // 2. Fetch a fresh token on-demand using your existing net.rs function
-            let token = match crate::net::get_google_access_token(client_id, client_secret, refresh_token) {
-                Ok(t) => t,
-                Err(e) => {
-                    // This returns the error to your UI instead of crashing/panicking
-                    return Some(format!("Error: Failed to refresh OAuth token: {}", e));
-                }
-            };
-
-            // 3. Proceed to send using the fresh token
-            let creds = SmtpCredentials::new(account.email.clone(), token);
-            let mailer = SmtpTransport::relay(&account.smtp_server)
-                .unwrap()
-                .credentials(creds)
-                .authentication(vec![lettre::transport::smtp::authentication::Mechanism::Xoauth2])
-                .build();
-
+            // The `mailer` was already built dynamically at the top of the function,
+            // so we can directly send the message without fetching a new token.
             match mailer.send(&email_msg) {
                 Ok(_) => Some("Message Sent".to_string()),
                 Err(e) => {
@@ -386,6 +447,7 @@ pub fn compose_email(account: &Account, default_to: Option<&str>, default_subjec
             }
         }
         Err(e) => {
+            // ... error handling remains unchanged
             execute!(stdout, Clear(ClearType::All), cursor::MoveTo(0, 0)).unwrap();
             queue!(stdout, Print(format!("-> Failed to build message: {:?}\r\n", e))).unwrap();
             queue!(stdout, Print("\r\nPress Enter to return to the mailbox...")).unwrap();
