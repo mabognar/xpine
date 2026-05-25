@@ -1,10 +1,123 @@
+// use crate::app::App;
+// use crate::mail::{EmailMeta, parse_email_body};
+// use chrono::{DateTime, Local, Utc};
+// use native_tls::TlsConnector;
+// use imap::Session;
+// use std::net::TcpStream;
+// use crate::config::Account; // Or crate::mail::Account depending on your imports
+// use reqwest::blocking::Client;
+// use serde::Deserialize;
+//
+// pub type ImapSession = Session<native_tls::TlsStream<TcpStream>>;
+//
+// #[derive(Deserialize)]
+// struct TokenResponse {
+//     access_token: String,
+//     // expires_in: u64, // Not strictly needed right now since we fetch fresh
+//     // token_type: String,
+// }
+//
+// struct OAuth2 {
+//     user: String,
+//     access_token: String,
+// }
+//
+// impl imap::Authenticator for OAuth2 {
+//     type Response = String;
+//     #[allow(unused_variables)]
+//     fn process(&self, data: &[u8]) -> Self::Response {
+//         // The XOAUTH2 format required by Gmail: user={email}^Aauth=Bearer {token}^A^A
+//         format!(
+//             "user={}\x01auth=Bearer {}\x01\x01",
+//             self.user, self.access_token
+//         )
+//     }
+// }
+//
+// pub fn get_oauth_access_token(client_id: &str, client_secret: &str, refresh_token: &str, is_microsoft: bool) -> Result<String, String> {
+//     let client = reqwest::blocking::Client::new();
+//
+//     let mut params = vec![
+//         ("client_id", client_id),
+//         ("client_secret", client_secret),
+//         ("refresh_token", refresh_token),
+//         ("grant_type", "refresh_token"),
+//     ];
+//
+//     // Force Microsoft to issue an Outlook API token instead of a Graph API token
+//     if is_microsoft {
+//         params.push(("scope", "https://outlook.office.com/IMAP.AccessAsUser.All https://outlook.office.com/SMTP.Send"));
+//     }
+//
+//     let endpoint = if is_microsoft {
+//         "https://login.microsoftonline.com/common/oauth2/v2.0/token"
+//     } else {
+//         "https://oauth2.googleapis.com/token"
+//     };
+//
+//     let res = client.post(endpoint)
+//         .form(&params)
+//         .send()
+//         .map_err(|e| format!("Network error: {}", e))?;
+//
+//     if res.status().is_success() {
+//         let token_res: TokenResponse = res.json().map_err(|e| format!("Parse error: {}", e))?;
+//         Ok(token_res.access_token)
+//     } else {
+//         let err_text = res.text().unwrap_or_default();
+//         std::fs::write("oauth_debug.txt", format!("TOKEN FETCH FAILED: {}", err_text)).ok();
+//         Err(format!("OAuth error: {:?}", err_text))
+//     }
+// }
+//
+// pub fn connect(account: &mut Account) -> Result<ImapSession, imap::Error> {
+//     let domain = account.imap_server.as_str();
+//     let port = account.imap_port;
+//     let tls = TlsConnector::builder().build().unwrap();
+//
+//     // Make client mutable so we can re-assign it if OAuth fails
+//     let mut client = imap::connect((domain, port), domain, &tls).unwrap();
+//
+//     if let (Some(client_id), Some(client_secret), Some(refresh_token)) =
+//         (&account.client_id, &account.client_secret, &account.refresh_token) {
+//
+//         let is_microsoft = account.email.ends_with("@outlook.com") || account.email.ends_with("@hotmail.com");
+//
+//         match get_oauth_access_token(client_id, client_secret, refresh_token, is_microsoft) {
+//             Ok(access_token) => {
+//                 let auth = OAuth2 {
+//                     user: account.email.clone(),
+//                     access_token,
+//                 };
+//
+//                 // --- DEBUG INJECTION 2 ---
+//                 match client.authenticate("XOAUTH2", &auth) {
+//                     Ok(session) => return Ok(session),
+//                     Err((e, returned_client)) => {
+//                         std::fs::write("oauth_debug.txt", format!("IMAP REJECTED TOKEN: {:?}", e)).ok();
+//                         // Restore ownership of the client so it survives to the password fallback
+//                         client = returned_client;
+//                     }
+//                 }
+//             }
+//             Err(_) => {}
+//         }
+//     }
+//
+//     if let Some(password) = &account.password {
+//         client.login(&account.email, password).map_err(|(e, _)| e)
+//     } else {
+//         Err(imap::Error::Bad("No password or valid OAuth credentials provided".to_string()))
+//     }
+// }
+
 use crate::app::App;
 use crate::mail::{EmailMeta, parse_email_body};
 use chrono::{DateTime, Local, Utc};
 use native_tls::TlsConnector;
 use imap::Session;
 use std::net::TcpStream;
-use crate::config::Account; // Or crate::mail::Account depending on your imports
+use crate::config::Account;
 use reqwest::blocking::Client;
 use serde::Deserialize;
 
@@ -13,8 +126,6 @@ pub type ImapSession = Session<native_tls::TlsStream<TcpStream>>;
 #[derive(Deserialize)]
 struct TokenResponse {
     access_token: String,
-    // expires_in: u64, // Not strictly needed right now since we fetch fresh
-    // token_type: String,
 }
 
 struct OAuth2 {
@@ -26,7 +137,6 @@ impl imap::Authenticator for OAuth2 {
     type Response = String;
     #[allow(unused_variables)]
     fn process(&self, data: &[u8]) -> Self::Response {
-        // The XOAUTH2 format required by Gmail: user={email}^Aauth=Bearer {token}^A^A
         format!(
             "user={}\x01auth=Bearer {}\x01\x01",
             self.user, self.access_token
@@ -34,95 +144,13 @@ impl imap::Authenticator for OAuth2 {
     }
 }
 
-// pub fn get_google_access_token(client_id: &str, client_secret: &str, refresh_token: &str) -> Result<String, String> {
-//     let client = Client::new();
-//     let params = [
-//         ("client_id", client_id),
-//         ("client_secret", client_secret),
-//         ("refresh_token", refresh_token),
-//         ("grant_type", "refresh_token"),
-//     ];
-//
-//     let res = client.post("https://oauth2.googleapis.com/token")
-//         .form(&params)
-//         .send()
-//         .map_err(|e| format!("Network error: {}", e))?;
-//
-//     if res.status().is_success() {
-//         let token_res: TokenResponse = res.json().map_err(|e| format!("Parse error: {}", e))?;
-//         Ok(token_res.access_token)
-//     } else {
-//         Err(format!("OAuth error: {:?}", res.text().unwrap_or_default()))
-//     }
-// }
-
-// pub fn get_oauth_access_token(
-//     client_id: &str,
-//     client_secret: &str,
-//     refresh_token: &str,
-//     is_microsoft: bool,
-// ) -> Result<String, String> {
-//     let client = reqwest::blocking::Client::new();
-//     let params = [
-//         ("client_id", client_id),
-//         ("client_secret", client_secret),
-//         ("refresh_token", refresh_token),
-//         ("grant_type", "refresh_token"),
-//     ];
-//
-//     // Swap the endpoint based on the provider
-//     let endpoint = if is_microsoft {
-//         "https://login.microsoftonline.com/common/oauth2/v2.0/token"
-//     } else {
-//         "https://oauth2.googleapis.com/token"
-//     };
-//
-//     let res = client.post(endpoint)
-//         .form(&params)
-//         .send()
-//         .map_err(|e| format!("Network error: {}", e))?;
-//
-//     if res.status().is_success() {
-//         // Assuming you have a TokenResponse struct that derives Deserialize
-//         let token_res: TokenResponse = res.json().map_err(|e| format!("Parse error: {}", e))?;
-//         Ok(token_res.access_token)
-//     } else {
-//         Err(format!("OAuth error: {:?}", res.text().unwrap_or_default()))
-//     }
-// }
-
-// pub fn get_oauth_access_token(client_id: &str, client_secret: &str, refresh_token: &str, is_microsoft: bool) -> Result<String, String> {
-//     let client = reqwest::blocking::Client::new();
-//     let params = [
-//         ("client_id", client_id),
-//         ("client_secret", client_secret),
-//         ("refresh_token", refresh_token),
-//         ("grant_type", "refresh_token"),
-//     ];
-//
-//     let endpoint = if is_microsoft {
-//         "https://login.microsoftonline.com/common/oauth2/v2.0/token"
-//     } else {
-//         "https://oauth2.googleapis.com/token"
-//     };
-//
-//     let res = client.post(endpoint)
-//         .form(&params)
-//         .send()
-//         .map_err(|e| format!("Network error: {}", e))?;
-//
-//     if res.status().is_success() {
-//         let token_res: TokenResponse = res.json().map_err(|e| format!("Parse error: {}", e))?;
-//         Ok(token_res.access_token)
-//     } else {
-//         // --- DEBUG INJECTION 1 ---
-//         let err_text = res.text().unwrap_or_default();
-//         std::fs::write("oauth_debug.txt", format!("TOKEN FETCH FAILED: {}", err_text)).ok();
-//         Err(format!("OAuth error: {:?}", err_text))
-//     }
-// }
-
-pub fn get_oauth_access_token(client_id: &str, client_secret: &str, refresh_token: &str, is_microsoft: bool) -> Result<String, String> {
+pub fn get_oauth_access_token(
+    client_id: &str,
+    client_secret: &str,
+    refresh_token: &str,
+    is_microsoft: bool,
+    target_scope: Option<&str>,
+) -> Result<String, String> {
     let client = reqwest::blocking::Client::new();
 
     let mut params = vec![
@@ -132,9 +160,10 @@ pub fn get_oauth_access_token(client_id: &str, client_secret: &str, refresh_toke
         ("grant_type", "refresh_token"),
     ];
 
-    // Force Microsoft to issue an Outlook API token instead of a Graph API token
+    // If it's Microsoft, we apply the requested scope (or default to IMAP/SMTP)
     if is_microsoft {
-        params.push(("scope", "https://outlook.office.com/IMAP.AccessAsUser.All https://outlook.office.com/SMTP.Send"));
+        let scope = target_scope.unwrap_or("https://outlook.office.com/IMAP.AccessAsUser.All https://outlook.office.com/SMTP.Send");
+        params.push(("scope", scope));
     }
 
     let endpoint = if is_microsoft {
@@ -158,50 +187,11 @@ pub fn get_oauth_access_token(client_id: &str, client_secret: &str, refresh_toke
     }
 }
 
-// pub fn connect(account: &mut Account) -> Result<ImapSession, imap::Error> {
-//     let domain = account.imap_server.as_str();
-//     let port = account.imap_port;
-//     let tls = TlsConnector::builder().build().unwrap();
-//
-//     // Connect using the dynamic domain and port
-//     let client = imap::connect((domain, port), domain, &tls).unwrap();
-//
-//     // Try OAuth 2.0 First
-//     if let (Some(client_id), Some(client_secret), Some(refresh_token)) =
-//         (&account.client_id, &account.client_secret, &account.refresh_token) {
-//
-//         let is_microsoft = account.email.ends_with("@outlook.com") || account.email.ends_with("@hotmail.com");
-//
-//         match get_oauth_access_token(client_id, client_secret, refresh_token, is_microsoft) {
-//             Ok(access_token) => {
-//                 let auth = OAuth2 {
-//                     user: account.email.clone(),
-//                     access_token,
-//                 };
-//                 // Authenticate using the custom XOAUTH2 implementation
-//                 return client.authenticate("XOAUTH2", &auth).map_err(|(e, _)| e);
-//             }
-//             Err(e) => {
-//                 eprintln!("Failed to get OAuth token: {}", e);
-//                 // If it fails, it will drop down to try the password fallback
-//             }
-//         }
-//     }
-//
-//     // Fallback to standard app passwords
-//     if let Some(password) = &account.password {
-//         client.login(&account.email, password).map_err(|(e, _)| e)
-//     } else {
-//         Err(imap::Error::Bad("No password or valid OAuth credentials provided in xpinerc".to_string()))
-//     }
-// }
-
 pub fn connect(account: &mut Account) -> Result<ImapSession, imap::Error> {
     let domain = account.imap_server.as_str();
     let port = account.imap_port;
     let tls = TlsConnector::builder().build().unwrap();
 
-    // Make client mutable so we can re-assign it if OAuth fails
     let mut client = imap::connect((domain, port), domain, &tls).unwrap();
 
     if let (Some(client_id), Some(client_secret), Some(refresh_token)) =
@@ -209,19 +199,18 @@ pub fn connect(account: &mut Account) -> Result<ImapSession, imap::Error> {
 
         let is_microsoft = account.email.ends_with("@outlook.com") || account.email.ends_with("@hotmail.com");
 
-        match get_oauth_access_token(client_id, client_secret, refresh_token, is_microsoft) {
+        // Pass 'None' here so we use the default IMAP scopes
+        match get_oauth_access_token(client_id, client_secret, refresh_token, is_microsoft, None) {
             Ok(access_token) => {
                 let auth = OAuth2 {
                     user: account.email.clone(),
                     access_token,
                 };
 
-                // --- DEBUG INJECTION 2 ---
                 match client.authenticate("XOAUTH2", &auth) {
                     Ok(session) => return Ok(session),
                     Err((e, returned_client)) => {
                         std::fs::write("oauth_debug.txt", format!("IMAP REJECTED TOKEN: {:?}", e)).ok();
-                        // Restore ownership of the client so it survives to the password fallback
                         client = returned_client;
                     }
                 }
