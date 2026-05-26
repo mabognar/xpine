@@ -643,7 +643,7 @@ pub fn draw_app(stdout: &mut std::io::Stdout, app: &App, theme_provider: &Editor
             Editor::draw_menu_line(
                 stdout, rows - 2, cols, m_col,
                 // Changed "N New Account" to "A Add Account"
-                &[("", ""), ("A", " Add Acct"), ("D", " Del Acct"), ("P", " Prev"), ("", ""), ("", "")],
+                &[("", ""), ("A", " Add Acct"), ("D", " Del Acct"), ("P", " Prev"), ("M", " Microsoft Auth"), ("", "")],
                 colors.menu_bg, colors.accent, colors.fg
             )?;
             Editor::draw_menu_line(

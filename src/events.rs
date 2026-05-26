@@ -101,37 +101,6 @@ pub fn handle_event(event: Event, app: &mut App, session: &mut Option<ImapSessio
                         KeyCode::Up | KeyCode::Char('p') | KeyCode::Char('P') => *selected_idx = selected_idx.saturating_sub(1),
                         KeyCode::Down | KeyCode::Char('n') | KeyCode::Char('N') => *selected_idx = (*selected_idx + 1).min(app.accounts.len().saturating_sub(1)),
                         KeyCode::Char('<') | KeyCode::Left | KeyCode::Char('q') | KeyCode::Esc => app.mode = AppMode::MainMenu { selected_idx: 4 },
-                        // KeyCode::Char('a') | KeyCode::Char('A') => {
-                        //     if let Ok(Some(email)) = theme_provider.prompt("Email: ", false) {
-                        //         if let Ok(Some(password)) = theme_provider.prompt("Password: ", false) {
-                        //             if let Ok(Some(imap_server)) = theme_provider.prompt("IMAP Server: ", false) {
-                        //                 if let Ok(Some(imap_port)) = theme_provider.prompt("IMAP Port: ", false) {
-                        //                     if let Ok(Some(smtp_server)) = theme_provider.prompt("SMTP Server: ", false) {
-                        //                         let new_acc = crate::config::Account {
-                        //                             email: email.trim().to_string(),
-                        //                             password: password.trim().to_string(),
-                        //                             imap_server: imap_server.trim().to_string(),
-                        //                             imap_port: imap_port.trim().parse().unwrap_or(993),
-                        //                             smtp_server: smtp_server.trim().to_string(),
-                        //                         };
-                        //                         app.accounts.push(new_acc);
-                        //                         crate::config::save_config(&app.accounts);
-                        //
-                        //                         // --- NEW: Make the account active immediately ---
-                        //                         app.current_account_idx = app.accounts.len() - 1;
-                        //                         app.active_account = app.accounts[app.current_account_idx].clone();
-                        //                         app.needs_reconnect = true;
-                        //
-                        //                         // Reset the viewing state so it drops into the INBOX cleanly
-                        //                         app.current_folder = "INBOX".to_string();
-                        //                         app.current_page = 0;
-                        //                         app.restore_index_from_end = Some(0);
-                        //                     }
-                        //                 }
-                        //             }
-                        //         }
-                        //     }
-                        // }
                         KeyCode::Char('a') | KeyCode::Char('A') => {
                             if let Ok(Some(email)) = theme_provider.prompt("Email: ", false) {
                                 if let Ok(Some(password)) = theme_provider.prompt("Password: ", false) {
@@ -158,13 +127,6 @@ pub fn handle_event(event: Event, app: &mut App, session: &mut Option<ImapSessio
                                                     imap_port: imap_port.trim().parse().unwrap_or(993),
                                                     smtp_server: smtp_server.trim().to_string(),
                                                 };
-                                                // let new_acc = crate::config::Account {
-                                                //     email: email.trim().to_string(),
-                                                //     password: password.trim().to_string(),
-                                                //     imap_server: imap_server.trim().to_string(),
-                                                //     imap_port: imap_port.trim().parse().unwrap_or(993),
-                                                //     smtp_server: smtp_server.trim().to_string(),
-                                                // };
 
                                                 app.accounts.push(new_acc);
                                                 crate::config::save_config(&app.accounts);
@@ -184,6 +146,65 @@ pub fn handle_event(event: Event, app: &mut App, session: &mut Option<ImapSessio
                                 }
                             }
                         }
+
+                        KeyCode::Char('m') | KeyCode::Char('M') => {
+                            if !app.accounts.is_empty() {
+                                let mut acc = app.accounts[*selected_idx].clone();
+
+                                // Fallbacks in case the struct fields are empty
+                                let client_id = acc.client_id.as_deref().unwrap_or("YOUR_MS_CLIENT_ID");
+                                let client_secret = acc.client_secret.as_deref().unwrap_or("YOUR_MS_CLIENT_SECRET");
+
+                                // 1. Suspend the alternate screen
+                                let _ = crossterm::terminal::disable_raw_mode();
+                                let _ = crossterm::execute!(std::io::stdout(), crossterm::terminal::LeaveAlternateScreen);
+
+                                // --- ADD THESE DEBUG LINES ---
+                                println!("\r\n===== DEBUG INFO =====");
+                                println!("Account Email: {}", acc.email);
+                                println!("Client ID being sent: '{}'", client_id);
+                                println!("Client Secret being sent: '{}'", client_secret);
+                                println!("======================\r\n");
+                                // -----------------------------
+
+                                // 2. Run the blocking auth flow and CAPTURE the result
+                                let auth_result = crate::net::run_microsoft_auth_flow(client_id, client_secret);
+
+                                // 3. Handle the result BEFORE restoring the screen
+                                match auth_result {
+                                    Ok(tokens) => {
+                                        if let Some(refresh) = tokens.refresh_token {
+                                            acc.refresh_token = Some(refresh);
+                                            app.accounts[*selected_idx] = acc;
+                                            crate::config::save_config(&app.accounts);
+
+                                            app.update_status("MS Auth Successful. Token saved.".to_string());
+                                        }
+                                    },
+                                    Err(e) => {
+                                        // Print the error directly to the standard terminal so it's impossible to miss
+                                        println!("\r\nAuthentication Failed!");
+                                        println!("Error details: {}\r\n", e);
+                                        println!("Press ENTER to return to xpine...");
+
+                                        // Block and wait for the user to hit Enter
+                                        let mut input = String::new();
+                                        let _ = std::io::stdin().read_line(&mut input);
+
+                                        app.update_status("MS Auth Failed.".to_string());
+                                    }
+                                }
+
+                                // 4. NOW restore the UI state
+                                let _ = crossterm::terminal::enable_raw_mode();
+                                let _ = crossterm::execute!(
+            std::io::stdout(),
+            crossterm::terminal::EnterAlternateScreen,
+            crossterm::terminal::Clear(crossterm::terminal::ClearType::All)
+        );
+                            }
+                        },
+
                         KeyCode::Char('e') | KeyCode::Char('E') => {
                             if !app.accounts.is_empty() {
                                 let acc = &app.accounts[*selected_idx].clone();
@@ -248,6 +269,7 @@ pub fn handle_event(event: Event, app: &mut App, session: &mut Option<ImapSessio
                         _ => {}
                     }
                 }
+
                 AppMode::EmailList => {
                     let (_, rows) = term_size().unwrap_or((80, 24));
                     let items_per_page = (rows.saturating_sub(3) as u32).max(1);
