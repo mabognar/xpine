@@ -1,6 +1,7 @@
 use crate::config::Account;
 use crate::mail::EmailMeta;
 use std::time::{Duration, Instant};
+use std::collections::{HashMap, HashSet};
 
 pub enum AppMode {
     EmailList,

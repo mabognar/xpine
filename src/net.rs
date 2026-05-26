@@ -54,16 +54,14 @@ struct PollingError {
 
 pub fn request_microsoft_device_code(client_id: &str) -> Result<DeviceCodeResponse, String> {
     let client = reqwest::blocking::Client::new();
-
-    // Microsoft's device code endpoint (using 'common' to allow personal and work accounts)
     let endpoint = "https://login.microsoftonline.com/common/oauth2/v2.0/devicecode";
 
-    // Microsoft requires offline_access to get a refresh token, plus specific IMAP/SMTP scopes
     let params = vec![
         ("client_id", client_id),
-        ("scope", "offline_access https://outlook.office.com/IMAP.AccessAsUser.All https://outlook.office.com/SMTP.Send"),
+        // REVERT: Only ask for IMAP during the initial connection
+        ("scope", "offline_access https://outlook.office.com/IMAP.AccessAsUser.All"),
     ];
-
+    
     let res = client.post(endpoint)
         .form(&params)
         .send()
@@ -192,6 +190,11 @@ pub fn get_oauth_access_token(
         ("grant_type", "refresh_token"),
     ];
 
+    // FIX: Actually use the target_scope parameter!
+    if let Some(scope) = target_scope {
+        params.push(("scope", scope));
+    }
+
     // Only append the client secret if we actually have one (and aren't a public MS client)
     if !is_microsoft && !client_secret.is_empty() && client_secret != "YOUR_GOOGLE_CLIENT_SECRET" {
         params.push(("client_secret", client_secret));
@@ -230,8 +233,9 @@ pub fn connect(account: &mut Account) -> Result<ImapSession, imap::Error> {
 
         let is_microsoft = account.email.ends_with("@outlook.com") || account.email.ends_with("@hotmail.com");
 
-        // Pass 'None' here so we use the default IMAP scopes
-        match get_oauth_access_token(client_id, client_secret, refresh_token, is_microsoft, None) {
+        let scope = if is_microsoft { Some("https://outlook.office.com/IMAP.AccessAsUser.All") } else { None };
+
+        match get_oauth_access_token(client_id, client_secret, refresh_token, is_microsoft, scope) {
             Ok(access_token) => {
                 let auth = OAuth2 {
                     user: account.email.clone(),

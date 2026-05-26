@@ -1,3 +1,5 @@
+use std::collections::HashSet;
+use std::time::{Duration, Instant};
 use crate::app::{App, AppMode};
 use crate::net::{self, ImapSession};
 use crate::compose::compose_email;
@@ -421,6 +423,28 @@ pub fn handle_event(event: Event, app: &mut App, session: &mut Option<ImapSessio
                                 net::toggle_imap_flag(sess, &mut app.page_emails, app.selected_index, "\\Flagged");
                             }
                         }
+                        // KeyCode::Char('d') | KeyCode::Char('D') => {
+                        //     if !app.page_emails.is_empty() {
+                        //         // 1. Update local state
+                        //         let email = &mut app.page_emails[app.selected_index];
+                        //         email.is_deleted = !email.is_deleted;
+                        //
+                        //         let account_email = app.active_account.email.clone();
+                        //         let entry = app.deleted_ids.entry(account_email).or_default();
+                        //
+                        //         if email.is_deleted {
+                        //             entry.insert(email.id);
+                        //         } else {
+                        //             entry.remove(&email.id);
+                        //         }
+                        //
+                        //         // 2. Move cursor to next line
+                        //         let max_visible = app.page_emails.len().min(rows.saturating_sub(3) as usize);
+                        //         if app.selected_index + 1 < max_visible {
+                        //             app.selected_index += 1;
+                        //         }
+                        //     }
+                        // }
                         KeyCode::Char('d') | KeyCode::Char('D') => {
                             if let Some(sess) = session {
                                 net::toggle_imap_flag(sess, &mut app.page_emails, app.selected_index, "\\Deleted");
@@ -450,6 +474,46 @@ pub fn handle_event(event: Event, app: &mut App, session: &mut Option<ImapSessio
                                 app.update_status("No account configured for sending.".to_string());
                             }
                         }
+                        // KeyCode::Char('x') | KeyCode::Char('X') => {
+                        //     if let Some(sess) = session {
+                        //         let account_email = app.active_account.email.clone();
+                        //
+                        //         // 1. Check if there is anything to expunge
+                        //         if let Some(ids) = app.deleted_ids.get_mut(&account_email) {
+                        //             if !ids.is_empty() {
+                        //                 // 2. Prompt for confirmation
+                        //                 if let Ok(Some(true)) = theme_provider.prompt_yn("Expunge deleted (D) messages? ") {
+                        //
+                        //                     // 3. Sync all locally marked IDs to the server
+                        //                     for id in ids.iter() {
+                        //                         let _ = sess.store(&id.to_string(), "+FLAGS (\\Deleted)");
+                        //                     }
+                        //
+                        //                     // 4. Perform the expunge
+                        //                     if sess.expunge().is_ok() {
+                        //                         ids.clear();
+                        //                         app.needs_fetch = true;
+                        //
+                        //                         // Set status with 3-second timer
+                        //                         app.list_status = "Messages expunged".to_string();
+                        //                         app.list_status_time = Some(Instant::now());
+                        //                         app.list_status_duration = Duration::from_secs(3);
+                        //                     } else {
+                        //                         // Handle error case
+                        //                         app.list_status = "Error: Expunge failed".to_string();
+                        //                         app.list_status_time = Some(Instant::now());
+                        //                         app.list_status_duration = Duration::from_secs(3);
+                        //                     }
+                        //                 }
+                        //             } else {
+                        //                 // Optional: Feedback if user presses X but nothing is marked
+                        //                 app.list_status = "Nothing marked for deletion.".to_string();
+                        //                 app.list_status_time = Some(Instant::now());
+                        //                 app.list_status_duration = Duration::from_secs(3);
+                        //             }
+                        //         }
+                        //     }
+                        // }
                         KeyCode::Char('x') | KeyCode::Char('X') => {
                             if !app.page_emails.is_empty() {
                                 if let Some(sess) = session {
