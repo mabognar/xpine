@@ -424,34 +424,24 @@ pub fn handle_event(event: Event, app: &mut App, session: &mut Option<ImapSessio
                             }
                         }
                         // KeyCode::Char('d') | KeyCode::Char('D') => {
-                        //     if !app.page_emails.is_empty() {
-                        //         // 1. Update local state
-                        //         let email = &mut app.page_emails[app.selected_index];
-                        //         email.is_deleted = !email.is_deleted;
-                        //
-                        //         let account_email = app.active_account.email.clone();
-                        //         let entry = app.deleted_ids.entry(account_email).or_default();
-                        //
-                        //         if email.is_deleted {
-                        //             entry.insert(email.id);
-                        //         } else {
-                        //             entry.remove(&email.id);
-                        //         }
-                        //
-                        //         // 2. Move cursor to next line
-                        //         let max_visible = app.page_emails.len().min(rows.saturating_sub(3) as usize);
-                        //         if app.selected_index + 1 < max_visible {
-                        //             app.selected_index += 1;
-                        //         }
+                        //     if let Some(sess) = session {
+                        //         net::toggle_imap_flag(sess, &mut app.page_emails, app.selected_index, "\\Deleted");
+                        //     }
+                        //     let max_visible = app.page_emails.len().min(rows.saturating_sub(3) as usize);
+                        //     if app.selected_index + 1 < max_visible {
+                        //         app.selected_index += 1;
                         //     }
                         // }
                         KeyCode::Char('d') | KeyCode::Char('D') => {
-                            if let Some(sess) = session {
-                                net::toggle_imap_flag(sess, &mut app.page_emails, app.selected_index, "\\Deleted");
-                            }
-                            let max_visible = app.page_emails.len().min(rows.saturating_sub(3) as usize);
-                            if app.selected_index + 1 < max_visible {
-                                app.selected_index += 1;
+                            if !app.page_emails.is_empty() {
+                                // Toggle locally so IMAP servers (like Outlook) don't auto-purge on folder change
+                                app.page_emails[app.selected_index].is_deleted = !app.page_emails[app.selected_index].is_deleted;
+
+                                let (_, rows) = term_size().unwrap_or((80, 24));
+                                let max_visible = app.page_emails.len().min(rows.saturating_sub(3) as usize);
+                                if app.selected_index + 1 < max_visible {
+                                    app.selected_index += 1;
+                                }
                             }
                         }
                         KeyCode::Char('u') | KeyCode::Char('U') => {
@@ -514,16 +504,55 @@ pub fn handle_event(event: Event, app: &mut App, session: &mut Option<ImapSessio
                         //         }
                         //     }
                         // }
+                        // KeyCode::Char('x') | KeyCode::Char('X') => {
+                        //     if !app.page_emails.is_empty() {
+                        //         if let Some(sess) = session {
+                        //             let has_deleted = sess.search("DELETED").map(|res| !res.is_empty()).unwrap_or(false);
+                        //
+                        //             if !has_deleted {
+                        //                 app.update_status("Nothing to expunge - no messages marked for deletion".to_string());
+                        //                 app.list_status_duration = std::time::Duration::from_secs(3);
+                        //             } else {
+                        //                 if let Ok(Some(true)) = theme_provider.prompt_yn("Expunge?") {
+                        //                     if sess.expunge().is_ok() {
+                        //                         let offset = if theme_provider.sort_newest_first {
+                        //                             app.current_page * items_per_page + app.selected_index as u32
+                        //                         } else {
+                        //                             app.current_page * items_per_page + app.page_emails.len().saturating_sub(1).saturating_sub(app.selected_index) as u32
+                        //                         };
+                        //
+                        //                         if let Ok(m) = sess.select(&app.current_folder) {
+                        //                             app.total_messages = m.exists;
+                        //                             let safe_offset = offset.min(app.total_messages.saturating_sub(1));
+                        //                             app.current_page = safe_offset / items_per_page;
+                        //                             app.restore_index_from_end = Some(safe_offset % items_per_page);
+                        //                             app.needs_fetch = true;
+                        //                         }
+                        //                     }
+                        //                 }
+                        //             }
+                        //         }
+                        //     }
+                        // }
                         KeyCode::Char('x') | KeyCode::Char('X') => {
                             if !app.page_emails.is_empty() {
                                 if let Some(sess) = session {
-                                    let has_deleted = sess.search("DELETED").map(|res| !res.is_empty()).unwrap_or(false);
+                                    // Check the local state instead of querying the server
+                                    let has_deleted = app.page_emails.iter().any(|e| e.is_deleted);
 
                                     if !has_deleted {
                                         app.update_status("Nothing to expunge - no messages marked for deletion".to_string());
                                         app.list_status_duration = std::time::Duration::from_secs(3);
                                     } else {
                                         if let Ok(Some(true)) = theme_provider.prompt_yn("Expunge?") {
+
+                                            // Apply the standard \Deleted flag to the server right before purging
+                                            for email in app.page_emails.iter() {
+                                                if email.is_deleted {
+                                                    let _ = sess.store(&email.id.to_string(), "+FLAGS (\\Deleted)");
+                                                }
+                                            }
+
                                             if sess.expunge().is_ok() {
                                                 let offset = if theme_provider.sort_newest_first {
                                                     app.current_page * items_per_page + app.selected_index as u32
