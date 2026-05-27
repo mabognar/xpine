@@ -7,7 +7,6 @@ use syntect::easy::HighlightLines;
 use std::io::{self, stdout, Write};
 use std::{env, fs};
 use std::path::PathBuf;
-use crate::config::ConfigExt;
 use crate::prompt::PromptExt;
 pub(crate) use crate::theme::{derive_ui_colors};
 
@@ -768,8 +767,8 @@ pub fn draw_app(stdout: &mut std::io::Stdout, app: &App, theme_provider: &Editor
                 Editor::draw_menu_line(stdout, rows - 2, cols, r_col, &[("<", " Back"), (">", " View"), ("C", " Compose"), ("R", " Reply"),   ("D", " Delete"), ("O", " Other (1/2)")], colors.menu_bg, colors.accent, colors.fg)?;
                 Editor::draw_menu_line(stdout, rows - 1, cols, r_col, &[("Q", " Quit"), ("M", " Menu"), ("*", " Flag"),    ("F", " Forward"), ("X", " Expunge"), ("Tab", " Acct")], colors.menu_bg, colors.accent, colors.fg)?;
             } else {
-                Editor::draw_menu_line(stdout, rows - 2, cols, r_col, &[("U", " (Un)Read"), ("P", " Prev"), ("Y", " Prev Pg"), ("Meta+T", " Theme"), ("", ""), ("O", " Other (2/2)")], colors.menu_bg, colors.accent, colors.fg)?;
-                Editor::draw_menu_line(stdout, rows - 1, cols, r_col, &[("S", " Search"), ("N", " Next"), ("V", " Next Pg"), ("", ""), ("", ""), ("", "")], colors.menu_bg, colors.accent, colors.fg)?;
+                Editor::draw_menu_line(stdout, rows - 2, cols, r_col, &[("U", " (Un)Read"), ("P", " Prev"), ("Y", " Prev Pg"),  ("M+I", " To Inbox"), ("M+T", " Theme"),  ("O", " Other (2/2)")], colors.menu_bg, colors.accent, colors.fg)?;
+                Editor::draw_menu_line(stdout, rows - 1, cols, r_col, &[("S", " Search"), ("N", " Next"), ("V", " Next Pg"),    ("M+J", " To Junk"), ("", ""), ("", "")], colors.menu_bg, colors.accent, colors.fg)?;
             }
 
             if let Some(time) = app.list_status_time {
@@ -852,7 +851,6 @@ pub fn draw_app(stdout: &mut std::io::Stdout, app: &App, theme_provider: &Editor
                 queue!(stdout, Print(format!("{} {:<20} ", checkbox, title)), ResetColor)?;
             }
 
-            // --- UPDATED CODE: 1 blank line gap, custom column alignments, and theme colorization ---
             let theme_y = 2 + options.len() as u16;
 
             queue!(

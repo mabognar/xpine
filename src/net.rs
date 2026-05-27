@@ -26,9 +26,6 @@ struct OAuth2 {
 pub struct DeviceCodeResponse {
     pub device_code: String,
     pub user_code: String,
-
-    // This tells Serde: "If you see verification_uri (Microsoft),
-    // map it to verification_url so our code doesn't break."
     #[serde(alias = "verification_uri")]
     pub verification_url: String,
 
@@ -44,7 +41,6 @@ pub struct TokenResponse {
     pub token_type: String,
 }
 
-// Internal struct to catch Google's specific polling errors
 #[derive(Deserialize, Debug)]
 struct PollingError {
     error: String,
@@ -126,12 +122,12 @@ pub fn poll_microsoft_token(
 }
 
 pub fn run_microsoft_auth_flow(client_id: &str, client_secret: &str) -> Result<TokenResponse, String> {
-    // 1. Kick off the request to get the MS codes
+    // Get MS codes
     let auth_req = request_microsoft_device_code(client_id)?;
 
     let mut stdout = stdout();
 
-    // 2. Clear the screen and show the prompt
+    // Clear the screen and show prompt
     let _ = execute!(
         stdout,
         Clear(ClearType::All),
@@ -147,8 +143,6 @@ pub fn run_microsoft_auth_flow(client_id: &str, client_secret: &str) -> Result<T
         Print("   Waiting for authorization (check your browser)...\r\n")
     );
 
-    // 3. Block and poll for the token using the MICROSOFT polling function!
-    // THIS is where the unused function goes:
     let token = poll_microsoft_token(client_id, client_secret, &auth_req.device_code, auth_req.interval)?;
 
     // 4. Success feedback
@@ -282,15 +276,12 @@ pub fn fetch_emails(session: &mut ImapSession, app: &mut App, items_per_page: u3
             Ok(seq_ids) if !seq_ids.is_empty() => {
                 app.total_messages = seq_ids.len() as u32;
 
-                // Collect and sort sequence IDs to preserve correct oldest-to-newest pagination
                 let mut sorted_seqs: Vec<u32> = seq_ids.into_iter().collect();
                 sorted_seqs.sort();
 
-                // Paginate the search results
                 let end_idx = sorted_seqs.len().saturating_sub((app.current_page * items_per_page) as usize);
                 let start_idx = end_idx.saturating_sub(items_per_page as usize - 1).max(1);
 
-                // Extract sequence IDs for the current page and join them with commas for the fetch command
                 let page_seqs = &sorted_seqs[(start_idx - 1)..end_idx];
                 page_seqs.iter().map(|id| id.to_string()).collect::<Vec<_>>().join(",")
             }
@@ -348,7 +339,6 @@ pub fn fetch_emails(session: &mut ImapSession, app: &mut App, items_per_page: u3
                         }
                     }
 
-                    // A macro safely handles the imap Address lifetimes and joins multiple addresses safely
                     macro_rules! format_addrs {
                         ($addrs:expr) => {{
                             let mut result = Vec::new();
@@ -433,7 +423,13 @@ pub fn toggle_imap_flag(session: &mut ImapSession, emails: &mut [EmailMeta], sel
         _ => false,
     };
 
-    let op = if is_set { format!("-FLAGS ({})", flag_name) } else { format!("+FLAGS ({})", flag_name) };
+    // Use .SILENT to ensure immediate synchronization with the server.
+    // The explicit -FLAGS preserves the ability to unmark flags cleanly.
+    let op = if is_set {
+        format!("-FLAGS.SILENT ({})", flag_name)
+    } else {
+        format!("+FLAGS.SILENT ({})", flag_name)
+    };
 
     if session.store(&seq_id, &op).is_ok() {
         let new_val = !is_set;
@@ -444,6 +440,17 @@ pub fn toggle_imap_flag(session: &mut ImapSession, emails: &mut [EmailMeta], sel
             _ => {}
         }
     }
+}
+
+// Add this function to handle the 'X' keypress
+pub fn expunge_deleted(session: &mut ImapSession, app: &mut App) -> Result<(), String> {
+    // Issue the expunge command directly to the server
+    session.expunge().map_err(|e| format!("Expunge failed: {}", e))?;
+
+    // Set the flag to refresh the inbox and reflect the permanently removed messages
+    app.needs_fetch = true;
+
+    Ok(())
 }
 
 pub fn fetch_email_body(session: &mut ImapSession, fetch_seq: &str) -> (String, Option<String>, Vec<(String, Vec<u8>)>) {
@@ -463,4 +470,20 @@ pub fn fetch_email_body(session: &mut ImapSession, fetch_seq: &str) -> (String, 
     }
 
     (text_body, html_body, attachments)
+}
+
+pub fn move_to_folder(session: &mut ImapSession, seq_id: &str, folder: &str) -> Result<(), String> {
+    // 1. Copy the message to the destination folder
+    session.copy(seq_id, folder)
+        .map_err(|e| format!("Copy failed: {}", e))?;
+
+    // 2. Mark as deleted in the source folder
+    // Using .SILENT ensures immediate sync as established in your earlier work
+    session.store(seq_id, "+FLAGS.SILENT (\\Deleted)")
+        .map_err(|e| format!("Flagging failed: {}", e))?;
+
+    // 3. Optional: Expunge immediately if you want the email gone instantly
+    // session.expunge().map_err(|e| format!("Expunge failed: {}", e))?;
+
+    Ok(())
 }

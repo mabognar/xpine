@@ -1,5 +1,3 @@
-use std::collections::HashSet;
-use std::time::{Duration, Instant};
 use crate::app::{App, AppMode};
 use crate::net::{self, ImapSession};
 use crate::compose::compose_email;
@@ -7,6 +5,7 @@ use crate::editor::Editor;
 use crate::config::ConfigExt;
 use crate::ui::UiExt;
 use crossterm::event::{Event, KeyCode, KeyEventKind, KeyModifiers};
+use crossterm::execute;
 use crossterm::terminal::size as term_size;
 use crate::prompt::PromptExt;
 
@@ -200,10 +199,10 @@ pub fn handle_event(event: Event, app: &mut App, session: &mut Option<ImapSessio
                                 // 4. NOW restore the UI state
                                 let _ = crossterm::terminal::enable_raw_mode();
                                 let _ = crossterm::execute!(
-            std::io::stdout(),
-            crossterm::terminal::EnterAlternateScreen,
-            crossterm::terminal::Clear(crossterm::terminal::ClearType::All)
-        );
+                                    std::io::stdout(),
+                                    crossterm::terminal::EnterAlternateScreen,
+                                    crossterm::terminal::Clear(crossterm::terminal::ClearType::All)
+                                );
                             }
                         },
 
@@ -326,6 +325,7 @@ pub fn handle_event(event: Event, app: &mut App, session: &mut Option<ImapSessio
                         KeyCode::Char('s') | KeyCode::Char('S') => {
                             let current_query = app.search_query.clone().unwrap_or_default();
 
+                            // 1. Prompt for input
                             if let Ok(Some(query)) = theme_provider.prompt_edit("Search:", &current_query) {
                                 let trimmed = query.trim();
 
@@ -337,6 +337,49 @@ pub fn handle_event(event: Event, app: &mut App, session: &mut Option<ImapSessio
 
                                 app.current_page = 0;
                                 app.needs_fetch = true;
+                            }
+
+                            let _ = execute!(std::io::stdout(), crossterm::cursor::Show);
+                        }
+                        KeyCode::Char('j') if k.modifiers.contains(KeyModifiers::ALT) => {
+                            if !app.page_emails.is_empty() {
+                                if let Ok(Some(true)) = theme_provider.prompt_yn("Move to Junk/Spam folder?") {
+                                    if let Some(sess) = session {
+                                        let seq_id = app.page_emails[app.selected_index].id.to_string();
+
+                                        // Logic to set the folder name based on the provider
+                                        let junk_folder = if app.active_account.email.contains("@gmail.com") {
+                                            "[Gmail]/Spam"
+                                        } else {
+                                            "Junk"
+                                        };
+
+                                        match net::move_to_folder(sess, &seq_id, junk_folder) {
+                                            Ok(_) => {
+                                                app.update_status(format!("Moved to {}.", junk_folder));
+                                                app.needs_fetch = true;
+                                            },
+                                            Err(e) => app.update_status(format!("Error: {}", e)),
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                        KeyCode::Char('i') if k.modifiers.contains(KeyModifiers::ALT) => {
+                            if !app.page_emails.is_empty() {
+                                if let Ok(Some(true)) = theme_provider.prompt_yn("Move to Inbox?") {
+                                    if let Some(sess) = session {
+                                        let seq_id = app.page_emails[app.selected_index].id.to_string();
+
+                                        match net::move_to_folder(sess, &seq_id, "INBOX") {
+                                            Ok(_) => {
+                                                app.update_status(format!("Moved to {}.", "INBOX"));
+                                                app.needs_fetch = true;
+                                            },
+                                            Err(e) => app.update_status(format!("Error: {}", e)),
+                                        }
+                                    }
+                                }
                             }
                         }
                         KeyCode::Char(c) if c.is_ascii_digit() => {
@@ -423,24 +466,54 @@ pub fn handle_event(event: Event, app: &mut App, session: &mut Option<ImapSessio
                                 net::toggle_imap_flag(sess, &mut app.page_emails, app.selected_index, "\\Flagged");
                             }
                         }
-                        // KeyCode::Char('d') | KeyCode::Char('D') => {
-                        //     if let Some(sess) = session {
-                        //         net::toggle_imap_flag(sess, &mut app.page_emails, app.selected_index, "\\Deleted");
-                        //     }
-                        //     let max_visible = app.page_emails.len().min(rows.saturating_sub(3) as usize);
-                        //     if app.selected_index + 1 < max_visible {
-                        //         app.selected_index += 1;
-                        //     }
-                        // }
                         KeyCode::Char('d') | KeyCode::Char('D') => {
                             if !app.page_emails.is_empty() {
-                                // Toggle locally so IMAP servers (like Outlook) don't auto-purge on folder change
-                                app.page_emails[app.selected_index].is_deleted = !app.page_emails[app.selected_index].is_deleted;
+                                if let Some(sess) = session {
+                                    // This now instantly syncs to the server via the updated net.rs logic
+                                    net::toggle_imap_flag(sess, &mut app.page_emails, app.selected_index, "\\Deleted");
+                                }
 
                                 let (_, rows) = term_size().unwrap_or((80, 24));
                                 let max_visible = app.page_emails.len().min(rows.saturating_sub(3) as usize);
                                 if app.selected_index + 1 < max_visible {
                                     app.selected_index += 1;
+                                }
+                            }
+                        }
+                        KeyCode::Char('x') | KeyCode::Char('X') => {
+                            if !app.page_emails.is_empty() {
+                                if let Some(sess) = session {
+                                    // Check the local state to see if anything is marked
+                                    let has_deleted = app.page_emails.iter().any(|e| e.is_deleted);
+
+                                    if !has_deleted {
+                                        app.update_status("Nothing to expunge - no messages marked for deletion".to_string());
+                                        app.list_status_duration = std::time::Duration::from_secs(3);
+                                    } else {
+                                        if let Ok(Some(true)) = theme_provider.prompt_yn("Expunge?") {
+
+                                            // Call the new expunge function
+                                            if net::expunge_deleted(sess, app).is_ok() {
+                                                // Maintain pagination offset after emails are removed
+                                                let offset = if theme_provider.sort_newest_first {
+                                                    app.current_page * items_per_page + app.selected_index as u32
+                                                } else {
+                                                    app.current_page * items_per_page + app.page_emails.len().saturating_sub(1).saturating_sub(app.selected_index) as u32
+                                                };
+
+                                                // Reselect the folder to update the total count and adjust the page
+                                                if let Ok(m) = sess.select(&app.current_folder) {
+                                                    app.total_messages = m.exists;
+                                                    let safe_offset = offset.min(app.total_messages.saturating_sub(1));
+                                                    app.current_page = safe_offset / items_per_page;
+                                                    app.restore_index_from_end = Some(safe_offset % items_per_page);
+                                                }
+                                            } else {
+                                                app.update_status("Expunge failed.".to_string());
+                                                app.list_status_duration = std::time::Duration::from_secs(3);
+                                            }
+                                        }
+                                    }
                                 }
                             }
                         }
@@ -464,115 +537,6 @@ pub fn handle_event(event: Event, app: &mut App, session: &mut Option<ImapSessio
                                 app.update_status("No account configured for sending.".to_string());
                             }
                         }
-                        // KeyCode::Char('x') | KeyCode::Char('X') => {
-                        //     if let Some(sess) = session {
-                        //         let account_email = app.active_account.email.clone();
-                        //
-                        //         // 1. Check if there is anything to expunge
-                        //         if let Some(ids) = app.deleted_ids.get_mut(&account_email) {
-                        //             if !ids.is_empty() {
-                        //                 // 2. Prompt for confirmation
-                        //                 if let Ok(Some(true)) = theme_provider.prompt_yn("Expunge deleted (D) messages? ") {
-                        //
-                        //                     // 3. Sync all locally marked IDs to the server
-                        //                     for id in ids.iter() {
-                        //                         let _ = sess.store(&id.to_string(), "+FLAGS (\\Deleted)");
-                        //                     }
-                        //
-                        //                     // 4. Perform the expunge
-                        //                     if sess.expunge().is_ok() {
-                        //                         ids.clear();
-                        //                         app.needs_fetch = true;
-                        //
-                        //                         // Set status with 3-second timer
-                        //                         app.list_status = "Messages expunged".to_string();
-                        //                         app.list_status_time = Some(Instant::now());
-                        //                         app.list_status_duration = Duration::from_secs(3);
-                        //                     } else {
-                        //                         // Handle error case
-                        //                         app.list_status = "Error: Expunge failed".to_string();
-                        //                         app.list_status_time = Some(Instant::now());
-                        //                         app.list_status_duration = Duration::from_secs(3);
-                        //                     }
-                        //                 }
-                        //             } else {
-                        //                 // Optional: Feedback if user presses X but nothing is marked
-                        //                 app.list_status = "Nothing marked for deletion.".to_string();
-                        //                 app.list_status_time = Some(Instant::now());
-                        //                 app.list_status_duration = Duration::from_secs(3);
-                        //             }
-                        //         }
-                        //     }
-                        // }
-                        // KeyCode::Char('x') | KeyCode::Char('X') => {
-                        //     if !app.page_emails.is_empty() {
-                        //         if let Some(sess) = session {
-                        //             let has_deleted = sess.search("DELETED").map(|res| !res.is_empty()).unwrap_or(false);
-                        //
-                        //             if !has_deleted {
-                        //                 app.update_status("Nothing to expunge - no messages marked for deletion".to_string());
-                        //                 app.list_status_duration = std::time::Duration::from_secs(3);
-                        //             } else {
-                        //                 if let Ok(Some(true)) = theme_provider.prompt_yn("Expunge?") {
-                        //                     if sess.expunge().is_ok() {
-                        //                         let offset = if theme_provider.sort_newest_first {
-                        //                             app.current_page * items_per_page + app.selected_index as u32
-                        //                         } else {
-                        //                             app.current_page * items_per_page + app.page_emails.len().saturating_sub(1).saturating_sub(app.selected_index) as u32
-                        //                         };
-                        //
-                        //                         if let Ok(m) = sess.select(&app.current_folder) {
-                        //                             app.total_messages = m.exists;
-                        //                             let safe_offset = offset.min(app.total_messages.saturating_sub(1));
-                        //                             app.current_page = safe_offset / items_per_page;
-                        //                             app.restore_index_from_end = Some(safe_offset % items_per_page);
-                        //                             app.needs_fetch = true;
-                        //                         }
-                        //                     }
-                        //                 }
-                        //             }
-                        //         }
-                        //     }
-                        // }
-                        KeyCode::Char('x') | KeyCode::Char('X') => {
-                            if !app.page_emails.is_empty() {
-                                if let Some(sess) = session {
-                                    // Check the local state instead of querying the server
-                                    let has_deleted = app.page_emails.iter().any(|e| e.is_deleted);
-
-                                    if !has_deleted {
-                                        app.update_status("Nothing to expunge - no messages marked for deletion".to_string());
-                                        app.list_status_duration = std::time::Duration::from_secs(3);
-                                    } else {
-                                        if let Ok(Some(true)) = theme_provider.prompt_yn("Expunge?") {
-
-                                            // Apply the standard \Deleted flag to the server right before purging
-                                            for email in app.page_emails.iter() {
-                                                if email.is_deleted {
-                                                    let _ = sess.store(&email.id.to_string(), "+FLAGS (\\Deleted)");
-                                                }
-                                            }
-
-                                            if sess.expunge().is_ok() {
-                                                let offset = if theme_provider.sort_newest_first {
-                                                    app.current_page * items_per_page + app.selected_index as u32
-                                                } else {
-                                                    app.current_page * items_per_page + app.page_emails.len().saturating_sub(1).saturating_sub(app.selected_index) as u32
-                                                };
-
-                                                if let Ok(m) = sess.select(&app.current_folder) {
-                                                    app.total_messages = m.exists;
-                                                    let safe_offset = offset.min(app.total_messages.saturating_sub(1));
-                                                    app.current_page = safe_offset / items_per_page;
-                                                    app.restore_index_from_end = Some(safe_offset % items_per_page);
-                                                    app.needs_fetch = true;
-                                                }
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-                        }
                         KeyCode::Char('f') | KeyCode::Char('F') | KeyCode::Char('r') | KeyCode::Char('R') => {
                             if !app.page_emails.is_empty() {
                                 if let Some(sess) = session {
@@ -594,7 +558,12 @@ pub fn handle_event(event: Event, app: &mut App, session: &mut Option<ImapSessio
                                         app.page_emails[app.selected_index].is_answered = true;
 
                                         let sub = if subject.to_lowercase().starts_with("re:") { subject.clone() } else { format!("Re: {}", subject) };
-                                        if let Some(s) = compose_email(&app.active_account, Some(&reply_to), Some(&sub), None, &mut theme_provider.current_theme) {
+
+                                        // 1. Format the reply text using our new function
+                                        let reply_body = crate::mail::format_reply_text(&t_body);
+
+                                        // 2. Pass Some(&reply_body) instead of None to the composer
+                                        if let Some(s) = compose_email(&app.active_account, Some(&reply_to), Some(&sub), Some(&reply_body), &mut theme_provider.current_theme) {
                                             app.update_status(s);
                                         }
                                     }

@@ -1,35 +1,3 @@
-// #[derive(Clone)]
-// pub struct Account {
-//     pub email: String,
-//     pub password: String,
-//     pub imap_server: String,
-//     pub imap_port: u16,
-//     pub smtp_server: String,
-// }
-
-use crate::config::Account;
-use serde::{Deserialize, Serialize};
-
-// #[derive(Clone, Deserialize, Serialize)]
-// pub struct Account {
-//     pub email: String,
-//
-//     // Standard Auth
-//     pub password: Option<String>,
-//
-//     // Google OAuth 2.0
-//     pub client_id: Option<String>,
-//     pub client_secret: Option<String>,
-//     pub refresh_token: Option<String>,
-//
-//     #[serde(default = "default_imap")]
-//     pub imap_server: String,
-//     #[serde(default = "default_imap_port")]
-//     pub imap_port: u16,
-//     #[serde(default = "default_smtp")]
-//     pub smtp_server: String,
-// }
-
 pub struct EmailMeta {
     pub id: u32,
     pub subject: String,
@@ -99,4 +67,18 @@ pub fn parse_email_body(body_data: &[u8]) -> (String, Option<String>, Vec<(Strin
     }
 
     (text_body, html_body, attachments)
+}
+
+pub fn format_reply_text(original_text: &str) -> String {
+    // Start with 3 blank lines using CRLF to match the terminal editor's expected line endings
+    let mut reply = String::from("\r\n\r\n\r\n");
+
+    // Iterate through the original email and prefix each line
+    for line in original_text.lines() {
+        reply.push_str("> ");
+        reply.push_str(line);
+        reply.push_str("\r\n");
+    }
+
+    reply
 }

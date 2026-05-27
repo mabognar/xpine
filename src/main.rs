@@ -211,30 +211,28 @@ fn main() {
                                 }
                                 continue;
                             }
-
                             if key.code == event::KeyCode::Char('r') || key.code == event::KeyCode::Char('R') {
-                                // Safely extract the session as a mutable reference ('sess')
-                                if let Some(ref mut sess) = session {
-                                    // Call .store() on the extracted 'sess', NOT 'session'
-                                    let _ = sess.store(&fetch_seq, "+FLAGS (\\Answered)");
-                                }
-                                app.page_emails[app.selected_index].is_answered = true;
-
-                                let sub = if email_subject.to_lowercase().starts_with("re:") { email_subject.clone() } else { format!("Re: {}", email_subject) };
-                                if let Some(s) = compose::compose_email(&app.active_account, Some(&reply_to), Some(&sub), None, &mut reader.current_theme) {
-                                    reader.set_status(s);
-                                }
-                                continue;
-                            }
-                            if key.code == event::KeyCode::Char('r') || key.code == event::KeyCode::Char('R') {
-                                // Safely unwrap the optional session before marking as answered
                                 if let Some(ref mut sess) = session {
                                     let _ = sess.store(&fetch_seq, "+FLAGS (\\Answered)");
                                 }
                                 app.page_emails[app.selected_index].is_answered = true;
 
-                                let sub = if email_subject.to_lowercase().starts_with("re:") { email_subject.clone() } else { format!("Re: {}", email_subject) };
-                                if let Some(s) = compose::compose_email(&app.active_account, Some(&reply_to), Some(&sub), None, &mut reader.current_theme) {
+                                let reply_body = crate::mail::format_reply_text(&text_body);
+
+                                let sub = if email_subject.to_lowercase().starts_with("re:") {
+                                    email_subject.clone()
+                                } else {
+                                    format!("Re: {}", email_subject)
+                                };
+
+                                // 2. Pass Some(&reply_body) instead of None
+                                if let Some(s) = compose::compose_email(
+                                    &app.active_account,
+                                    Some(&reply_to),
+                                    Some(&sub),
+                                    Some(&reply_body), // The formatted body with > and blank lines
+                                    &mut reader.current_theme
+                                ) {
                                     reader.set_status(s);
                                 }
                                 continue;
