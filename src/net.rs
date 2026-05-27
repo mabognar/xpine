@@ -302,7 +302,7 @@ pub fn fetch_emails(session: &mut ImapSession, app: &mut App, items_per_page: u3
     };
 
     if !sequence.is_empty() {
-        if let Ok(messages) = session.fetch(&sequence, "(ENVELOPE FLAGS RFC822.SIZE)") {
+        if let Ok(messages) = session.fetch(&sequence, "(UID ENVELOPE FLAGS RFC822.SIZE)") {
             for message in messages.iter() {
                 let size = message.size.unwrap_or(0);
                 let mut is_seen = false; let mut is_deleted = false;
@@ -317,6 +317,10 @@ pub fn fetch_emails(session: &mut ImapSession, app: &mut App, items_per_page: u3
                         _ => {}
                     }
                 }
+
+                let internal_date = message.internal_date()
+                    .map(|dt| dt.timestamp())
+                    .unwrap_or(0);
 
                 let mut subject = "No Subject".to_string();
                 let mut from = "Unknown Sender".to_string();
@@ -377,6 +381,8 @@ pub fn fetch_emails(session: &mut ImapSession, app: &mut App, items_per_page: u3
                 // Push the newly populated to_addr and cc into EmailMeta
                 app.page_emails.push(EmailMeta {
                     id: message.message,
+                    uid: message.uid.unwrap_or(0),
+                    timestamp: internal_date,
                     subject,
                     from,
                     reply_to,
@@ -388,15 +394,24 @@ pub fn fetch_emails(session: &mut ImapSession, app: &mut App, items_per_page: u3
                     is_read: is_seen,
                     is_deleted,
                     is_flagged,
-                    is_answered
+                    is_answered,
                 });
             }
         }
 
+        // if sort_newest_first {
+        //     app.page_emails.sort_by(|a, b| b.id.cmp(&a.id));
+        // } else {
+        //     app.page_emails.sort_by(|a, b| a.id.cmp(&b.id));
+        // }
+
+        // Replace your existing sort block with this:
         if sort_newest_first {
-            app.page_emails.sort_by(|a, b| b.id.cmp(&a.id));
+            // Sort by timestamp descending
+            app.page_emails.sort_by(|a, b| b.timestamp.cmp(&a.timestamp));
         } else {
-            app.page_emails.sort_by(|a, b| a.id.cmp(&b.id));
+            // Sort by timestamp ascending
+            app.page_emails.sort_by(|a, b| a.timestamp.cmp(&b.timestamp));
         }
 
         if let Some(idx_from_end) = app.restore_index_from_end {
@@ -415,7 +430,9 @@ pub fn fetch_emails(session: &mut ImapSession, app: &mut App, items_per_page: u3
 pub fn toggle_imap_flag(session: &mut ImapSession, emails: &mut [EmailMeta], selected_index: usize, flag_name: &str) {
     if emails.is_empty() { return; }
 
-    let seq_id = emails[selected_index].id.to_string();
+    // Use UID instead of the sequence ID (id)
+    let uid = emails[selected_index].uid.to_string();
+
     let is_set = match flag_name {
         "\\Flagged" => emails[selected_index].is_flagged,
         "\\Deleted" => emails[selected_index].is_deleted,
@@ -423,15 +440,15 @@ pub fn toggle_imap_flag(session: &mut ImapSession, emails: &mut [EmailMeta], sel
         _ => false,
     };
 
-    // Use .SILENT to ensure immediate synchronization with the server.
-    // The explicit -FLAGS preserves the ability to unmark flags cleanly.
+    // Use .SILENT to keep the sync fast
     let op = if is_set {
         format!("-FLAGS.SILENT ({})", flag_name)
     } else {
         format!("+FLAGS.SILENT ({})", flag_name)
     };
 
-    if session.store(&seq_id, &op).is_ok() {
+    // Use uid_store for persistent identification
+    if session.uid_store(&uid, &op).is_ok() {
         let new_val = !is_set;
         match flag_name {
             "\\Flagged" => emails[selected_index].is_flagged = new_val,
@@ -439,8 +456,41 @@ pub fn toggle_imap_flag(session: &mut ImapSession, emails: &mut [EmailMeta], sel
             "\\Seen"    => emails[selected_index].is_read = new_val,
             _ => {}
         }
+    } else {
+        // Optional: Add a debug log or status update if this fails,
+        // to help diagnose if it's a permission/server issue
     }
 }
+
+// pub fn toggle_imap_flag(session: &mut ImapSession, emails: &mut [EmailMeta], selected_index: usize, flag_name: &str) {
+//     if emails.is_empty() { return; }
+//
+//     let seq_id = emails[selected_index].id.to_string();
+//     let is_set = match flag_name {
+//         "\\Flagged" => emails[selected_index].is_flagged,
+//         "\\Deleted" => emails[selected_index].is_deleted,
+//         "\\Seen"    => emails[selected_index].is_read,
+//         _ => false,
+//     };
+//
+//     // Use .SILENT to ensure immediate synchronization with the server.
+//     // The explicit -FLAGS preserves the ability to unmark flags cleanly.
+//     let op = if is_set {
+//         format!("-FLAGS.SILENT ({})", flag_name)
+//     } else {
+//         format!("+FLAGS.SILENT ({})", flag_name)
+//     };
+//
+//     if session.store(&seq_id, &op).is_ok() {
+//         let new_val = !is_set;
+//         match flag_name {
+//             "\\Flagged" => emails[selected_index].is_flagged = new_val,
+//             "\\Deleted" => emails[selected_index].is_deleted = new_val,
+//             "\\Seen"    => emails[selected_index].is_read = new_val,
+//             _ => {}
+//         }
+//     }
+// }
 
 // Add this function to handle the 'X' keypress
 pub fn expunge_deleted(session: &mut ImapSession, app: &mut App) -> Result<(), String> {
