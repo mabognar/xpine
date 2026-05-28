@@ -9,6 +9,45 @@ use crossterm::execute;
 use crossterm::terminal::size as term_size;
 use crate::prompt::PromptExt;
 
+fn check_and_expunge_outlook(app: &mut App, session: &mut Option<ImapSession>, theme_provider: &mut Editor) {
+    // Determine if the current account is an Outlook account
+    let is_outlook = app.active_account.imap_server.to_lowercase().contains("outlook") ||
+        app.active_account.email.to_lowercase().contains("outlook") ||
+        app.active_account.email.to_lowercase().contains("hotmail");
+
+    if !is_outlook {
+        return;
+    }
+
+    // Check if there are any locally marked deletions
+    let has_pending = app.page_emails.iter().any(|e| e.is_deleted);
+    if !has_pending {
+        return;
+    }
+
+    // If pending deletions exist, prompt the user
+    if let Ok(Some(yes)) = theme_provider.prompt_yn("Expunge emails marked for deletion?") {
+        if yes {
+            if let Some(sess) = session {
+                // Send the Delete flags to the server
+                for email in &app.page_emails {
+                    if email.is_deleted {
+                        let _ = sess.uid_store(&email.uid.to_string(), "+FLAGS (\\Deleted)");
+                    }
+                }
+                // Expunge to completely remove them from the list
+                let _ = net::expunge_deleted(sess, app);
+                app.needs_fetch = true;
+            }
+        } else {
+            // If they answer No, just remove the local 'D' mark
+            for email in &mut app.page_emails {
+                email.is_deleted = false;
+            }
+        }
+    }
+}
+
 pub fn handle_event(event: Event, app: &mut App, session: &mut Option<ImapSession>, theme_provider: &mut Editor, stdout: &mut std::io::Stdout) -> bool {
     let mut quit = false;
 
@@ -312,6 +351,7 @@ pub fn handle_event(event: Event, app: &mut App, session: &mut Option<ImapSessio
                             }
                         }
                         KeyCode::Tab => {
+                            check_and_expunge_outlook(app, session, theme_provider);
                             if app.accounts.len() > 1 {
                                 app.current_account_idx = (app.current_account_idx + 1) % app.accounts.len();
                                 app.needs_reconnect = true;
@@ -383,6 +423,7 @@ pub fn handle_event(event: Event, app: &mut App, session: &mut Option<ImapSessio
                             }
                         }
                         KeyCode::Char(c) if c.is_ascii_digit() => {
+                            check_and_expunge_outlook(app, session, theme_provider);
                             if let Some(digit) = c.to_digit(10) {
                                 let idx = (digit as usize).saturating_sub(1);
                                 if idx < app.accounts.len() && idx != app.current_account_idx {
@@ -466,53 +507,111 @@ pub fn handle_event(event: Event, app: &mut App, session: &mut Option<ImapSessio
                                 net::toggle_imap_flag(sess, &mut app.page_emails, app.selected_index, "\\Flagged");
                             }
                         }
+                        // KeyCode::Char('d') | KeyCode::Char('D') => {
+                        //     if !app.page_emails.is_empty() {
+                        //         if let Some(sess) = session {
+                        //             // This now instantly syncs to the server via the updated net.rs logic
+                        //             net::toggle_imap_flag(sess, &mut app.page_emails, app.selected_index, "\\Deleted");
+                        //         }
+                        //
+                        //         let (_, rows) = term_size().unwrap_or((80, 24));
+                        //         let max_visible = app.page_emails.len().min(rows.saturating_sub(3) as usize);
+                        //         if app.selected_index + 1 < max_visible {
+                        //             app.selected_index += 1;
+                        //         }
+                        //     }
+                        // }
                         KeyCode::Char('d') | KeyCode::Char('D') => {
-                            if !app.page_emails.is_empty() {
-                                if let Some(sess) = session {
-                                    // This now instantly syncs to the server via the updated net.rs logic
-                                    net::toggle_imap_flag(sess, &mut app.page_emails, app.selected_index, "\\Deleted");
-                                }
+                            let is_outlook = app.active_account.imap_server.to_lowercase().contains("outlook") ||
+                                app.active_account.email.to_lowercase().contains("outlook") ||
+                                app.active_account.email.to_lowercase().contains("hotmail");
 
-                                let (_, rows) = term_size().unwrap_or((80, 24));
-                                let max_visible = app.page_emails.len().min(rows.saturating_sub(3) as usize);
-                                if app.selected_index + 1 < max_visible {
-                                    app.selected_index += 1;
+                            if is_outlook {
+                                // Outlook behavior: Toggle the 'D' flag locally without notifying the server
+                                if !app.page_emails.is_empty() {
+                                    let idx = app.selected_index;
+                                    app.page_emails[idx].is_deleted = !app.page_emails[idx].is_deleted;
+                                }
+                            } else {
+                                // Original Gmail behavior: Send command to server immediately
+                                if let Some(sess) = session {
+                                    if !app.page_emails.is_empty() {
+                                        let idx = app.selected_index;
+                                        let uid = app.page_emails[idx].uid.to_string();
+                                        let is_deleted = app.page_emails[idx].is_deleted;
+                                        let op = if is_deleted { "-FLAGS (\\Deleted)" } else { "+FLAGS (\\Deleted)" };
+
+                                        if sess.uid_store(&uid, op).is_ok() {
+                                            app.page_emails[idx].is_deleted = !is_deleted;
+                                        }
+                                    }
                                 }
                             }
                         }
+                        // KeyCode::Char('x') | KeyCode::Char('X') => {
+                        //     if !app.page_emails.is_empty() {
+                        //         if let Some(sess) = session {
+                        //             // Check the local state to see if anything is marked
+                        //             let has_deleted = app.page_emails.iter().any(|e| e.is_deleted);
+                        //
+                        //             if !has_deleted {
+                        //                 app.update_status("Nothing to expunge - no messages marked for deletion".to_string());
+                        //                 app.list_status_duration = std::time::Duration::from_secs(3);
+                        //             } else {
+                        //                 if let Ok(Some(true)) = theme_provider.prompt_yn("Expunge?") {
+                        //
+                        //                     // Call the new expunge function
+                        //                     if net::expunge_deleted(sess, app).is_ok() {
+                        //                         // Maintain pagination offset after emails are removed
+                        //                         let offset = if theme_provider.sort_newest_first {
+                        //                             app.current_page * items_per_page + app.selected_index as u32
+                        //                         } else {
+                        //                             app.current_page * items_per_page + app.page_emails.len().saturating_sub(1).saturating_sub(app.selected_index) as u32
+                        //                         };
+                        //
+                        //                         // Reselect the folder to update the total count and adjust the page
+                        //                         if let Ok(m) = sess.select(&app.current_folder) {
+                        //                             app.total_messages = m.exists;
+                        //                             let safe_offset = offset.min(app.total_messages.saturating_sub(1));
+                        //                             app.current_page = safe_offset / items_per_page;
+                        //                             app.restore_index_from_end = Some(safe_offset % items_per_page);
+                        //                         }
+                        //                     } else {
+                        //                         app.update_status("Expunge failed.".to_string());
+                        //                         app.list_status_duration = std::time::Duration::from_secs(3);
+                        //                     }
+                        //                 }
+                        //             }
+                        //         }
+                        //     }
+                        // }
                         KeyCode::Char('x') | KeyCode::Char('X') => {
-                            if !app.page_emails.is_empty() {
-                                if let Some(sess) = session {
-                                    // Check the local state to see if anything is marked
-                                    let has_deleted = app.page_emails.iter().any(|e| e.is_deleted);
+                            if let Some(sess) = session {
+                                let is_outlook = app.active_account.imap_server.to_lowercase().contains("outlook") ||
+                                    app.active_account.email.to_lowercase().contains("outlook") ||
+                                    app.active_account.email.to_lowercase().contains("hotmail");
 
-                                    if !has_deleted {
-                                        app.update_status("Nothing to expunge - no messages marked for deletion".to_string());
-                                        app.list_status_duration = std::time::Duration::from_secs(3);
-                                    } else {
-                                        if let Ok(Some(true)) = theme_provider.prompt_yn("Expunge?") {
-
-                                            // Call the new expunge function
-                                            if net::expunge_deleted(sess, app).is_ok() {
-                                                // Maintain pagination offset after emails are removed
-                                                let offset = if theme_provider.sort_newest_first {
-                                                    app.current_page * items_per_page + app.selected_index as u32
-                                                } else {
-                                                    app.current_page * items_per_page + app.page_emails.len().saturating_sub(1).saturating_sub(app.selected_index) as u32
-                                                };
-
-                                                // Reselect the folder to update the total count and adjust the page
-                                                if let Ok(m) = sess.select(&app.current_folder) {
-                                                    app.total_messages = m.exists;
-                                                    let safe_offset = offset.min(app.total_messages.saturating_sub(1));
-                                                    app.current_page = safe_offset / items_per_page;
-                                                    app.restore_index_from_end = Some(safe_offset % items_per_page);
-                                                }
-                                            } else {
-                                                app.update_status("Expunge failed.".to_string());
-                                                app.list_status_duration = std::time::Duration::from_secs(3);
-                                            }
+                                // If it's Outlook, send the delayed +FLAGS (\Deleted) commands now
+                                if is_outlook {
+                                    for email in &app.page_emails {
+                                        if email.is_deleted {
+                                            let _ = sess.uid_store(&email.uid.to_string(), "+FLAGS (\\Deleted)");
                                         }
+                                    }
+                                }
+
+                                // Proceed with your existing expunge logic
+                                if let Ok(Some(true)) = theme_provider.prompt_yn("Expunge?") {
+                                    if net::expunge_deleted(sess, app).is_ok() {
+                                        // Maintain pagination offset after emails are removed
+                                        let offset = if theme_provider.sort_newest_first {
+                                            app.current_page * (app.page_emails.len() as u32) + app.selected_index as u32
+                                        } else {
+                                            app.current_page * (app.page_emails.len() as u32) + app.selected_index as u32
+                                        };
+
+                                        app.needs_fetch = true;
+                                        app.restore_index_from_end = Some(offset);
                                     }
                                 }
                             }
