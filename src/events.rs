@@ -330,6 +330,7 @@ pub fn handle_event(event: Event, app: &mut App, session: &mut Option<ImapSessio
                             }
                         }
                         KeyCode::Char('<') | KeyCode::Left => {
+                            check_and_expunge_outlook(app, session, theme_provider);
                             if app.search_query.is_some() {
                                 app.search_query = None;
                                 app.current_page = 0;
