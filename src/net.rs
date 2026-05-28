@@ -302,7 +302,7 @@ pub fn fetch_emails(session: &mut ImapSession, app: &mut App, items_per_page: u3
     };
 
     if !sequence.is_empty() {
-        if let Ok(messages) = session.fetch(&sequence, "(UID ENVELOPE FLAGS RFC822.SIZE)") {
+        if let Ok(messages) = session.fetch(&sequence, "(UID ENVELOPE FLAGS RFC822.SIZE INTERNALDATE)") {
             for message in messages.iter() {
                 let size = message.size.unwrap_or(0);
                 let mut is_seen = false; let mut is_deleted = false;
@@ -400,18 +400,17 @@ pub fn fetch_emails(session: &mut ImapSession, app: &mut App, items_per_page: u3
         }
 
         // if sort_newest_first {
-        //     app.page_emails.sort_by(|a, b| b.id.cmp(&a.id));
+        //     // Sort by timestamp descending
+        //     app.page_emails.sort_by(|a, b| b.timestamp.cmp(&a.timestamp));
         // } else {
-        //     app.page_emails.sort_by(|a, b| a.id.cmp(&b.id));
+        //     // Sort by timestamp ascending
+        //     app.page_emails.sort_by(|a, b| a.timestamp.cmp(&b.timestamp));
         // }
 
-        // Replace your existing sort block with this:
         if sort_newest_first {
-            // Sort by timestamp descending
-            app.page_emails.sort_by(|a, b| b.timestamp.cmp(&a.timestamp));
+            app.page_emails.sort_by(|a, b| b.timestamp.cmp(&a.timestamp).then(b.id.cmp(&a.id)));
         } else {
-            // Sort by timestamp ascending
-            app.page_emails.sort_by(|a, b| a.timestamp.cmp(&b.timestamp));
+            app.page_emails.sort_by(|a, b| a.timestamp.cmp(&b.timestamp).then(a.id.cmp(&b.id)));
         }
 
         if let Some(idx_from_end) = app.restore_index_from_end {
