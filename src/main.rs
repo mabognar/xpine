@@ -356,7 +356,8 @@ fn main() {
         }
     }
 
-    execute!(stdout, LeaveAlternateScreen).unwrap();
+    // execute!(stdout, LeaveAlternateScreen).unwrap();
+    execute!(stdout, cursor::Show, LeaveAlternateScreen).unwrap();
     disable_raw_mode().expect("Failed to disable raw mode");
     if let Some(mut s) = session {
         let _ = s.logout();
