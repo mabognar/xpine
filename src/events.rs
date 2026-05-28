@@ -522,6 +522,34 @@ pub fn handle_event(event: Event, app: &mut App, session: &mut Option<ImapSessio
                         //         }
                         //     }
                         // }
+                        // KeyCode::Char('d') | KeyCode::Char('D') => {
+                        //     let is_outlook = app.active_account.imap_server.to_lowercase().contains("outlook") ||
+                        //         app.active_account.email.to_lowercase().contains("outlook") ||
+                        //         app.active_account.email.to_lowercase().contains("hotmail");
+                        //
+                        //     if is_outlook {
+                        //         // Outlook behavior: Toggle the 'D' flag locally without notifying the server
+                        //         if !app.page_emails.is_empty() {
+                        //             let idx = app.selected_index;
+                        //             app.page_emails[idx].is_deleted = !app.page_emails[idx].is_deleted;
+                        //         }
+                        //     } else {
+                        //         // Original Gmail behavior: Send command to server immediately
+                        //         if let Some(sess) = session {
+                        //             if !app.page_emails.is_empty() {
+                        //                 let idx = app.selected_index;
+                        //                 let uid = app.page_emails[idx].uid.to_string();
+                        //                 let is_deleted = app.page_emails[idx].is_deleted;
+                        //                 let op = if is_deleted { "-FLAGS (\\Deleted)" } else { "+FLAGS (\\Deleted)" };
+                        //
+                        //                 if sess.uid_store(&uid, op).is_ok() {
+                        //                     app.page_emails[idx].is_deleted = !is_deleted;
+                        //                 }
+                        //             }
+                        //         }
+                        //     }
+                        // }
+
                         KeyCode::Char('d') | KeyCode::Char('D') => {
                             let is_outlook = app.active_account.imap_server.to_lowercase().contains("outlook") ||
                                 app.active_account.email.to_lowercase().contains("outlook") ||
@@ -534,21 +562,14 @@ pub fn handle_event(event: Event, app: &mut App, session: &mut Option<ImapSessio
                                     app.page_emails[idx].is_deleted = !app.page_emails[idx].is_deleted;
                                 }
                             } else {
-                                // Original Gmail behavior: Send command to server immediately
+                                // Restored Gmail behavior: Quietly send the flag to the server so it persists,
+                                // but DOES NOT auto-expunge on exit.
                                 if let Some(sess) = session {
-                                    if !app.page_emails.is_empty() {
-                                        let idx = app.selected_index;
-                                        let uid = app.page_emails[idx].uid.to_string();
-                                        let is_deleted = app.page_emails[idx].is_deleted;
-                                        let op = if is_deleted { "-FLAGS (\\Deleted)" } else { "+FLAGS (\\Deleted)" };
-
-                                        if sess.uid_store(&uid, op).is_ok() {
-                                            app.page_emails[idx].is_deleted = !is_deleted;
-                                        }
-                                    }
+                                    net::toggle_imap_flag(sess, &mut app.page_emails, app.selected_index, "\\Deleted");
                                 }
                             }
                         }
+
                         // KeyCode::Char('x') | KeyCode::Char('X') => {
                         //     if !app.page_emails.is_empty() {
                         //         if let Some(sess) = session {
