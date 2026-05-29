@@ -35,13 +35,12 @@ fn main() {
     let mut stdout = stdout();
     execute!(stdout, EnterAlternateScreen).unwrap();
 
-    if let Err(e) = crate::theme::ensure_themes_unpacked() {
+    if let Err(e) = theme::ensure_themes_unpacked() {
         eprintln!("Warning: Failed to unpack default asset themes to disk: {}", e);
     }
 
     let mut settings_provider = Editor::new(None);
-    // let mut session = net::connect(&app.active_account).unwrap();
-    // In main.rs, ensure this is how you initialize the session:
+
     let mut session = if app.accounts.is_empty() {
         None
     } else {
@@ -53,7 +52,11 @@ fn main() {
             if !app.accounts.is_empty() {
                 app.active_account = app.accounts[app.current_account_idx].clone();
                 if let Some(mut s) = session.take() {
-                    let _ = s.logout();
+                    // FIX: Wrapped logout
+                    match s {
+                        net::MailSession::Imap(mut imap_sess) => { let _ = imap_sess.logout(); }
+                        net::MailSession::Graph { .. } => {}
+                    }
                 }
                 session = net::connect(&mut app.active_account).ok();
                 app.needs_fetch = true;
@@ -98,11 +101,8 @@ fn main() {
             reader.buffer = Rope::from_str(&wrapped_text);
             reader.current_theme = settings_provider.current_theme.clone();
 
-            // Disable the character-based soft-wrap in the UI
-            // so our clean word-wrap is preserved.
             reader.soft_wrap = false;
 
-            // Set the status message if an HTML body is present
             if let Some(html) = html_body {
                 if !html.is_empty() {
                     reader.set_status("Email contains HTML. Type 'B' to view in browser".to_string());
@@ -137,7 +137,7 @@ fn main() {
                     queue!(
                         stdout,
                         cursor::MoveTo(0, (i + 1) as u16),
-                        SetBackgroundColor(r_colors.menu_bg), // Ensure background is set here
+                        SetBackgroundColor(r_colors.menu_bg),
                         SetForegroundColor(r_colors.accent),
                         Print(format!("{:>8}", fields[i])),
                         SetForegroundColor(r_colors.fg),
@@ -147,7 +147,6 @@ fn main() {
                     ).unwrap();
                 }
 
-                // Apply the same logic to the "Attach" section
                 queue!(
                     stdout,
                     cursor::MoveTo(0, 5),
@@ -202,7 +201,7 @@ fn main() {
                         if !key.modifiers.contains(event::KeyModifiers::CONTROL) && !key.modifiers.contains(event::KeyModifiers::ALT) {
 
                             if key.code == event::KeyCode::Char('a') || key.code == event::KeyCode::Char('A') {
-                                if let Ok(added) = crate::address::add_to_address_book(&email_from) {
+                                if let Ok(added) = address::add_to_address_book(&email_from) {
                                     if added {
                                         reader.set_status(format!("Added {} to address book.", email_from));
                                     } else {
@@ -213,11 +212,17 @@ fn main() {
                             }
                             if key.code == event::KeyCode::Char('r') || key.code == event::KeyCode::Char('R') {
                                 if let Some(ref mut sess) = session {
-                                    let _ = sess.store(&fetch_seq, "+FLAGS (\\Answered)");
+                                    // FIX: Wrapped store
+                                    match sess {
+                                        net::MailSession::Imap(imap_sess) => {
+                                            let _ = imap_sess.store(&fetch_seq, "+FLAGS (\\Answered)");
+                                        }
+                                        net::MailSession::Graph { .. } => {}
+                                    }
                                 }
                                 app.page_emails[app.selected_index].is_answered = true;
 
-                                let reply_body = crate::mail::format_reply_text(&text_body);
+                                let reply_body = mail::format_reply_text(&text_body);
 
                                 let sub = if email_subject.to_lowercase().starts_with("re:") {
                                     email_subject.clone()
@@ -225,12 +230,11 @@ fn main() {
                                     format!("Re: {}", email_subject)
                                 };
 
-                                // 2. Pass Some(&reply_body) instead of None
                                 if let Some(s) = compose::compose_email(
                                     &app.active_account,
                                     Some(&reply_to),
                                     Some(&sub),
-                                    Some(&reply_body), // The formatted body with > and blank lines
+                                    Some(&reply_body),
                                     &mut reader.current_theme
                                 ) {
                                     reader.set_status(s);
@@ -327,13 +331,12 @@ fn main() {
             }
             settings_provider.current_theme = reader.current_theme;
 
-            // Only revert to List mode if we didn't just intentionally switch to the FileBrowser
             if matches!(app.mode, AppMode::EmailRead { .. }) {
                 app.mode = AppMode::EmailList;
             }
             continue;
         }
-        
+
         ui::draw_app(&mut stdout, &app, &settings_provider).unwrap();
 
         let mut timeout = if app.last_fetch_time.elapsed() >= app.auto_refresh_interval { Duration::from_millis(1) } else { app.auto_refresh_interval - app.last_fetch_time.elapsed() };
@@ -356,11 +359,16 @@ fn main() {
         }
     }
 
-    // execute!(stdout, LeaveAlternateScreen).unwrap();
+    // FIX: Restored cursor::Show from earlier
     execute!(stdout, cursor::Show, LeaveAlternateScreen).unwrap();
     disable_raw_mode().expect("Failed to disable raw mode");
+
+    // FIX: Wrapped logout
     if let Some(mut s) = session {
-        let _ = s.logout();
+        match s {
+            net::MailSession::Imap(mut imap_sess) => { let _ = imap_sess.logout(); }
+            net::MailSession::Graph { .. } => {}
+        }
     }
 }
 
@@ -369,14 +377,12 @@ fn wrap_email_body(text: &str, width: usize) -> String {
 
     for line in text.lines() {
         if line.chars().count() <= width {
-            // Keep short lines entirely untouched to preserve formatting
             result.push_str(line);
             result.push('\n');
         } else {
             let mut current_width = 0;
             let mut is_first_word = true;
 
-            // split(' ') ensures we don't collapse multiple consecutive spaces
             for word in line.split(' ') {
                 let word_len = word.chars().count();
 
@@ -396,11 +402,9 @@ fn wrap_email_body(text: &str, width: usize) -> String {
         }
     }
 
-    // Clean up trailing newline if the original text didn't have one
     if !text.ends_with('\n') && result.ends_with('\n') {
         result.pop();
     }
 
     result
 }
-

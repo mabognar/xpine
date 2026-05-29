@@ -1,5 +1,5 @@
 pub struct EmailMeta {
-    pub id: u32,
+    pub id: String,
     pub uid: u32,
     pub timestamp: i64,
     pub subject: String,

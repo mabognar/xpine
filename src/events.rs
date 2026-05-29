@@ -1,5 +1,5 @@
 use crate::app::{App, AppMode};
-use crate::net::{self, ImapSession};
+use crate::net::{self, MailSession};
 use crate::compose::compose_email;
 use crate::editor::Editor;
 use crate::config::ConfigExt;
@@ -9,8 +9,8 @@ use crossterm::execute;
 use crossterm::terminal::size as term_size;
 use crate::prompt::PromptExt;
 
-fn check_and_expunge_outlook(app: &mut App, session: &mut Option<ImapSession>, theme_provider: &mut Editor) {
-    // Determine if the current account is an Outlook account
+// Restored from earlier today to handle Outlook/Hotmail auto-expunging
+fn check_and_expunge_outlook(app: &mut App, session: &mut Option<net::MailSession>, theme_provider: &mut Editor) {
     let is_outlook = app.active_account.imap_server.to_lowercase().contains("outlook") ||
         app.active_account.email.to_lowercase().contains("outlook") ||
         app.active_account.email.to_lowercase().contains("hotmail");
@@ -19,28 +19,29 @@ fn check_and_expunge_outlook(app: &mut App, session: &mut Option<ImapSession>, t
         return;
     }
 
-    // Check if there are any locally marked deletions
     let has_pending = app.page_emails.iter().any(|e| e.is_deleted);
     if !has_pending {
         return;
     }
 
-    // If pending deletions exist, prompt the user
     if let Ok(Some(yes)) = theme_provider.prompt_yn("Expunge emails marked for deletion?") {
         if yes {
             if let Some(sess) = session {
-                // Send the Delete flags to the server
-                for email in &app.page_emails {
-                    if email.is_deleted {
-                        let _ = sess.uid_store(&email.uid.to_string(), "+FLAGS (\\Deleted)");
+                match sess {
+                    net::MailSession::Imap(imap_sess) => {
+                        for email in &app.page_emails {
+                            if email.is_deleted {
+                                let _ = imap_sess.uid_store(&email.uid.to_string(), "+FLAGS (\\Deleted)");
+                            }
+                        }
                     }
+                    net::MailSession::Graph { .. } => {}
                 }
-                // Expunge to completely remove them from the list
+
                 let _ = net::expunge_deleted(sess, app);
                 app.needs_fetch = true;
             }
         } else {
-            // If they answer No, just remove the local 'D' mark
             for email in &mut app.page_emails {
                 email.is_deleted = false;
             }
@@ -48,7 +49,7 @@ fn check_and_expunge_outlook(app: &mut App, session: &mut Option<ImapSession>, t
     }
 }
 
-pub fn handle_event(event: Event, app: &mut App, session: &mut Option<ImapSession>, theme_provider: &mut Editor, stdout: &mut std::io::Stdout) -> bool {
+pub fn handle_event(event: Event, app: &mut App, session: &mut Option<MailSession>, theme_provider: &mut Editor, stdout: &mut std::io::Stdout) -> bool {
     let mut quit = false;
 
     if let Event::Key(k) = event {
@@ -145,7 +146,6 @@ pub fn handle_event(event: Event, app: &mut App, session: &mut Option<ImapSessio
                             if let Ok(Some(email)) = theme_provider.prompt("Email: ", false) {
                                 if let Ok(Some(password)) = theme_provider.prompt("Password: ", false) {
 
-                                    // Look up suggestions based on email domain
                                     let defaults = crate::config::get_provider_defaults(&email);
 
                                     let default_imap = defaults.as_ref().map(|d| d.imap).unwrap_or("imap.");
@@ -159,8 +159,8 @@ pub fn handle_event(event: Event, app: &mut App, session: &mut Option<ImapSessio
 
                                                 let new_acc = crate::config::Account {
                                                     email: email.trim().to_string(),
-                                                    password: Some(password.trim().to_string()), // Wrapped in Some()
-                                                    client_id: None,                             // Added OAuth fields
+                                                    password: Some(password.trim().to_string()),
+                                                    client_id: None,
                                                     client_secret: None,
                                                     refresh_token: None,
                                                     imap_server: imap_server.trim().to_string(),
@@ -171,12 +171,10 @@ pub fn handle_event(event: Event, app: &mut App, session: &mut Option<ImapSessio
                                                 app.accounts.push(new_acc);
                                                 crate::config::save_config(&app.accounts);
 
-                                                // --- Make the account active immediately ---
                                                 app.current_account_idx = app.accounts.len() - 1;
                                                 app.active_account = app.accounts[app.current_account_idx].clone();
                                                 app.needs_reconnect = true;
 
-                                                // Reset viewing state
                                                 app.current_folder = "INBOX".to_string();
                                                 app.current_page = 0;
                                                 app.restore_index_from_end = Some(0);
@@ -191,26 +189,20 @@ pub fn handle_event(event: Event, app: &mut App, session: &mut Option<ImapSessio
                             if !app.accounts.is_empty() {
                                 let mut acc = app.accounts[*selected_idx].clone();
 
-                                // Fallbacks in case the struct fields are empty
                                 let client_id = acc.client_id.as_deref().unwrap_or("YOUR_MS_CLIENT_ID");
                                 let client_secret = acc.client_secret.as_deref().unwrap_or("YOUR_MS_CLIENT_SECRET");
 
-                                // 1. Suspend the alternate screen
                                 let _ = crossterm::terminal::disable_raw_mode();
                                 let _ = crossterm::execute!(std::io::stdout(), crossterm::terminal::LeaveAlternateScreen);
 
-                                // --- ADD THESE DEBUG LINES ---
                                 println!("\r\n===== DEBUG INFO =====");
                                 println!("Account Email: {}", acc.email);
                                 println!("Client ID being sent: '{}'", client_id);
                                 println!("Client Secret being sent: '{}'", client_secret);
                                 println!("======================\r\n");
-                                // -----------------------------
 
-                                // 2. Run the blocking auth flow and CAPTURE the result
                                 let auth_result = crate::net::run_microsoft_auth_flow(client_id, client_secret);
 
-                                // 3. Handle the result BEFORE restoring the screen
                                 match auth_result {
                                     Ok(tokens) => {
                                         if let Some(refresh) = tokens.refresh_token {
@@ -222,12 +214,10 @@ pub fn handle_event(event: Event, app: &mut App, session: &mut Option<ImapSessio
                                         }
                                     },
                                     Err(e) => {
-                                        // Print the error directly to the standard terminal so it's impossible to miss
                                         println!("\r\nAuthentication Failed!");
                                         println!("Error details: {}\r\n", e);
                                         println!("Press ENTER to return to xpine...");
 
-                                        // Block and wait for the user to hit Enter
                                         let mut input = String::new();
                                         let _ = std::io::stdin().read_line(&mut input);
 
@@ -235,7 +225,6 @@ pub fn handle_event(event: Event, app: &mut App, session: &mut Option<ImapSessio
                                     }
                                 }
 
-                                // 4. NOW restore the UI state
                                 let _ = crossterm::terminal::enable_raw_mode();
                                 let _ = crossterm::execute!(
                                     std::io::stdout(),
@@ -249,8 +238,6 @@ pub fn handle_event(event: Event, app: &mut App, session: &mut Option<ImapSessio
                             if !app.accounts.is_empty() {
                                 let acc = &app.accounts[*selected_idx].clone();
                                 if let Ok(Some(email)) = theme_provider.prompt_edit("Email: ", &acc.email) {
-
-                                    // Extract the password string safely, defaulting to empty if it's an OAuth account
                                     let current_pass = acc.password.clone().unwrap_or_default();
 
                                     if let Ok(Some(password)) = theme_provider.prompt_edit("Password: ", &current_pass) {
@@ -259,13 +246,10 @@ pub fn handle_event(event: Event, app: &mut App, session: &mut Option<ImapSessio
                                                 if let Ok(Some(smtp_server)) = theme_provider.prompt_edit("SMTP Server: ", &acc.smtp_server) {
                                                     app.accounts[*selected_idx] = crate::config::Account {
                                                         email: email.trim().to_string(),
-                                                        password: Some(password.trim().to_string()), // Wrapped in Some()
-
-                                                        // Preserve any existing OAuth tokens so they aren't lost on edit
+                                                        password: Some(password.trim().to_string()),
                                                         client_id: acc.client_id.clone(),
                                                         client_secret: acc.client_secret.clone(),
                                                         refresh_token: acc.refresh_token.clone(),
-
                                                         imap_server: imap_server.trim().to_string(),
                                                         imap_port: imap_port.trim().parse().unwrap_or(993),
                                                         smtp_server: smtp_server.trim().to_string(),
@@ -330,7 +314,6 @@ pub fn handle_event(event: Event, app: &mut App, session: &mut Option<ImapSessio
                             }
                         }
                         KeyCode::Char('<') | KeyCode::Left => {
-                            check_and_expunge_outlook(app, session, theme_provider);
                             if app.search_query.is_some() {
                                 app.search_query = None;
                                 app.current_page = 0;
@@ -338,8 +321,13 @@ pub fn handle_event(event: Event, app: &mut App, session: &mut Option<ImapSessio
                             } else {
                                 let mut fetched = Vec::new();
                                 if let Some(sess) = session {
-                                    if let Ok(mailboxes) = sess.list(Some(""), Some("*")) {
-                                        for mb in mailboxes.iter() { fetched.push(mb.name().to_string()); }
+                                    match sess {
+                                        net::MailSession::Imap(imap_sess) => {
+                                            if let Ok(mailboxes) = imap_sess.list(Some(""), Some("*")) {
+                                                for mb in mailboxes.iter() { fetched.push(mb.name().to_string()); }
+                                            }
+                                        }
+                                        net::MailSession::Graph { .. } => {}
                                     }
                                 }
                                 if fetched.is_empty() { fetched.push("INBOX".to_string()); }
@@ -366,7 +354,6 @@ pub fn handle_event(event: Event, app: &mut App, session: &mut Option<ImapSessio
                         KeyCode::Char('s') | KeyCode::Char('S') => {
                             let current_query = app.search_query.clone().unwrap_or_default();
 
-                            // 1. Prompt for input
                             if let Ok(Some(query)) = theme_provider.prompt_edit("Search:", &current_query) {
                                 let trimmed = query.trim();
 
@@ -387,19 +374,10 @@ pub fn handle_event(event: Event, app: &mut App, session: &mut Option<ImapSessio
                                 if let Ok(Some(true)) = theme_provider.prompt_yn("Move to Junk/Spam folder?") {
                                     if let Some(sess) = session {
                                         let seq_id = app.page_emails[app.selected_index].id.to_string();
-
-                                        // Logic to set the folder name based on the provider
-                                        let junk_folder = if app.active_account.email.contains("@gmail.com") {
-                                            "[Gmail]/Spam"
-                                        } else {
-                                            "Junk"
-                                        };
+                                        let junk_folder = if app.active_account.email.contains("@gmail.com") { "[Gmail]/Spam" } else { "Junk" };
 
                                         match net::move_to_folder(sess, &seq_id, junk_folder) {
-                                            Ok(_) => {
-                                                app.update_status(format!("Moved to {}.", junk_folder));
-                                                app.needs_fetch = true;
-                                            },
+                                            Ok(_) => { app.update_status(format!("Moved to {}.", junk_folder)); app.needs_fetch = true; },
                                             Err(e) => app.update_status(format!("Error: {}", e)),
                                         }
                                     }
@@ -413,10 +391,7 @@ pub fn handle_event(event: Event, app: &mut App, session: &mut Option<ImapSessio
                                         let seq_id = app.page_emails[app.selected_index].id.to_string();
 
                                         match net::move_to_folder(sess, &seq_id, "INBOX") {
-                                            Ok(_) => {
-                                                app.update_status(format!("Moved to {}.", "INBOX"));
-                                                app.needs_fetch = true;
-                                            },
+                                            Ok(_) => { app.update_status("Moved to INBOX.".to_string()); app.needs_fetch = true; },
                                             Err(e) => app.update_status(format!("Error: {}", e)),
                                         }
                                     }
@@ -424,10 +399,10 @@ pub fn handle_event(event: Event, app: &mut App, session: &mut Option<ImapSessio
                             }
                         }
                         KeyCode::Char(c) if c.is_ascii_digit() => {
-                            check_and_expunge_outlook(app, session, theme_provider);
                             if let Some(digit) = c.to_digit(10) {
                                 let idx = (digit as usize).saturating_sub(1);
                                 if idx < app.accounts.len() && idx != app.current_account_idx {
+                                    check_and_expunge_outlook(app, session, theme_provider);
                                     app.current_account_idx = idx;
                                     app.needs_reconnect = true;
                                     app.restore_index_from_end = Some(0);
@@ -463,183 +438,102 @@ pub fn handle_event(event: Event, app: &mut App, session: &mut Option<ImapSessio
                         }
                         KeyCode::PageUp | KeyCode::Char('y') | KeyCode::Char('Y') | KeyCode::Char('-') => {
                             if theme_provider.sort_newest_first {
-                                if app.current_page > 0 {
-                                    app.current_page -= 1;
-                                    app.needs_fetch = true;
-                                    app.selected_index = 0;
-                                } else {
-                                    app.selected_index = 0;
-                                }
+                                if app.current_page > 0 { app.current_page -= 1; app.needs_fetch = true; app.selected_index = 0; }
+                                else { app.selected_index = 0; }
                             } else {
-                                if app.current_page + 1 < total_pages {
-                                    app.current_page += 1;
-                                    app.needs_fetch = true;
-                                    app.selected_index = 0;
-                                } else {
-                                    app.selected_index = 0;
-                                }
+                                if app.current_page + 1 < total_pages { app.current_page += 1; app.needs_fetch = true; app.selected_index = 0; }
+                                else { app.selected_index = 0; }
                             }
                         }
                         KeyCode::PageDown | KeyCode::Char('v') | KeyCode::Char('V') | KeyCode::Char(' ') => {
                             if theme_provider.sort_newest_first {
-                                if app.current_page + 1 < total_pages {
-                                    app.current_page += 1;
-                                    app.needs_fetch = true;
-                                    app.selected_index = 0;
-                                } else {
-                                    app.selected_index = app.page_emails.len().saturating_sub(1);
-                                }
+                                if app.current_page + 1 < total_pages { app.current_page += 1; app.needs_fetch = true; app.selected_index = 0; }
+                                else { app.selected_index = app.page_emails.len().saturating_sub(1); }
                             } else {
-                                if app.current_page > 0 {
-                                    app.current_page -= 1;
-                                    app.needs_fetch = true;
-                                    app.selected_index = 0;
-                                } else {
-                                    app.selected_index = app.page_emails.len().saturating_sub(1);
-                                }
+                                if app.current_page > 0 { app.current_page -= 1; app.needs_fetch = true; app.selected_index = 0; }
+                                else { app.selected_index = app.page_emails.len().saturating_sub(1); }
                             }
                         }
-                        KeyCode::Char('m') | KeyCode::Char('M') => app.mode = AppMode::MainMenu { selected_idx: 0 },
-                        KeyCode::Char('o') | KeyCode::Char('O') => {
-                            app.menu_page = if app.menu_page == 1 { 2 } else { 1 };
-                        }
+                        KeyCode::Char('m') | KeyCode::Char('M') => {
+                            check_and_expunge_outlook(app, session, theme_provider);
+                            app.mode = AppMode::MainMenu { selected_idx: 0 };
+                        },
+                        KeyCode::Char('o') | KeyCode::Char('O') => { app.menu_page = if app.menu_page == 1 { 2 } else { 1 }; }
                         KeyCode::Char('*') => {
-                            if let Some(sess) = session {
-                                net::toggle_imap_flag(sess, &mut app.page_emails, app.selected_index, "\\Flagged");
-                            }
+                            if let Some(sess) = session { net::toggle_imap_flag(sess, &mut app.page_emails, app.selected_index, "\\Flagged"); }
                         }
-                        // KeyCode::Char('d') | KeyCode::Char('D') => {
-                        //     if !app.page_emails.is_empty() {
-                        //         if let Some(sess) = session {
-                        //             // This now instantly syncs to the server via the updated net.rs logic
-                        //             net::toggle_imap_flag(sess, &mut app.page_emails, app.selected_index, "\\Deleted");
-                        //         }
-                        //
-                        //         let (_, rows) = term_size().unwrap_or((80, 24));
-                        //         let max_visible = app.page_emails.len().min(rows.saturating_sub(3) as usize);
-                        //         if app.selected_index + 1 < max_visible {
-                        //             app.selected_index += 1;
-                        //         }
-                        //     }
-                        // }
-                        // KeyCode::Char('d') | KeyCode::Char('D') => {
-                        //     let is_outlook = app.active_account.imap_server.to_lowercase().contains("outlook") ||
-                        //         app.active_account.email.to_lowercase().contains("outlook") ||
-                        //         app.active_account.email.to_lowercase().contains("hotmail");
-                        //
-                        //     if is_outlook {
-                        //         // Outlook behavior: Toggle the 'D' flag locally without notifying the server
-                        //         if !app.page_emails.is_empty() {
-                        //             let idx = app.selected_index;
-                        //             app.page_emails[idx].is_deleted = !app.page_emails[idx].is_deleted;
-                        //         }
-                        //     } else {
-                        //         // Original Gmail behavior: Send command to server immediately
-                        //         if let Some(sess) = session {
-                        //             if !app.page_emails.is_empty() {
-                        //                 let idx = app.selected_index;
-                        //                 let uid = app.page_emails[idx].uid.to_string();
-                        //                 let is_deleted = app.page_emails[idx].is_deleted;
-                        //                 let op = if is_deleted { "-FLAGS (\\Deleted)" } else { "+FLAGS (\\Deleted)" };
-                        //
-                        //                 if sess.uid_store(&uid, op).is_ok() {
-                        //                     app.page_emails[idx].is_deleted = !is_deleted;
-                        //                 }
-                        //             }
-                        //         }
-                        //     }
-                        // }
-
                         KeyCode::Char('d') | KeyCode::Char('D') => {
                             let is_outlook = app.active_account.imap_server.to_lowercase().contains("outlook") ||
                                 app.active_account.email.to_lowercase().contains("outlook") ||
                                 app.active_account.email.to_lowercase().contains("hotmail");
 
                             if is_outlook {
-                                // Outlook behavior: Toggle the 'D' flag locally without notifying the server
                                 if !app.page_emails.is_empty() {
                                     let idx = app.selected_index;
                                     app.page_emails[idx].is_deleted = !app.page_emails[idx].is_deleted;
                                 }
                             } else {
-                                // Restored Gmail behavior: Quietly send the flag to the server so it persists,
-                                // but DOES NOT auto-expunge on exit.
                                 if let Some(sess) = session {
-                                    net::toggle_imap_flag(sess, &mut app.page_emails, app.selected_index, "\\Deleted");
+                                    if !app.page_emails.is_empty() {
+                                        net::toggle_imap_flag(sess, &mut app.page_emails, app.selected_index, "\\Deleted");
+                                    }
                                 }
                             }
 
                             let (_, rows) = term_size().unwrap_or((80, 24));
                             let max_visible = app.page_emails.len().min(rows.saturating_sub(3) as usize);
-                            if app.selected_index + 1 < max_visible {
-                                app.selected_index += 1;
-                            }
+                            if app.selected_index + 1 < max_visible { app.selected_index += 1; }
                         }
-
-                        // KeyCode::Char('x') | KeyCode::Char('X') => {
-                        //     if !app.page_emails.is_empty() {
-                        //         if let Some(sess) = session {
-                        //             // Check the local state to see if anything is marked
-                        //             let has_deleted = app.page_emails.iter().any(|e| e.is_deleted);
-                        //
-                        //             if !has_deleted {
-                        //                 app.update_status("Nothing to expunge - no messages marked for deletion".to_string());
-                        //                 app.list_status_duration = std::time::Duration::from_secs(3);
-                        //             } else {
-                        //                 if let Ok(Some(true)) = theme_provider.prompt_yn("Expunge?") {
-                        //
-                        //                     // Call the new expunge function
-                        //                     if net::expunge_deleted(sess, app).is_ok() {
-                        //                         // Maintain pagination offset after emails are removed
-                        //                         let offset = if theme_provider.sort_newest_first {
-                        //                             app.current_page * items_per_page + app.selected_index as u32
-                        //                         } else {
-                        //                             app.current_page * items_per_page + app.page_emails.len().saturating_sub(1).saturating_sub(app.selected_index) as u32
-                        //                         };
-                        //
-                        //                         // Reselect the folder to update the total count and adjust the page
-                        //                         if let Ok(m) = sess.select(&app.current_folder) {
-                        //                             app.total_messages = m.exists;
-                        //                             let safe_offset = offset.min(app.total_messages.saturating_sub(1));
-                        //                             app.current_page = safe_offset / items_per_page;
-                        //                             app.restore_index_from_end = Some(safe_offset % items_per_page);
-                        //                         }
-                        //                     } else {
-                        //                         app.update_status("Expunge failed.".to_string());
-                        //                         app.list_status_duration = std::time::Duration::from_secs(3);
-                        //                     }
-                        //                 }
-                        //             }
-                        //         }
-                        //     }
-                        // }
                         KeyCode::Char('x') | KeyCode::Char('X') => {
-                            if let Some(sess) = session {
-                                let is_outlook = app.active_account.imap_server.to_lowercase().contains("outlook") ||
-                                    app.active_account.email.to_lowercase().contains("outlook") ||
-                                    app.active_account.email.to_lowercase().contains("hotmail");
+                            if !app.page_emails.is_empty() {
+                                if let Some(sess) = session {
+                                    let has_deleted = app.page_emails.iter().any(|e| e.is_deleted);
 
-                                // If it's Outlook, send the delayed +FLAGS (\Deleted) commands now
-                                if is_outlook {
-                                    for email in &app.page_emails {
-                                        if email.is_deleted {
-                                            let _ = sess.uid_store(&email.uid.to_string(), "+FLAGS (\\Deleted)");
+                                    if !has_deleted {
+                                        app.update_status("Nothing to expunge - no messages marked for deletion".to_string());
+                                        app.list_status_duration = std::time::Duration::from_secs(3);
+                                    } else {
+                                        let is_outlook = app.active_account.imap_server.to_lowercase().contains("outlook") ||
+                                            app.active_account.email.to_lowercase().contains("outlook") ||
+                                            app.active_account.email.to_lowercase().contains("hotmail");
+
+                                        if is_outlook {
+                                            match sess {
+                                                net::MailSession::Imap(imap_sess) => {
+                                                    for email in &app.page_emails {
+                                                        if email.is_deleted {
+                                                            let _ = imap_sess.uid_store(&email.uid.to_string(), "+FLAGS (\\Deleted)");
+                                                        }
+                                                    }
+                                                }
+                                                net::MailSession::Graph { .. } => {}
+                                            }
                                         }
-                                    }
-                                }
 
-                                // Proceed with your existing expunge logic
-                                if let Ok(Some(true)) = theme_provider.prompt_yn("Expunge?") {
-                                    if net::expunge_deleted(sess, app).is_ok() {
-                                        // Maintain pagination offset after emails are removed
-                                        let offset = if theme_provider.sort_newest_first {
-                                            app.current_page * (app.page_emails.len() as u32) + app.selected_index as u32
-                                        } else {
-                                            app.current_page * (app.page_emails.len() as u32) + app.selected_index as u32
-                                        };
+                                        if let Ok(Some(true)) = theme_provider.prompt_yn("Expunge?") {
+                                            if net::expunge_deleted(sess, app).is_ok() {
+                                                let offset = if theme_provider.sort_newest_first {
+                                                    app.current_page * items_per_page + app.selected_index as u32
+                                                } else {
+                                                    app.current_page * items_per_page + app.page_emails.len().saturating_sub(1).saturating_sub(app.selected_index) as u32
+                                                };
 
-                                        app.needs_fetch = true;
-                                        app.restore_index_from_end = Some(offset);
+                                                match sess {
+                                                    net::MailSession::Imap(imap_sess) => {
+                                                        if let Ok(m) = imap_sess.select(&app.current_folder) {
+                                                            app.total_messages = m.exists;
+                                                            let safe_offset = offset.min(app.total_messages.saturating_sub(1));
+                                                            app.current_page = safe_offset / items_per_page;
+                                                            app.restore_index_from_end = Some(safe_offset % items_per_page);
+                                                        }
+                                                    }
+                                                    net::MailSession::Graph { .. } => {}
+                                                }
+                                            } else {
+                                                app.update_status("Expunge failed.".to_string());
+                                                app.list_status_duration = std::time::Duration::from_secs(3);
+                                            }
+                                        }
                                     }
                                 }
                             }
@@ -648,12 +542,9 @@ pub fn handle_event(event: Event, app: &mut App, session: &mut Option<ImapSessio
                             if let Some(sess) = session {
                                 net::toggle_imap_flag(sess, &mut app.page_emails, app.selected_index, "\\Seen");
                             }
-
                             let (_, rows) = term_size().unwrap_or((80, 24));
                             let max_visible = app.page_emails.len().min(rows.saturating_sub(3) as usize);
-                            if app.selected_index + 1 < max_visible {
-                                app.selected_index += 1;
-                            }
+                            if app.selected_index + 1 < max_visible { app.selected_index += 1; }
                         }
                         KeyCode::Char('c') | KeyCode::Char('C') => {
                             if !app.accounts.is_empty() {
@@ -681,15 +572,18 @@ pub fn handle_event(event: Event, app: &mut App, session: &mut Option<ImapSessio
                                             app.update_status(s);
                                         }
                                     } else {
-                                        let _ = sess.store(&fetch_seq, "+FLAGS (\\Answered)");
+                                        match sess {
+                                            net::MailSession::Imap(imap_sess) => {
+                                                let _ = imap_sess.store(&fetch_seq, "+FLAGS (\\Answered)");
+                                            }
+                                            net::MailSession::Graph { .. } => {}
+                                        }
+
                                         app.page_emails[app.selected_index].is_answered = true;
 
                                         let sub = if subject.to_lowercase().starts_with("re:") { subject.clone() } else { format!("Re: {}", subject) };
-
-                                        // 1. Format the reply text using our new function
                                         let reply_body = crate::mail::format_reply_text(&t_body);
 
-                                        // 2. Pass Some(&reply_body) instead of None to the composer
                                         if let Some(s) = compose_email(&app.active_account, Some(&reply_to), Some(&sub), Some(&reply_body), &mut theme_provider.current_theme) {
                                             app.update_status(s);
                                         }
@@ -704,7 +598,12 @@ pub fn handle_event(event: Event, app: &mut App, session: &mut Option<ImapSessio
                                     let (t_body, h_body, atts) = net::fetch_email_body(sess, &fetch_seq);
 
                                     if !app.page_emails[app.selected_index].is_read {
-                                        let _ = sess.store(&fetch_seq, "+FLAGS (\\Seen)");
+                                        match sess {
+                                            net::MailSession::Imap(imap_sess) => {
+                                                let _ = imap_sess.store(&fetch_seq, "+FLAGS (\\Seen)");
+                                            }
+                                            net::MailSession::Graph { .. } => {}
+                                        }
                                         app.page_emails[app.selected_index].is_read = true;
                                     }
 
@@ -712,33 +611,25 @@ pub fn handle_event(event: Event, app: &mut App, session: &mut Option<ImapSessio
                                 }
                             }
                         }
-                        KeyCode::Char('q') | KeyCode::Esc => quit = true,
+                        KeyCode::Char('q') | KeyCode::Esc => {
+                            check_and_expunge_outlook(app, session, theme_provider);
+                            quit = true;
+                        },
                         _ => {}
                     }
                 }
 
                 AppMode::FolderList { step, selected_idx, folders } => {
                     let items_count = if *step == 0 { app.accounts.len() } else { folders.len() };
-
                     let (_, rows) = term_size().unwrap_or((80, 24));
                     let items_per_page = (rows.saturating_sub(3) as usize).max(1);
 
                     match k.code {
-                        KeyCode::Up | KeyCode::Char('p') | KeyCode::Char('P') => {
-                            *selected_idx = selected_idx.saturating_sub(1);
-                        }
-                        KeyCode::Down | KeyCode::Char('n') | KeyCode::Char('N') => {
-                            *selected_idx = (*selected_idx + 1).min(items_count.saturating_sub(1));
-                        }
-                        KeyCode::PageUp | KeyCode::Char('y') | KeyCode::Char('Y') => {
-                            *selected_idx = selected_idx.saturating_sub(items_per_page);
-                        }
-                        KeyCode::PageDown | KeyCode::Char('v') | KeyCode::Char('V') => {
-                            *selected_idx = (*selected_idx + items_per_page).min(items_count.saturating_sub(1));
-                        }
-                        KeyCode::Char('m') | KeyCode::Char('M') => {
-                            app.mode = AppMode::MainMenu { selected_idx: 2 };
-                        }
+                        KeyCode::Up | KeyCode::Char('p') | KeyCode::Char('P') => { *selected_idx = selected_idx.saturating_sub(1); }
+                        KeyCode::Down | KeyCode::Char('n') | KeyCode::Char('N') => { *selected_idx = (*selected_idx + 1).min(items_count.saturating_sub(1)); }
+                        KeyCode::PageUp | KeyCode::Char('y') | KeyCode::Char('Y') => { *selected_idx = selected_idx.saturating_sub(items_per_page); }
+                        KeyCode::PageDown | KeyCode::Char('v') | KeyCode::Char('V') => { *selected_idx = (*selected_idx + items_per_page).min(items_count.saturating_sub(1)); }
+                        KeyCode::Char('m') | KeyCode::Char('M') => { app.mode = AppMode::MainMenu { selected_idx: 2 }; }
                         KeyCode::Esc | KeyCode::Char('q') | KeyCode::Char('Q') | KeyCode::Char('<') | KeyCode::Left => {
                             if *step == 1 { *step = 0; *selected_idx = app.current_account_idx; }
                             else { app.mode = AppMode::MainMenu { selected_idx: 2 }; }
@@ -750,18 +641,25 @@ pub fn handle_event(event: Event, app: &mut App, session: &mut Option<ImapSessio
                                     app.current_account_idx = new_idx;
                                     app.active_account = app.accounts[app.current_account_idx].clone();
 
-                                    if let Some(mut s) = session.take() {
-                                        let _ = s.logout();
+                                    if let Some(s) = session.take() {
+                                        match s {
+                                            net::MailSession::Imap(mut imap_sess) => { let _ = imap_sess.logout(); }
+                                            net::MailSession::Graph { .. } => {}
+                                        }
                                     }
 
-                                    // CHANGE THIS LINE: Pass a mutable reference here
                                     *session = net::connect(&mut app.active_account).ok();
                                 }
-                                
+
                                 let mut fetched = Vec::new();
                                 if let Some(sess) = session {
-                                    if let Ok(mailboxes) = sess.list(Some(""), Some("*")) {
-                                        for mb in mailboxes.iter() { fetched.push(mb.name().to_string()); }
+                                    match sess {
+                                        net::MailSession::Imap(imap_sess) => {
+                                            if let Ok(mailboxes) = imap_sess.list(Some(""), Some("*")) {
+                                                for mb in mailboxes.iter() { fetched.push(mb.name().to_string()); }
+                                            }
+                                        }
+                                        net::MailSession::Graph { .. } => {}
                                     }
                                 }
                                 if fetched.is_empty() { fetched.push("INBOX".to_string()); }
@@ -807,9 +705,15 @@ pub fn handle_event(event: Event, app: &mut App, session: &mut Option<ImapSessio
                                 1 => app.mode = AppMode::AddressBook { selected_idx: 0, addresses: crate::address::load_address_book() },
                                 2 => app.mode = AppMode::FolderList { step: 0, selected_idx: app.current_account_idx, folders: Vec::new() },
                                 3 => app.mode = AppMode::Settings { selected_idx: 0 },
-                                4 => app.mode = AppMode::EmailAccounts { selected_idx: 0 },
+                                4 => {
+                                    check_and_expunge_outlook(app, session, theme_provider);
+                                    app.mode = AppMode::EmailAccounts { selected_idx: 0 };
+                                },
                                 5 => { app.update_status("Help not yet implemented.".to_string()); app.mode = AppMode::EmailList; },
-                                6 => quit = true,
+                                6 => {
+                                    check_and_expunge_outlook(app, session, theme_provider);
+                                    quit = true;
+                                },
                                 _ => {}
                             }
                         }
@@ -824,7 +728,10 @@ pub fn handle_event(event: Event, app: &mut App, session: &mut Option<ImapSessio
                         KeyCode::Char('f') | KeyCode::Char('F') => app.mode = AppMode::FolderList { step: 0, selected_idx: app.current_account_idx, folders: Vec::new() },
                         KeyCode::Char('s') | KeyCode::Char('S') => app.mode = AppMode::Settings { selected_idx: 0 },
                         KeyCode::Char('h') | KeyCode::Char('H') => { app.update_status("Help not yet implemented.".to_string()); app.mode = AppMode::EmailList; },
-                        KeyCode::Char('q') | KeyCode::Char('Q') => quit = true,
+                        KeyCode::Char('q') | KeyCode::Char('Q') => {
+                            check_and_expunge_outlook(app, session, theme_provider);
+                            quit = true;
+                        },
                         _ => {}
                     }
                 }
