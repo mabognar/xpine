@@ -568,6 +568,12 @@ pub fn handle_event(event: Event, app: &mut App, session: &mut Option<ImapSessio
                                     net::toggle_imap_flag(sess, &mut app.page_emails, app.selected_index, "\\Deleted");
                                 }
                             }
+
+                            let (_, rows) = term_size().unwrap_or((80, 24));
+                            let max_visible = app.page_emails.len().min(rows.saturating_sub(3) as usize);
+                            if app.selected_index + 1 < max_visible {
+                                app.selected_index += 1;
+                            }
                         }
 
                         // KeyCode::Char('x') | KeyCode::Char('X') => {
