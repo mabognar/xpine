@@ -565,6 +565,58 @@ pub fn handle_event(event: Event, app: &mut App, session: &mut Option<MailSessio
 
                                     let (t_body, _, _) = net::fetch_email_body(sess, &fetch_seq);
 
+                                    // if k.code == KeyCode::Char('f') || k.code == KeyCode::Char('F') {
+                                    //     let sub = if subject.to_lowercase().starts_with("fwd:") { subject.clone() } else { format!("Fwd: {}", subject) };
+                                    //     let fwd_body = format!("\n\n--- Forwarded message ---\nFrom: {}\nDate: {}\nSubject: {}\n\n{}", from, date, subject, t_body);
+                                    //     if let Some(s) = compose_email(&app.active_account, None, Some(&sub), Some(&fwd_body), &mut theme_provider.current_theme) {
+                                    //         app.update_status(s);
+                                    //     }
+                                    // } else {
+                                    //     // match sess {
+                                    //     //     net::MailSession::Imap(imap_sess) => {
+                                    //     //         let _ = imap_sess.store(&fetch_seq, "+FLAGS (\\Answered)");
+                                    //     //     }
+                                    //     //     net::MailSession::Graph { .. } => {}
+                                    //     // }
+                                    //     //
+                                    //     // app.page_emails[app.selected_index].is_answered = true;
+                                    //     //
+                                    //     // let sub = if subject.to_lowercase().starts_with("re:") { subject.clone() } else { format!("Re: {}", subject) };
+                                    //     // let reply_body = crate::mail::format_reply_text(&t_body);
+                                    //     //
+                                    //     // if let Some(s) = compose_email(&app.active_account, Some(&reply_to), Some(&sub), Some(&reply_body), &mut theme_provider.current_theme) {
+                                    //     //     app.update_status(s);
+                                    //     // }
+                                    //     match sess {
+                                    //         MailSession::Imap(imap_sess) => {
+                                    //             let uid = app.page_emails[app.selected_index].uid.to_string();
+                                    //             let _ = imap_sess.uid_store(&uid, "+FLAGS.SILENT (\\Answered)");
+                                    //         }
+                                    //         MailSession::Graph { .. } => {
+                                    //         }
+                                    //     }
+                                    //
+                                    //     app.page_emails[app.selected_index].is_answered = true;
+                                    //
+                                    //     let sub = if subject.to_lowercase().starts_with("re:") {
+                                    //         subject.clone()
+                                    //     } else {
+                                    //         format!("Re: {}", subject)
+                                    //     };
+                                    //
+                                    //     let reply_body = crate::mail::format_reply_text(&t_body);
+                                    //
+                                    //     if let Some(s) = compose_email(
+                                    //         &app.active_account,
+                                    //         Some(&reply_to),
+                                    //         Some(&sub),
+                                    //         Some(&reply_body),
+                                    //         &mut theme_provider.current_theme,
+                                    //     ) {
+                                    //         app.update_status(s);
+                                    //         app.needs_fetch = true;
+                                    //     }
+                                    // }
                                     if k.code == KeyCode::Char('f') || k.code == KeyCode::Char('F') {
                                         let sub = if subject.to_lowercase().starts_with("fwd:") { subject.clone() } else { format!("Fwd: {}", subject) };
                                         let fwd_body = format!("\n\n--- Forwarded message ---\nFrom: {}\nDate: {}\nSubject: {}\n\n{}", from, date, subject, t_body);
@@ -576,17 +628,45 @@ pub fn handle_event(event: Event, app: &mut App, session: &mut Option<MailSessio
                                             net::MailSession::Imap(imap_sess) => {
                                                 let _ = imap_sess.store(&fetch_seq, "+FLAGS (\\Answered)");
                                             }
-                                            net::MailSession::Graph { .. } => {}
+                                            net::MailSession::Graph { access_token } => {
+                                                let url = format!("https://graph.microsoft.com/v1.0/me/messages/{}", fetch_seq);
+                                                let client = reqwest::blocking::Client::new();
+
+                                                // Graph doesn't expose a simple isAnswered boolean.
+                                                // 0x1081 is PidTagLastVerbExecuted (104 = Reply)
+                                                // 0x1080 is PidTagIconIndex (261 = Replied to)
+                                                let body = r#"{
+                                                    "singleValueExtendedProperties": [
+                                                        { "id": "Integer 0x1081", "value": "104" },
+                                                        { "id": "Integer 0x1080", "value": "261" }
+                                                    ]
+                                                }"#;
+
+                                                let _ = client.patch(&url)
+                                                    .header("Authorization", format!("Bearer {}", access_token))
+                                                    .header("Content-Type", "application/json")
+                                                    .body(body)
+                                                    .send();
+                                            }
                                         }
 
+                                        let raw_reply = if reply_to.trim().is_empty() {
+                                            extract_email(&from)
+                                        } else {
+                                            extract_email(&reply_to)
+                                        };
+                                        
                                         app.page_emails[app.selected_index].is_answered = true;
 
                                         let sub = if subject.to_lowercase().starts_with("re:") { subject.clone() } else { format!("Re: {}", subject) };
                                         let reply_body = crate::mail::format_reply_text(&t_body);
 
-                                        if let Some(s) = compose_email(&app.active_account, Some(&reply_to), Some(&sub), Some(&reply_body), &mut theme_provider.current_theme) {
+                                        if let Some(s) = compose_email(&app.active_account, Some(&raw_reply), Some(&sub), Some(&reply_body), &mut theme_provider.current_theme) {
+                                            app.page_emails[app.selected_index].is_answered = true;
                                             app.update_status(s);
                                         }
+
+                                        app.needs_fetch = true;
                                     }
                                 }
                             }
@@ -783,4 +863,15 @@ pub fn handle_event(event: Event, app: &mut App, session: &mut Option<MailSessio
     }
 
     quit
+}
+
+fn extract_email(formatted: &str) -> String {
+    // If it contains <...>, extract what's inside
+    if let Some(start) = formatted.find('<') {
+        if let Some(end) = formatted.find('>') {
+            return formatted[start + 1..end].trim().to_string();
+        }
+    }
+    // Otherwise, assume it's already just an email
+    formatted.trim().to_string()
 }

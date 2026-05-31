@@ -215,6 +215,8 @@ fn main() {
                                     // FIX: Wrapped store
                                     match sess {
                                         net::MailSession::Imap(imap_sess) => {
+                                            // let uid = app.page_emails[app.selected_index].uid.to_string();
+                                            // let _ = imap_sess.uid_store(&uid, "+FLAGS.SILENT (\\Answered)");
                                             let _ = imap_sess.store(&fetch_seq, "+FLAGS (\\Answered)");
                                         }
                                         net::MailSession::Graph { .. } => {}

@@ -96,6 +96,19 @@ pub struct GraphEmailAddress {
     pub address: Option<String>,
 }
 
+impl imap::Authenticator for OAuth2 {
+    type Response = String;
+    #[allow(unused_variables)]
+    fn process(&self, data: &[u8]) -> Self::Response {
+        format!(
+            "user={}\x01auth=Bearer {}\x01\x01",
+            self.user, self.access_token
+        )
+    }
+}
+
+
+
 pub fn request_microsoft_device_code(client_id: &str) -> Result<DeviceCodeResponse, String> {
     let client = reqwest::blocking::Client::new();
     let endpoint = "https://login.microsoftonline.com/common/oauth2/v2.0/devicecode";
@@ -197,17 +210,6 @@ pub fn run_microsoft_auth_flow(client_id: &str, client_secret: &str) -> Result<T
     std::thread::sleep(std::time::Duration::from_millis(1500));
 
     Ok(token)
-}
-
-impl imap::Authenticator for OAuth2 {
-    type Response = String;
-    #[allow(unused_variables)]
-    fn process(&self, data: &[u8]) -> Self::Response {
-        format!(
-            "user={}\x01auth=Bearer {}\x01\x01",
-            self.user, self.access_token
-        )
-    }
 }
 
 pub fn get_oauth_access_token(
@@ -627,17 +629,87 @@ pub fn fetch_emails(session: &mut MailSession, app: &mut App, items_per_page: u3
     }
 }
 
+// pub fn toggle_flag(session: &mut MailSession, emails: &mut [EmailMeta], selected_index: usize, flag_name: &str) {
+//     match session {
+//         MailSession::Imap(imap_sess) => {
+//             if emails.is_empty() { return; }
+//
+//             let uid = emails[selected_index].uid.to_string();
+//
+//             let is_set = match flag_name {
+//                 "\\Flagged" => emails[selected_index].is_flagged,
+//                 "\\Deleted" => emails[selected_index].is_deleted,
+//                 "\\Seen"    => emails[selected_index].is_read,
+//                 _ => false,
+//             };
+//
+//             let op = if is_set {
+//                 format!("-FLAGS.SILENT ({})", flag_name)
+//             } else {
+//                 format!("+FLAGS.SILENT ({})", flag_name)
+//             };
+//
+//             if imap_sess.uid_store(&uid, &op).is_ok() {
+//                 let new_val = !is_set;
+//                 match flag_name {
+//                     "\\Flagged" => emails[selected_index].is_flagged = new_val,
+//                     "\\Deleted" => emails[selected_index].is_deleted = new_val,
+//                     "\\Seen"    => emails[selected_index].is_read = new_val,
+//                     _ => {}
+//                 }
+//             }
+//         },
+//         MailSession::Graph { access_token } => {
+//             if emails.is_empty() { return; }
+//
+//             let id = &emails[selected_index].id;
+//
+//             // Format the JSON body manually to avoid needing extra crate imports
+//             let (is_set, body_str) = match flag_name {
+//                 "\\Seen" => {
+//                     let current = emails[selected_index].is_read;
+//                     (current, format!(r#"{{"isRead": {}}}"#, !current))
+//                 },
+//                 "\\Flagged" => {
+//                     let current = emails[selected_index].is_flagged;
+//                     let status = if !current { "flagged" } else { "notFlagged" };
+//                     (current, format!(r#"{{"flag": {{"flagStatus": "{}"}}}}"#, status))
+//                 },
+//                 _ => return, // \Deleted is handled locally for Outlook until expunge
+//             };
+//
+//             let url = format!("https://graph.microsoft.com/v1.0/me/messages/{}", id);
+//             let client = reqwest::blocking::Client::new();
+//
+//             if client.patch(&url)
+//                 .header("Authorization", format!("Bearer {}", access_token))
+//                 .header("Content-Type", "application/json")
+//                 .body(body_str)
+//                 .send().is_ok() {
+//
+//                 let new_val = !is_set;
+//                 match flag_name {
+//                     "\\Seen" => emails[selected_index].is_read = new_val,
+//                     "\\Flagged" => emails[selected_index].is_flagged = new_val,
+//                     _ => {}
+//                 }
+//             }
+//         }
+//     }
+// }
+
 pub fn toggle_flag(session: &mut MailSession, emails: &mut [EmailMeta], selected_index: usize, flag_name: &str) {
+    if emails.is_empty() { return; }
+
     match session {
         MailSession::Imap(imap_sess) => {
-            if emails.is_empty() { return; }
-
             let uid = emails[selected_index].uid.to_string();
 
             let is_set = match flag_name {
                 "\\Flagged" => emails[selected_index].is_flagged,
                 "\\Deleted" => emails[selected_index].is_deleted,
                 "\\Seen"    => emails[selected_index].is_read,
+                "\\Answered"=> emails[selected_index].is_answered,
                 _ => false,
             };
 
@@ -653,42 +725,58 @@ pub fn toggle_flag(session: &mut MailSession, emails: &mut [EmailMeta], selected
                     "\\Flagged" => emails[selected_index].is_flagged = new_val,
                     "\\Deleted" => emails[selected_index].is_deleted = new_val,
                     "\\Seen"    => emails[selected_index].is_read = new_val,
+                    "\\Answered"=> emails[selected_index].is_answered = new_val,
                     _ => {}
                 }
             }
         },
         MailSession::Graph { access_token } => {
-            if emails.is_empty() { return; }
-
             let id = &emails[selected_index].id;
 
-            // Format the JSON body manually to avoid needing extra crate imports
-            let (is_set, body_str) = match flag_name {
+            // Determine if a network request is needed. Graph handles \Deleted on expunge
+            // and lacks a simple \Answered toggle, so those remain strictly local state updates.
+            let (requires_network, is_set, body_str) = match flag_name {
                 "\\Seen" => {
                     let current = emails[selected_index].is_read;
-                    (current, format!(r#"{{"isRead": {}}}"#, !current))
+                    (true, current, format!(r#"{{"isRead": {}}}"#, !current))
                 },
                 "\\Flagged" => {
                     let current = emails[selected_index].is_flagged;
                     let status = if !current { "flagged" } else { "notFlagged" };
-                    (current, format!(r#"{{"flag": {{"flagStatus": "{}"}}}}"#, status))
+                    (true, current, format!(r#"{{"flag": {{"flagStatus": "{}"}}}}"#, status))
                 },
-                _ => return, // \Deleted is handled locally for Outlook until expunge
+                "\\Deleted" => {
+                    (false, emails[selected_index].is_deleted, String::new())
+                },
+                "\\Answered" => {
+                    (false, emails[selected_index].is_answered, String::new())
+                },
+                _ => return,
             };
 
-            let url = format!("https://graph.microsoft.com/v1.0/me/messages/{}", id);
-            let client = reqwest::blocking::Client::new();
+            if requires_network {
+                let url = format!("https://graph.microsoft.com/v1.0/me/messages/{}", id);
+                let client = reqwest::blocking::Client::new();
 
-            if client.patch(&url)
-                .header("Authorization", format!("Bearer {}", access_token))
-                .header("Content-Type", "application/json")
-                .body(body_str)
-                .send().is_ok() {
+                if client.patch(&url)
+                    .header("Authorization", format!("Bearer {}", access_token))
+                    .header("Content-Type", "application/json")
+                    .body(body_str)
+                    .send().is_ok() {
 
+                    let new_val = !is_set;
+                    match flag_name {
+                        "\\Seen" => emails[selected_index].is_read = new_val,
+                        "\\Flagged" => emails[selected_index].is_flagged = new_val,
+                        _ => {}
+                    }
+                }
+            } else {
+                // Update local UI state for flags that do not trigger an immediate Graph network request
                 let new_val = !is_set;
                 match flag_name {
-                    "\\Seen" => emails[selected_index].is_read = new_val,
-                    "\\Flagged" => emails[selected_index].is_flagged = new_val,
+                    "\\Deleted" => emails[selected_index].is_deleted = new_val,
+                    "\\Answered" => emails[selected_index].is_answered = new_val,
                     _ => {}
                 }
             }
@@ -806,51 +894,3 @@ pub fn move_to_folder(session: &mut MailSession, seq_id: &str, folder: &str) -> 
     }
 }
 
-pub fn send_graph_email(
-    access_token: &str,
-    to: &str,
-    cc: &str,
-    subject: &str,
-    body: &str,
-) -> Result<(), String> {
-    let client = reqwest::blocking::Client::new();
-    let url = "https://graph.microsoft.com/v1.0/me/sendMail";
-
-    // Split comma-separated recipients and format them as JSON objects
-    let to_recipients: Vec<_> = to.split(',')
-        .filter(|s| !s.trim().is_empty())
-        .map(|email| serde_json::json!({ "emailAddress": { "address": email.trim() } }))
-        .collect();
-
-    let cc_recipients: Vec<_> = cc.split(',')
-        .filter(|s| !s.trim().is_empty())
-        .map(|email| serde_json::json!({ "emailAddress": { "address": email.trim() } }))
-        .collect();
-
-    let payload = serde_json::json!({
-        "message": {
-            "subject": subject,
-            "body": {
-                "contentType": "Text",
-                "content": body
-            },
-            "toRecipients": to_recipients,
-            "ccRecipients": cc_recipients
-        },
-        "saveToSentItems": "true"
-    });
-
-    let res = client.post(url)
-        .header("Authorization", format!("Bearer {}", access_token))
-        .header("Content-Type", "application/json")
-        .json(&payload)
-        .send()
-        .map_err(|e| format!("Network error: {}", e))?;
-
-    if res.status().is_success() {
-        Ok(())
-    } else {
-        let err_text = res.text().unwrap_or_default();
-        Err(format!("Graph API Send Failed: {}", err_text))
-    }
-}
