@@ -460,7 +460,7 @@ pub fn handle_event(event: Event, app: &mut App, session: &mut Option<MailSessio
                         },
                         KeyCode::Char('o') | KeyCode::Char('O') => { app.menu_page = if app.menu_page == 1 { 2 } else { 1 }; }
                         KeyCode::Char('*') => {
-                            if let Some(sess) = session { net::toggle_imap_flag(sess, &mut app.page_emails, app.selected_index, "\\Flagged"); }
+                            if let Some(sess) = session { net::toggle_flag(sess, &mut app.page_emails, app.selected_index, "\\Flagged"); }
                         }
                         KeyCode::Char('d') | KeyCode::Char('D') => {
                             let is_outlook = app.active_account.imap_server.to_lowercase().contains("outlook") ||
@@ -475,7 +475,7 @@ pub fn handle_event(event: Event, app: &mut App, session: &mut Option<MailSessio
                             } else {
                                 if let Some(sess) = session {
                                     if !app.page_emails.is_empty() {
-                                        net::toggle_imap_flag(sess, &mut app.page_emails, app.selected_index, "\\Deleted");
+                                        net::toggle_flag(sess, &mut app.page_emails, app.selected_index, "\\Deleted");
                                     }
                                 }
                             }
@@ -540,7 +540,7 @@ pub fn handle_event(event: Event, app: &mut App, session: &mut Option<MailSessio
                         }
                         KeyCode::Char('u') | KeyCode::Char('U') => {
                             if let Some(sess) = session {
-                                net::toggle_imap_flag(sess, &mut app.page_emails, app.selected_index, "\\Seen");
+                                net::toggle_flag(sess, &mut app.page_emails, app.selected_index, "\\Seen");
                             }
                             let (_, rows) = term_size().unwrap_or((80, 24));
                             let max_visible = app.page_emails.len().min(rows.saturating_sub(3) as usize);
@@ -602,7 +602,11 @@ pub fn handle_event(event: Event, app: &mut App, session: &mut Option<MailSessio
                                             net::MailSession::Imap(imap_sess) => {
                                                 let _ = imap_sess.store(&fetch_seq, "+FLAGS (\\Seen)");
                                             }
-                                            net::MailSession::Graph { .. } => {}
+                                            net::MailSession::Graph { .. } => {
+                                                if let Some(sess) = session {
+                                                    net::toggle_flag(sess, &mut app.page_emails, app.selected_index, "\\Seen");
+                                                }
+                                            }
                                         }
                                         app.page_emails[app.selected_index].is_read = true;
                                     }

@@ -131,8 +131,8 @@ impl Editor {
                 KeyCode::Char('r') | KeyCode::Char('R') => return Ok(EditorResult::Send("REPLY".to_string())),
                 KeyCode::Char('f') | KeyCode::Char('F') => return Ok(EditorResult::Send("FORWARD".to_string())),
 
-                KeyCode::Char('v') | KeyCode::Char('V') | KeyCode::PageDown => self.page_down()?,
-                KeyCode::Char('y') | KeyCode::Char('Y') | KeyCode::PageUp => self.page_up()?,
+                KeyCode::Char('v') | KeyCode::Char('V') | KeyCode::PageDown | KeyCode::Char(' ') => self.page_down()?,
+                KeyCode::Char('y') | KeyCode::Char('Y') | KeyCode::PageUp | KeyCode::Char('-') => self.page_up()?,
 
                 KeyCode::Up | KeyCode::Char('p') | KeyCode::Char('P') => {
                     self.row_offset = self.row_offset.saturating_sub(1);
