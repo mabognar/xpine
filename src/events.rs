@@ -555,74 +555,6 @@ pub fn handle_event(event: Event, app: &mut App, session: &mut Option<MailSessio
                                 app.update_status("No account configured for sending.".to_string());
                             }
                         }
-                        // KeyCode::Char('f') | KeyCode::Char('F') | KeyCode::Char('r') | KeyCode::Char('R') => {
-                        //     if !app.page_emails.is_empty() {
-                        //         if let Some(sess) = session {
-                        //             let (fetch_seq, from, date, subject, reply_to) = {
-                        //                 let current = &app.page_emails[app.selected_index];
-                        //                 (current.id.to_string(), current.from.clone(), current.date.clone(), current.subject.clone(), current.reply_to.clone())
-                        //             };
-                        //
-                        //             let (t_body, _, _) = net::fetch_email_body(sess, &fetch_seq);
-                        //
-                        //             if k.code == KeyCode::Char('f') || k.code == KeyCode::Char('F') {
-                        //                 let sub = if subject.to_lowercase().starts_with("fwd:") { subject.clone() } else { format!("Fwd: {}", subject) };
-                        //                 let fwd_body = format!("\n\n--- Forwarded message ---\nFrom: {}\nDate: {}\nSubject: {}\n\n{}", from, date, subject, t_body);
-                        //                 if let Some(s) = compose_email(&app.active_account, None, Some(&sub), Some(&fwd_body), &mut theme_provider.current_theme) {
-                        //                     app.update_status(s);
-                        //                 }
-                        //             } else {
-                        //                 match sess {
-                        //                     net::MailSession::Imap(imap_sess) => {
-                        //                         let _ = imap_sess.store(&fetch_seq, "+FLAGS (\\Answered)");
-                        //                     }
-                        //                     net::MailSession::Graph { access_token } => {
-                        //                         let url = format!("https://graph.microsoft.com/v1.0/me/messages/{}", fetch_seq);
-                        //                         let client = reqwest::blocking::Client::new();
-                        //
-                        //                         // Graph API requires updating MAPI extended properties to flag a message as answered
-                        //                         let payload = serde_json::json!({
-                        //                             "singleValueExtendedProperties": [
-                        //                                 {
-                        //                                     "id": "Integer 0x1081",
-                        //                                     "value": "102" // EXCHIVERB_REPLYTOSENDER
-                        //                                 },
-                        //                                 {
-                        //                                     "id": "Integer 0x1080",
-                        //                                     "value": "261" // Icon index for Replied
-                        //                                 }
-                        //                             ]
-                        //                         });
-                        //
-                        //                         let _ = client.patch(&url)
-                        //                             .header("Authorization", format!("Bearer {}", access_token))
-                        //                             .header("Content-Type", "application/json")
-                        //                             .json(&payload)
-                        //                             .send();
-                        //                     }
-                        //                 }
-                        //
-                        //                 let raw_reply = if reply_to.trim().is_empty() {
-                        //                     extract_email(&from)
-                        //                 } else {
-                        //                     extract_email(&reply_to)
-                        //                 };
-                        //
-                        //                 app.page_emails[app.selected_index].is_answered = true;
-                        //
-                        //                 let sub = if subject.to_lowercase().starts_with("re:") { subject.clone() } else { format!("Re: {}", subject) };
-                        //                 let reply_body = crate::mail::format_reply_text(&t_body);
-                        //
-                        //                 if let Some(s) = compose_email(&app.active_account, Some(&raw_reply), Some(&sub), Some(&reply_body), &mut theme_provider.current_theme) {
-                        //                     app.page_emails[app.selected_index].is_answered = true;
-                        //                     app.update_status(s);
-                        //                 }
-                        //
-                        //                 app.needs_fetch = true;
-                        //             }
-                        //         }
-                        //     }
-                        // }
                         KeyCode::Char('f') | KeyCode::Char('F') | KeyCode::Char('r') | KeyCode::Char('R') => {
                             if !app.page_emails.is_empty() {
                                 if let Some(sess) = session {
@@ -654,37 +586,44 @@ pub fn handle_event(event: Event, app: &mut App, session: &mut Option<MailSessio
 
                                         // --- 1. Compose First ---
                                         if let Some(s) = compose_email(&app.active_account, Some(&raw_reply), Some(&sub), Some(&reply_body), &mut theme_provider.current_theme) {
-
-                                            // --- 2. Mark Answered ONLY AFTER success ---
                                             match sess {
                                                 net::MailSession::Imap(imap_sess) => {
                                                     let _ = imap_sess.store(&fetch_seq, "+FLAGS (\\Answered)");
-                                                    app.page_emails[app.selected_index].is_answered = true;
                                                 }
                                                 net::MailSession::Graph { access_token } => {
                                                     let url = format!("https://graph.microsoft.com/v1.0/me/messages/{}", fetch_seq);
                                                     let client = reqwest::blocking::Client::new();
 
+                                                    // Ensure the payload is exactly what the Graph API expects
                                                     let payload = serde_json::json!({
-                                                        "singleValueExtendedProperties": [
-                                                            { "id": "Integer 0x1081", "value": "102" },
-                                                            { "id": "Integer 0x1080", "value": "261" }
-                                                        ]
+                                                    "singleValueExtendedProperties": [
+                                                        { "id": "Integer 0x1081", "value": "102" }, // ReplyToSender
+                                                        { "id": "Integer 0x1080", "value": "261" }  // Replied icon
+                                                    ]
                                                     });
 
-                                                    if client.patch(&url)
+                                                    // CRITICAL: Check the response of the PATCH request
+                                                    let res = client.patch(&url)
                                                         .header("Authorization", format!("Bearer {}", access_token))
                                                         .header("Content-Type", "application/json")
                                                         .json(&payload)
-                                                        .send().is_ok()
-                                                    {
-                                                        app.page_emails[app.selected_index].is_answered = true;
+                                                        .send();
+
+                                                    if let Ok(response) = res {
+                                                        if response.status().is_success() {
+                                                            // Success: proceed to mark locally
+                                                            app.page_emails[app.selected_index].is_answered = true;
+                                                        } else {
+                                                            // Debugging: If this prints an error, the PATCH failed
+                                                            app.update_status(format!("Failed to mark 'A' on server: {}", response.status()));
+                                                        }
                                                     }
                                                 }
                                             }
 
                                             app.page_emails[app.selected_index].is_answered = true;
-                                            app.needs_fetch = true;                                            app.update_status(s);
+                                            app.needs_fetch = true;
+                                            // app.update_status(s);
                                         }
                                     }
                                 }

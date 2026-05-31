@@ -223,6 +223,7 @@ fn main() {
                                     }
                                 }
                                 app.page_emails[app.selected_index].is_answered = true;
+                                // app.needs_fetch = true;
 
                                 let reply_body = mail::format_reply_text(&text_body);
 
@@ -247,6 +248,7 @@ fn main() {
                                 ) {
                                     reader.set_status(s);
                                 }
+
                                 continue;
                             }
                             if key.code == event::KeyCode::Char('f') || key.code == event::KeyCode::Char('F') {
