@@ -253,8 +253,9 @@ pub fn compose_email(account: &Account, default_to: Option<&str>, default_subjec
             let is_microsoft = account.email.ends_with("@outlook.com") || account.email.ends_with("@hotmail.com");
 
             let token_or_pass = if let Some(ref rt) = account.refresh_token {
-                let target_scope = if is_microsoft { Some("https://graph.microsoft.com/Mail.Send") } else { None };
-
+                // let target_scope = if is_microsoft { Some("https://graph.microsoft.com/Mail.Send") } else { None };
+                let target_scope = if is_microsoft { Some("https://graph.microsoft.com/Mail.ReadWrite https://graph.microsoft.com/Mail.Send offline_access") } else { None };
+                
                 match crate::net::get_oauth_access_token(
                     account.client_id.as_deref().unwrap_or(""),
                     account.client_secret.as_deref().unwrap_or(""),

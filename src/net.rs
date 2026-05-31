@@ -102,7 +102,8 @@ pub fn request_microsoft_device_code(client_id: &str) -> Result<DeviceCodeRespon
 
     let params = vec![
         ("client_id", client_id),
-        ("scope", "offline_access https://graph.microsoft.com/Mail.ReadWrite"),
+        // Add Mail.Send to the requested scopes
+        ("scope", "offline_access https://graph.microsoft.com/Mail.ReadWrite https://graph.microsoft.com/Mail.Send"),
     ];
 
     let res = client.post(endpoint)
@@ -261,7 +262,8 @@ pub fn connect(account: &mut Account) -> Result<MailSession, String> {
         (&account.client_id, &account.client_secret, &account.refresh_token) {
 
         // Use Graph scopes for Microsoft, None for Gmail
-        let scope = if is_microsoft { Some("https://graph.microsoft.com/Mail.ReadWrite offline_access") } else { None };
+        // let scope = if is_microsoft { Some("https://graph.microsoft.com/Mail.ReadWrite offline_access") } else { None };
+        let scope = if is_microsoft { Some("https://graph.microsoft.com/Mail.ReadWrite https://graph.microsoft.com/Mail.Send offline_access") } else { None };
 
         match get_oauth_access_token(client_id, client_secret, refresh_token, is_microsoft, scope) {
             Ok(access_token) => {
