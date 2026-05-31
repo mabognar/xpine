@@ -76,6 +76,13 @@ pub struct GraphMessage {
     #[serde(rename = "isRead")]
     pub is_read: bool,
     pub flag: Option<GraphFlag>,
+    #[serde(rename = "singleValueExtendedProperties")]
+    pub single_value_extended_properties: Option<Vec<GraphExtendedProperty>>,}
+
+#[derive(Deserialize, Debug)]
+pub struct GraphExtendedProperty {
+    pub id: String,
+    pub value: String,
 }
 
 #[derive(Deserialize, Debug)]
@@ -362,7 +369,8 @@ pub fn fetch_emails(session: &mut MailSession, app: &mut App, items_per_page: u3
                     for message in messages.iter() {
                         let size = message.size.unwrap_or(0);
                         let mut is_seen = false; let mut is_deleted = false;
-                        let mut is_flagged = false; let mut is_answered = false;
+                        let mut is_flagged = false;
+                        let mut is_answered = false;
 
                         for flag in message.flags() {
                             match flag {
@@ -479,11 +487,12 @@ pub fn fetch_emails(session: &mut MailSession, app: &mut App, items_per_page: u3
 
             let mut is_text_search = false;
 
+            // Updated URL: Added &$expand=singleValueExtendedProperties($filter=id eq 'Integer 0x1081')
             let url = if let Some(ref q) = app.search_query {
                 if q.trim() == "*" {
                     let order = if sort_newest_first { "receivedDateTime%20DESC" } else { "receivedDateTime%20ASC" };
                     format!(
-                        "https://graph.microsoft.com/v1.0/me/mailFolders/{}/messages?$count=true&$top={}&$skip={}&$orderby={}&$filter=flag/flagStatus%20eq%20'flagged'&$select=id,receivedDateTime,subject,from,toRecipients,ccRecipients,replyTo,isRead,flag",
+                        "https://graph.microsoft.com/v1.0/me/mailFolders/{}/messages?$count=true&$top={}&$skip={}&$orderby={}&$filter=flag/flagStatus%20eq%20'flagged'&$select=id,receivedDateTime,subject,from,toRecipients,ccRecipients,replyTo,isRead,flag&$expand=singleValueExtendedProperties($filter=id eq 'Integer 0x1081')",
                         folder, items_per_page, skip, order
                     )
                 } else {
@@ -492,14 +501,14 @@ pub fn fetch_emails(session: &mut MailSession, app: &mut App, items_per_page: u3
                     let encoded_q = urlencoding::encode(&search_str);
 
                     format!(
-                        "https://graph.microsoft.com/v1.0/me/mailFolders/{}/messages?$top=50&$search={}&$select=id,receivedDateTime,subject,from,toRecipients,ccRecipients,replyTo,isRead,flag",
-                        folder, encoded_q
+                        "https://graph.microsoft.com/v1.0/me/mailFolders/{}/messages?$top={}&$skip={}&$search={}&$select=id,receivedDateTime,subject,from,toRecipients,ccRecipients,replyTo,isRead,flag&$expand=singleValueExtendedProperties($filter=id eq 'Integer 0x1081')",
+                        folder, items_per_page, skip, encoded_q
                     )
                 }
             } else {
                 let order = if sort_newest_first { "receivedDateTime%20DESC" } else { "receivedDateTime%20ASC" };
                 format!(
-                    "https://graph.microsoft.com/v1.0/me/mailFolders/{}/messages?$count=true&$top={}&$skip={}&$orderby={}&$select=id,receivedDateTime,subject,from,toRecipients,ccRecipients,replyTo,isRead,flag",
+                    "https://graph.microsoft.com/v1.0/me/mailFolders/{}/messages?$count=true&$top={}&$skip={}&$orderby={}&$select=id,receivedDateTime,subject,from,toRecipients,ccRecipients,replyTo,isRead,flag&$expand=singleValueExtendedProperties($filter=id eq 'Integer 0x1081')",
                     folder, items_per_page, skip, order
                 )
             };
@@ -534,6 +543,19 @@ pub fn fetch_emails(session: &mut MailSession, app: &mut App, items_per_page: u3
                         };
 
                         for msg in messages_iter {
+                            // --- PARSING LOGIC START ---
+                            let mut is_answered = false;
+                            if let Some(props) = &msg.single_value_extended_properties {
+                                for prop in props {
+                                    // 102 is the MAPI code for "Replied"
+                                    if prop.id == "Integer 0x1081" && prop.value == "102" {
+                                        is_answered = true;
+                                        break;
+                                    }
+                                }
+                            }
+                            // --- PARSING LOGIC END ---
+
                             let internal_date = DateTime::parse_from_rfc3339(&msg.received_date_time)
                                 .map(|dt| dt.timestamp())
                                 .unwrap_or(0);
@@ -597,7 +619,7 @@ pub fn fetch_emails(session: &mut MailSession, app: &mut App, items_per_page: u3
                                 is_read: msg.is_read,
                                 is_deleted: false,
                                 is_flagged,
-                                is_answered: false,
+                                is_answered, // Flag set correctly
                             });
                         }
 
@@ -628,6 +650,328 @@ pub fn fetch_emails(session: &mut MailSession, app: &mut App, items_per_page: u3
         }
     }
 }
+
+// pub fn fetch_emails(session: &mut MailSession, app: &mut App, items_per_page: u32, sort_newest_first: bool) {
+//     match session {
+//         MailSession::Imap(imap_sess) => {
+//             app.page_emails.clear();
+//
+//             match imap_sess.select(&app.current_folder) {
+//                 Ok(m) => app.total_messages = m.exists,
+//                 Err(_) => { app.needs_reconnect = true; return; }
+//             }
+//
+//             let sequence = if let Some(ref q) = app.search_query {
+//                 let query = if q.trim() == "*" {
+//                     String::from("FLAGGED")
+//                 } else {
+//                     format!("OR FROM \"{}\" SUBJECT \"{}\"", q, q)
+//                 };
+//
+//                 match imap_sess.search(&query) {
+//                     Ok(seq_ids) if !seq_ids.is_empty() => {
+//                         app.total_messages = seq_ids.len() as u32;
+//
+//                         let mut sorted_seqs: Vec<u32> = seq_ids.into_iter().collect();
+//                         sorted_seqs.sort();
+//
+//                         let end_idx = sorted_seqs.len().saturating_sub((app.current_page * items_per_page) as usize);
+//                         let start_idx = end_idx.saturating_sub(items_per_page as usize - 1).max(1);
+//
+//                         let page_seqs = &sorted_seqs[(start_idx - 1)..end_idx];
+//                         page_seqs.iter().map(|id| id.to_string()).collect::<Vec<_>>().join(",")
+//                     }
+//                     _ => {
+//                         app.total_messages = 0;
+//                         return;
+//                     }
+//                 }
+//             } else {
+//                 if app.total_messages > 0 {
+//                     let end_idx = app.total_messages.saturating_sub(app.current_page * items_per_page);
+//                     let start_idx = end_idx.saturating_sub(items_per_page - 1).max(1);
+//                     format!("{}:{}", start_idx, end_idx)
+//                 } else {
+//                     return;
+//                 }
+//             };
+//
+//             if !sequence.is_empty() {
+//                 if let Ok(messages) = imap_sess.fetch(&sequence, "(UID ENVELOPE FLAGS RFC822.SIZE INTERNALDATE)") {
+//                     for message in messages.iter() {
+//                         let size = message.size.unwrap_or(0);
+//                         let mut is_seen = false; let mut is_deleted = false;
+//                         let mut is_flagged = false;
+//                         let mut is_answered = false;
+//
+//                         for flag in message.flags() {
+//                             match flag {
+//                                 imap::types::Flag::Seen => is_seen = true,
+//                                 imap::types::Flag::Deleted => is_deleted = true,
+//                                 imap::types::Flag::Flagged => is_flagged = true,
+//                                 imap::types::Flag::Answered => is_answered = true,
+//                                 _ => {}
+//                             }
+//                         }
+//
+//                         let internal_date = message.internal_date()
+//                             .map(|dt| dt.timestamp())
+//                             .unwrap_or(0);
+//
+//                         let mut subject = "No Subject".to_string();
+//                         let mut from = "Unknown Sender".to_string();
+//                         let mut reply_to = "unknown@example.com".to_string();
+//                         let mut to_addr = String::new();
+//                         let mut cc = String::new();
+//                         let mut date = "Unknown Date".to_string();
+//
+//                         if let Some(env) = message.envelope() {
+//                             if let Some(s) = env.subject.as_ref() { subject = String::from_utf8_lossy(s).into_owned(); }
+//                             if let Some(d) = env.date.as_ref() {
+//                                 let raw_date = String::from_utf8_lossy(d).into_owned();
+//                                 if let Ok(dt) = DateTime::parse_from_rfc2822(&raw_date) {
+//                                     let now = Utc::now().timestamp();
+//                                     let diff = now - dt.timestamp();
+//                                     let local_dt = dt.with_timezone(&Local);
+//                                     date = if diff < 7 * 24 * 3600 && diff >= -86400 { local_dt.format("%a %H:%M").to_string() } else { local_dt.format("%b %d").to_string() };
+//                                 } else {
+//                                     date = raw_date.split(" +").next().unwrap_or(&raw_date).to_string();
+//                                 }
+//                             }
+//
+//                             macro_rules! format_addrs {
+//                                 ($addrs:expr) => {{
+//                                     let mut result = Vec::new();
+//                                     if let Some(a_vec) = $addrs {
+//                                         for addr in a_vec {
+//                                             let name = addr.name.as_ref().map(|n| String::from_utf8_lossy(n.as_ref()).into_owned()).unwrap_or_default();
+//                                             let mailbox = addr.mailbox.as_ref().map(|m| String::from_utf8_lossy(m.as_ref()).into_owned()).unwrap_or_default();
+//                                             let host = addr.host.as_ref().map(|h| String::from_utf8_lossy(h.as_ref()).into_owned()).unwrap_or_default();
+//
+//                                             let email_raw = format!("{}@{}", mailbox, host);
+//                                             let formatted = if !name.is_empty() { format!("{} <{}>", name, email_raw) } else { email_raw };
+//                                             result.push(formatted);
+//                                         }
+//                                     }
+//                                     result.join(", ")
+//                                 }};
+//                             }
+//
+//                             from = format_addrs!(env.from.as_ref());
+//                             if from.is_empty() { from = "Unknown Sender".to_string(); }
+//
+//                             to_addr = format_addrs!(env.to.as_ref());
+//                             cc = format_addrs!(env.cc.as_ref());
+//
+//                             if let Some(f_vec) = env.reply_to.as_ref().or(env.from.as_ref()) {
+//                                 if let Some(addr) = f_vec.first() {
+//                                     let mailbox = addr.mailbox.as_ref().map(|m| String::from_utf8_lossy(m.as_ref()).into_owned()).unwrap_or_default();
+//                                     let host = addr.host.as_ref().map(|h| String::from_utf8_lossy(h.as_ref()).into_owned()).unwrap_or_default();
+//                                     reply_to = format!("{}@{}", mailbox, host);
+//                                 }
+//                             }
+//                         }
+//
+//                         app.page_emails.push(EmailMeta {
+//                             id: message.message.to_string(), // IMAP integer to String
+//                             uid: message.uid.unwrap_or(0),
+//                             timestamp: internal_date,
+//                             subject,
+//                             from,
+//                             reply_to,
+//                             reply_to_display: String::new(),
+//                             to_addr,
+//                             cc,
+//                             date,
+//                             size,
+//                             is_read: is_seen,
+//                             is_deleted,
+//                             is_flagged,
+//                             is_answered,
+//                         });
+//                     }
+//                 }
+//
+//                 if sort_newest_first {
+//                     app.page_emails.sort_by(|a, b| b.timestamp.cmp(&a.timestamp));
+//                 } else {
+//                     app.page_emails.sort_by(|a, b| a.timestamp.cmp(&b.timestamp));
+//                 }
+//
+//                 if let Some(idx_from_end) = app.restore_index_from_end {
+//                     if sort_newest_first {
+//                         app.selected_index = if !app.page_emails.is_empty() { idx_from_end as usize } else { 0 };
+//                     } else {
+//                         app.selected_index = if !app.page_emails.is_empty() { app.page_emails.len().saturating_sub(1).saturating_sub(idx_from_end as usize) } else { 0 };
+//                     }
+//                     app.restore_index_from_end = None;
+//                 } else if app.selected_index >= app.page_emails.len() {
+//                     app.selected_index = app.page_emails.len().saturating_sub(1);
+//                 }
+//             }
+//         },
+//
+//         MailSession::Graph { access_token } => {
+//             app.page_emails.clear();
+//
+//             let folder = if app.current_folder == "INBOX" { "inbox" } else { &app.current_folder };
+//             let skip = app.current_page * items_per_page;
+//
+//             let mut is_text_search = false;
+//
+//             let url = if let Some(ref q) = app.search_query {
+//                 if q.trim() == "*" {
+//                     let order = if sort_newest_first { "receivedDateTime%20DESC" } else { "receivedDateTime%20ASC" };
+//                     format!(
+//                         "https://graph.microsoft.com/v1.0/me/mailFolders/{}/messages?$count=true&$top={}&$skip={}&$orderby={}&$filter=flag/flagStatus%20eq%20'flagged'&$select=id,receivedDateTime,subject,from,toRecipients,ccRecipients,replyTo,isRead,flag",
+//                         folder, items_per_page, skip, order
+//                     )
+//                 } else {
+//                     is_text_search = true;
+//                     let search_str = format!("\"{}\"", q);
+//                     let encoded_q = urlencoding::encode(&search_str);
+//
+//                     // format!(
+//                     //     "https://graph.microsoft.com/v1.0/me/mailFolders/{}/messages?$top=50&$search={}&$select=id,receivedDateTime,subject,from,toRecipients,ccRecipients,replyTo,isRead,flag",
+//                     //     folder, encoded_q
+//                     // )
+//                     format!(
+//                         "https://graph.microsoft.com/v1.0/me/mailFolders/{}/messages?$top={}&$skip={}&$expand=singleValueExtendedProperties($filter=id eq 'Integer 0x1081')",
+//                         folder, items_per_page, skip
+//                     )
+//                 }
+//             } else {
+//                 let order = if sort_newest_first { "receivedDateTime%20DESC" } else { "receivedDateTime%20ASC" };
+//                 format!(
+//                     "https://graph.microsoft.com/v1.0/me/mailFolders/{}/messages?$count=true&$top={}&$skip={}&$orderby={}&$select=id,receivedDateTime,subject,from,toRecipients,ccRecipients,replyTo,isRead,flag",
+//                     folder, items_per_page, skip, order
+//                 )
+//             };
+//
+//             let client = reqwest::blocking::Client::new();
+//             let res = client.get(&url)
+//                 .header("Authorization", format!("Bearer {}", access_token))
+//                 .header("ConsistencyLevel", "eventual")
+//                 .send();
+//
+//             match res {
+//                 Ok(response) if response.status().is_success() => {
+//                     if let Ok(graph_data) = response.json::<GraphMessageResponse>() {
+//
+//                         let messages_iter: Box<dyn Iterator<Item = crate::net::GraphMessage>> = if is_text_search {
+//                             app.total_messages = graph_data.value.len() as u32;
+//                             let mut all_msgs = graph_data.value;
+//
+//                             if sort_newest_first {
+//                                 all_msgs.sort_by(|a, b| b.received_date_time.cmp(&a.received_date_time));
+//                             } else {
+//                                 all_msgs.sort_by(|a, b| a.received_date_time.cmp(&b.received_date_time));
+//                             }
+//
+//                             let start = (app.current_page * items_per_page) as usize;
+//                             Box::new(all_msgs.into_iter().skip(start).take(items_per_page as usize))
+//                         } else {
+//                             if let Some(total) = graph_data.count {
+//                                 app.total_messages = total;
+//                             }
+//                             Box::new(graph_data.value.into_iter())
+//                         };
+//
+//                         for msg in messages_iter {
+//                             let internal_date = DateTime::parse_from_rfc3339(&msg.received_date_time)
+//                                 .map(|dt| dt.timestamp())
+//                                 .unwrap_or(0);
+//
+//                             let mut date_str = "Unknown Date".to_string();
+//                             if let Ok(dt) = DateTime::parse_from_rfc3339(&msg.received_date_time) {
+//                                 let now = Utc::now().timestamp();
+//                                 let diff = now - dt.timestamp();
+//                                 let local_dt = dt.with_timezone(&Local);
+//                                 date_str = if diff < 7 * 24 * 3600 && diff >= -86400 {
+//                                     local_dt.format("%a %H:%M").to_string()
+//                                 } else {
+//                                     local_dt.format("%b %d").to_string()
+//                                 };
+//                             }
+//
+//                             macro_rules! format_graph_addrs {
+//                                 ($addrs:expr) => {{
+//                                     let mut result = Vec::new();
+//                                     if let Some(a_vec) = $addrs {
+//                                         for recipient in a_vec {
+//                                             if let Some(email) = &recipient.email_address {
+//                                                 let name = email.name.as_deref().unwrap_or("");
+//                                                 let addr = email.address.as_deref().unwrap_or("");
+//                                                 let formatted = if !name.is_empty() { format!("{} <{}>", name, addr) } else { addr.to_string() };
+//                                                 result.push(formatted);
+//                                             }
+//                                         }
+//                                     }
+//                                     result.join(", ")
+//                                 }};
+//                             }
+//
+//                             let mut from = "Unknown Sender".to_string();
+//                             if let Some(f) = msg.from {
+//                                 if let Some(email) = f.email_address {
+//                                     let name = email.name.unwrap_or_default();
+//                                     let addr = email.address.unwrap_or_default();
+//                                     from = if !name.is_empty() { format!("{} <{}>", name, addr) } else { addr };
+//                                 }
+//                             }
+//
+//                             let to_addr = format_graph_addrs!(msg.to_recipients);
+//                             let cc = format_graph_addrs!(msg.cc_recipients);
+//                             let reply_to = format_graph_addrs!(msg.reply_to);
+//
+//                             let is_flagged = msg.flag.and_then(|f| f.flag_status).map_or(false, |s| s.to_lowercase() == "flagged");
+//
+//                             app.page_emails.push(EmailMeta {
+//                                 id: msg.id, // Native Graph String ID
+//                                 uid: 0,
+//                                 timestamp: internal_date,
+//                                 subject: msg.subject.unwrap_or_else(|| "No Subject".to_string()),
+//                                 from,
+//                                 reply_to,
+//                                 reply_to_display: String::new(),
+//                                 to_addr,
+//                                 cc,
+//                                 date: date_str,
+//                                 size: 0,
+//                                 is_read: msg.is_read,
+//                                 is_deleted: false,
+//                                 is_flagged,
+//                                 is_answered: false,
+//                             });
+//                         }
+//
+//                         // Cursor safety-net
+//                         if let Some(idx_from_end) = app.restore_index_from_end {
+//                             if sort_newest_first {
+//                                 app.selected_index = if !app.page_emails.is_empty() { idx_from_end as usize } else { 0 };
+//                             } else {
+//                                 app.selected_index = if !app.page_emails.is_empty() { app.page_emails.len().saturating_sub(1).saturating_sub(idx_from_end as usize) } else { 0 };
+//                             }
+//                             app.restore_index_from_end = None;
+//                         } else if app.selected_index >= app.page_emails.len() {
+//                             app.selected_index = app.page_emails.len().saturating_sub(1);
+//                         }
+//
+//                     } else {
+//                         app.update_status("Failed to parse Graph JSON data.".to_string());
+//                     }
+//                 }
+//                 Ok(response) => {
+//                     app.update_status(format!("Graph API Error: {}", response.status()));
+//                 }
+//                 Err(e) => {
+//                     app.update_status(format!("Network error: {}", e));
+//                     app.needs_reconnect = true;
+//                 }
+//             }
+//         }
+//     }
+// }
 
 // pub fn toggle_flag(session: &mut MailSession, emails: &mut [EmailMeta], selected_index: usize, flag_name: &str) {
 //     match session {
@@ -698,13 +1042,98 @@ pub fn fetch_emails(session: &mut MailSession, app: &mut App, items_per_page: u3
 //     }
 // }
 
+// pub fn toggle_flag(session: &mut MailSession, emails: &mut [EmailMeta], selected_index: usize, flag_name: &str) {
+//     if emails.is_empty() { return; }
+//
+//     match session {
+//         MailSession::Imap(imap_sess) => {
+//             let uid = emails[selected_index].uid.to_string();
+//
+//             let is_set = match flag_name {
+//                 "\\Flagged" => emails[selected_index].is_flagged,
+//                 "\\Deleted" => emails[selected_index].is_deleted,
+//                 "\\Seen"    => emails[selected_index].is_read,
+//                 "\\Answered"=> emails[selected_index].is_answered,
+//                 _ => false,
+//             };
+//
+//             let op = if is_set {
+//                 format!("-FLAGS.SILENT ({})", flag_name)
+//             } else {
+//                 format!("+FLAGS.SILENT ({})", flag_name)
+//             };
+//
+//             if imap_sess.uid_store(&uid, &op).is_ok() {
+//                 let new_val = !is_set;
+//                 match flag_name {
+//                     "\\Flagged" => emails[selected_index].is_flagged = new_val,
+//                     "\\Deleted" => emails[selected_index].is_deleted = new_val,
+//                     "\\Seen"    => emails[selected_index].is_read = new_val,
+//                     "\\Answered"=> emails[selected_index].is_answered = new_val,
+//                     _ => {}
+//                 }
+//             }
+//         },
+//         MailSession::Graph { access_token } => {
+//             let id = &emails[selected_index].id;
+//
+//             // Determine if a network request is needed. Graph handles \Deleted on expunge
+//             // and lacks a simple \Answered toggle, so those remain strictly local state updates.
+//             let (requires_network, is_set, body_str) = match flag_name {
+//                 "\\Seen" => {
+//                     let current = emails[selected_index].is_read;
+//                     (true, current, format!(r#"{{"isRead": {}}}"#, !current))
+//                 },
+//                 "\\Flagged" => {
+//                     let current = emails[selected_index].is_flagged;
+//                     let status = if !current { "flagged" } else { "notFlagged" };
+//                     (true, current, format!(r#"{{"flag": {{"flagStatus": "{}"}}}}"#, status))
+//                 },
+//                 "\\Deleted" => {
+//                     (false, emails[selected_index].is_deleted, String::new())
+//                 },
+//                 "\\Answered" => {
+//                     (false, emails[selected_index].is_answered, String::new())
+//                 },
+//                 _ => return,
+//             };
+//
+//             if requires_network {
+//                 let url = format!("https://graph.microsoft.com/v1.0/me/messages/{}", id);
+//                 let client = reqwest::blocking::Client::new();
+//
+//                 if client.patch(&url)
+//                     .header("Authorization", format!("Bearer {}", access_token))
+//                     .header("Content-Type", "application/json")
+//                     .body(body_str)
+//                     .send().is_ok() {
+//
+//                     let new_val = !is_set;
+//                     match flag_name {
+//                         "\\Seen" => emails[selected_index].is_read = new_val,
+//                         "\\Flagged" => emails[selected_index].is_flagged = new_val,
+//                         _ => {}
+//                     }
+//                 }
+//             } else {
+//                 // Update local UI state for flags that do not trigger an immediate Graph network request
+//                 let new_val = !is_set;
+//                 match flag_name {
+//                     "\\Deleted" => emails[selected_index].is_deleted = new_val,
+//                     "\\Answered" => emails[selected_index].is_answered = new_val,
+//                     _ => {}
+//                 }
+//             }
+//         }
+//     }
+// }
+
 pub fn toggle_flag(session: &mut MailSession, emails: &mut [EmailMeta], selected_index: usize, flag_name: &str) {
     if emails.is_empty() { return; }
 
     match session {
         MailSession::Imap(imap_sess) => {
             let uid = emails[selected_index].uid.to_string();
-
             let is_set = match flag_name {
                 "\\Flagged" => emails[selected_index].is_flagged,
                 "\\Deleted" => emails[selected_index].is_deleted,
@@ -712,13 +1141,7 @@ pub fn toggle_flag(session: &mut MailSession, emails: &mut [EmailMeta], selected
                 "\\Answered"=> emails[selected_index].is_answered,
                 _ => false,
             };
-
-            let op = if is_set {
-                format!("-FLAGS.SILENT ({})", flag_name)
-            } else {
-                format!("+FLAGS.SILENT ({})", flag_name)
-            };
-
+            let op = if is_set { format!("-FLAGS.SILENT ({})", flag_name) } else { format!("+FLAGS.SILENT ({})", flag_name) };
             if imap_sess.uid_store(&uid, &op).is_ok() {
                 let new_val = !is_set;
                 match flag_name {
@@ -732,9 +1155,6 @@ pub fn toggle_flag(session: &mut MailSession, emails: &mut [EmailMeta], selected
         },
         MailSession::Graph { access_token } => {
             let id = &emails[selected_index].id;
-
-            // Determine if a network request is needed. Graph handles \Deleted on expunge
-            // and lacks a simple \Answered toggle, so those remain strictly local state updates.
             let (requires_network, is_set, body_str) = match flag_name {
                 "\\Seen" => {
                     let current = emails[selected_index].is_read;
@@ -745,19 +1165,18 @@ pub fn toggle_flag(session: &mut MailSession, emails: &mut [EmailMeta], selected
                     let status = if !current { "flagged" } else { "notFlagged" };
                     (true, current, format!(r#"{{"flag": {{"flagStatus": "{}"}}}}"#, status))
                 },
-                "\\Deleted" => {
-                    (false, emails[selected_index].is_deleted, String::new())
-                },
                 "\\Answered" => {
-                    (false, emails[selected_index].is_answered, String::new())
+                    let current = emails[selected_index].is_answered;
+                    // Setting 102 (Replied) to indicate answered
+                    let val = if !current { "102" } else { "0" };
+                    (true, current, format!(r#"{{"singleValueExtendedProperties": [{{"id": "Integer 0x1081", "value": "{}"}}]}}"#, val))
                 },
-                _ => return,
+                _ => (false, false, String::new()),
             };
 
             if requires_network {
                 let url = format!("https://graph.microsoft.com/v1.0/me/messages/{}", id);
                 let client = reqwest::blocking::Client::new();
-
                 if client.patch(&url)
                     .header("Authorization", format!("Bearer {}", access_token))
                     .header("Content-Type", "application/json")
@@ -768,16 +1187,9 @@ pub fn toggle_flag(session: &mut MailSession, emails: &mut [EmailMeta], selected
                     match flag_name {
                         "\\Seen" => emails[selected_index].is_read = new_val,
                         "\\Flagged" => emails[selected_index].is_flagged = new_val,
+                        "\\Answered" => emails[selected_index].is_answered = new_val,
                         _ => {}
                     }
-                }
-            } else {
-                // Update local UI state for flags that do not trigger an immediate Graph network request
-                let new_val = !is_set;
-                match flag_name {
-                    "\\Deleted" => emails[selected_index].is_deleted = new_val,
-                    "\\Answered" => emails[selected_index].is_answered = new_val,
-                    _ => {}
                 }
             }
         }

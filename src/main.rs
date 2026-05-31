@@ -232,9 +232,15 @@ fn main() {
                                     format!("Re: {}", email_subject)
                                 };
 
+                                let raw_reply = if reply_to.trim().is_empty() {
+                                    crate::events::extract_email(&email_from) // Ensure this function is available
+                                } else {
+                                    crate::events::extract_email(&reply_to)
+                                };
+
                                 if let Some(s) = compose::compose_email(
                                     &app.active_account,
-                                    Some(&reply_to),
+                                    Some(&raw_reply), // Pass the extracted email instead of raw reply_to
                                     Some(&sub),
                                     Some(&reply_body),
                                     &mut reader.current_theme
