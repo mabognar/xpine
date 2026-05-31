@@ -2568,6 +2568,7 @@ dependencies = [
  "reqwest",
  "ropey",
  "serde",
+ "serde_json",
  "syntect",
  "toml",
  "urlencoding",

@@ -261,7 +261,7 @@ pub fn connect(account: &mut Account) -> Result<MailSession, String> {
         (&account.client_id, &account.client_secret, &account.refresh_token) {
 
         // Use Graph scopes for Microsoft, None for Gmail
-        let scope = if is_microsoft { Some("https://graph.microsoft.com/Mail.ReadWrite Mail.Send offline_access") } else { None };
+        let scope = if is_microsoft { Some("https://graph.microsoft.com/Mail.ReadWrite offline_access") } else { None };
 
         match get_oauth_access_token(client_id, client_secret, refresh_token, is_microsoft, scope) {
             Ok(access_token) => {
@@ -307,300 +307,6 @@ pub fn connect(account: &mut Account) -> Result<MailSession, String> {
         Err("No password or valid OAuth credentials provided".to_string())
     }
 }
-
-// 3. Updated fetch_emails with the Enum match wrapper
-// pub fn fetch_emails(session: &mut MailSession, app: &mut App, items_per_page: u32, sort_newest_first: bool) {
-//     match session {
-//         MailSession::Imap(imap_sess) => {
-//             app.page_emails.clear();
-//
-//             match imap_sess.select(&app.current_folder) {
-//                 Ok(m) => app.total_messages = m.exists,
-//                 Err(_) => { app.needs_reconnect = true; return; }
-//             }
-//
-//             let sequence = if let Some(ref q) = app.search_query {
-//                 let query = if q.trim() == "*" {
-//                     String::from("FLAGGED")
-//                 } else {
-//                     format!("OR FROM \"{}\" SUBJECT \"{}\"", q, q)
-//                 };
-//
-//                 match imap_sess.search(&query) {
-//                     Ok(seq_ids) if !seq_ids.is_empty() => {
-//                         app.total_messages = seq_ids.len() as u32;
-//
-//                         let mut sorted_seqs: Vec<u32> = seq_ids.into_iter().collect();
-//                         sorted_seqs.sort();
-//
-//                         let end_idx = sorted_seqs.len().saturating_sub((app.current_page * items_per_page) as usize);
-//                         let start_idx = end_idx.saturating_sub(items_per_page as usize - 1).max(1);
-//
-//                         let page_seqs = &sorted_seqs[(start_idx - 1)..end_idx];
-//                         page_seqs.iter().map(|id| id.to_string()).collect::<Vec<_>>().join(",")
-//                     }
-//                     _ => {
-//                         app.total_messages = 0;
-//                         return;
-//                     }
-//                 }
-//             } else {
-//                 if app.total_messages > 0 {
-//                     let end_idx = app.total_messages.saturating_sub(app.current_page * items_per_page);
-//                     let start_idx = end_idx.saturating_sub(items_per_page - 1).max(1);
-//                     format!("{}:{}", start_idx, end_idx)
-//                 } else {
-//                     return;
-//                 }
-//             };
-//
-//             if !sequence.is_empty() {
-//                 if let Ok(messages) = imap_sess.fetch(&sequence, "(UID ENVELOPE FLAGS RFC822.SIZE INTERNALDATE)") {
-//                     for message in messages.iter() {
-//                         let size = message.size.unwrap_or(0);
-//                         let mut is_seen = false; let mut is_deleted = false;
-//                         let mut is_flagged = false; let mut is_answered = false;
-//
-//                         for flag in message.flags() {
-//                             match flag {
-//                                 imap::types::Flag::Seen => is_seen = true,
-//                                 imap::types::Flag::Deleted => is_deleted = true,
-//                                 imap::types::Flag::Flagged => is_flagged = true,
-//                                 imap::types::Flag::Answered => is_answered = true,
-//                                 _ => {}
-//                             }
-//                         }
-//
-//                         let internal_date = message.internal_date()
-//                             .map(|dt| dt.timestamp())
-//                             .unwrap_or(0);
-//
-//                         let mut subject = "No Subject".to_string();
-//                         let mut from = "Unknown Sender".to_string();
-//                         let mut reply_to = "unknown@example.com".to_string();
-//                         let mut to_addr = String::new();
-//                         let mut cc = String::new();
-//                         let mut date = "Unknown Date".to_string();
-//
-//                         if let Some(env) = message.envelope() {
-//                             if let Some(s) = env.subject.as_ref() { subject = String::from_utf8_lossy(s).into_owned(); }
-//                             if let Some(d) = env.date.as_ref() {
-//                                 let raw_date = String::from_utf8_lossy(d).into_owned();
-//                                 if let Ok(dt) = DateTime::parse_from_rfc2822(&raw_date) {
-//                                     let now = Utc::now().timestamp();
-//                                     let diff = now - dt.timestamp();
-//                                     let local_dt = dt.with_timezone(&Local);
-//                                     date = if diff < 7 * 24 * 3600 && diff >= -86400 { local_dt.format("%a %H:%M").to_string() } else { local_dt.format("%b %d").to_string() };
-//                                 } else {
-//                                     date = raw_date.split(" +").next().unwrap_or(&raw_date).to_string();
-//                                 }
-//                             }
-//
-//                             macro_rules! format_addrs {
-//                                 ($addrs:expr) => {{
-//                                     let mut result = Vec::new();
-//                                     if let Some(a_vec) = $addrs {
-//                                         for addr in a_vec {
-//                                             let name = addr.name.as_ref().map(|n| String::from_utf8_lossy(n.as_ref()).into_owned()).unwrap_or_default();
-//                                             let mailbox = addr.mailbox.as_ref().map(|m| String::from_utf8_lossy(m.as_ref()).into_owned()).unwrap_or_default();
-//                                             let host = addr.host.as_ref().map(|h| String::from_utf8_lossy(h.as_ref()).into_owned()).unwrap_or_default();
-//
-//                                             let email_raw = format!("{}@{}", mailbox, host);
-//                                             let formatted = if !name.is_empty() { format!("{} <{}>", name, email_raw) } else { email_raw };
-//                                             result.push(formatted);
-//                                         }
-//                                     }
-//                                     result.join(", ")
-//                                 }};
-//                             }
-//
-//                             from = format_addrs!(env.from.as_ref());
-//                             if from.is_empty() { from = "Unknown Sender".to_string(); }
-//
-//                             to_addr = format_addrs!(env.to.as_ref());
-//                             cc = format_addrs!(env.cc.as_ref());
-//
-//                             if let Some(f_vec) = env.reply_to.as_ref().or(env.from.as_ref()) {
-//                                 if let Some(addr) = f_vec.first() {
-//                                     let mailbox = addr.mailbox.as_ref().map(|m| String::from_utf8_lossy(m.as_ref()).into_owned()).unwrap_or_default();
-//                                     let host = addr.host.as_ref().map(|h| String::from_utf8_lossy(h.as_ref()).into_owned()).unwrap_or_default();
-//                                     reply_to = format!("{}@{}", mailbox, host);
-//                                 }
-//                             }
-//                         }
-//
-//                         app.page_emails.push(EmailMeta {
-//                             id: message.message.to_string(), // Upgraded to String
-//                             uid: message.uid.unwrap_or(0),
-//                             timestamp: internal_date,
-//                             subject,
-//                             from,
-//                             reply_to,
-//                             reply_to_display: String::new(),
-//                             to_addr,
-//                             cc,
-//                             date,
-//                             size,
-//                             is_read: is_seen,
-//                             is_deleted,
-//                             is_flagged,
-//                             is_answered,
-//                         });
-//                     }
-//                 }
-//
-//                 if sort_newest_first {
-//                     app.page_emails.sort_by(|a, b| b.timestamp.cmp(&a.timestamp));
-//                 } else {
-//                     app.page_emails.sort_by(|a, b| a.timestamp.cmp(&b.timestamp));
-//                 }
-//
-//                 if let Some(idx_from_end) = app.restore_index_from_end {
-//                     if sort_newest_first {
-//                         app.selected_index = if !app.page_emails.is_empty() { idx_from_end as usize } else { 0 };
-//                     } else {
-//                         app.selected_index = if !app.page_emails.is_empty() { app.page_emails.len().saturating_sub(1).saturating_sub(idx_from_end as usize) } else { 0 };
-//                     }
-//                     app.restore_index_from_end = None;
-//                 } else if app.selected_index >= app.page_emails.len() {
-//                     app.selected_index = app.page_emails.len().saturating_sub(1);
-//                 }
-//             }
-//         }, // <--- THIS is the brace that was likely missing!
-//
-//         MailSession::Graph { access_token } => {
-//             app.page_emails.clear();
-//
-//             let folder = if app.current_folder == "INBOX" { "inbox" } else { &app.current_folder };
-//             let skip = app.current_page * items_per_page;
-//
-//             let order = if sort_newest_first { "receivedDateTime DESC" } else { "receivedDateTime ASC" };
-//
-//             let mut url = format!(
-//                 "https://graph.microsoft.com/v1.0/me/mailFolders/{}/messages?$count=true&$top={}&$skip={}&$orderby={}&$select=id,receivedDateTime,subject,from,toRecipients,ccRecipients,replyTo,isRead,flag",
-//                 folder, items_per_page, skip, order
-//             );
-//
-//             if let Some(ref q) = app.search_query {
-//                 if q.trim() == "*" {
-//                     url.push_str("&$filter=flag/flagStatus eq 'flagged'");
-//                 } else {
-//                     let encoded_q = urlencoding::encode(q);
-//                     url = format!("{}&$search=\"{}\"", url, encoded_q);
-//                 }
-//             }
-//
-//             let client = reqwest::blocking::Client::new();
-//             let res = client.get(&url)
-//                 .header("Authorization", format!("Bearer {}", access_token))
-//                 .header("ConsistencyLevel", "eventual")
-//                 .send();
-//
-//             match res {
-//                 Ok(response) if response.status().is_success() => {
-//                     if let Ok(graph_data) = response.json::<GraphMessageResponse>() {
-//
-//                         if let Some(total) = graph_data.count {
-//                             app.total_messages = total;
-//                         }
-//
-//                         for msg in graph_data.value {
-//
-//                             let internal_date = DateTime::parse_from_rfc3339(&msg.received_date_time)
-//                                 .map(|dt| dt.timestamp())
-//                                 .unwrap_or(0);
-//
-//                             let mut date_str = "Unknown Date".to_string();
-//                             if let Ok(dt) = DateTime::parse_from_rfc3339(&msg.received_date_time) {
-//                                 let now = Utc::now().timestamp();
-//                                 let diff = now - dt.timestamp();
-//                                 let local_dt = dt.with_timezone(&Local);
-//                                 date_str = if diff < 7 * 24 * 3600 && diff >= -86400 {
-//                                     local_dt.format("%a %H:%M").to_string()
-//                                 } else {
-//                                     local_dt.format("%b %d").to_string()
-//                                 };
-//                             }
-//
-//                             macro_rules! format_graph_addrs {
-//                                 ($addrs:expr) => {{
-//                                     let mut result = Vec::new();
-//                                     if let Some(a_vec) = $addrs {
-//                                         for recipient in a_vec {
-//                                             if let Some(email) = &recipient.email_address {
-//                                                 let name = email.name.as_deref().unwrap_or("");
-//                                                 let addr = email.address.as_deref().unwrap_or("");
-//                                                 let formatted = if !name.is_empty() { format!("{} <{}>", name, addr) } else { addr.to_string() };
-//                                                 result.push(formatted);
-//                                             }
-//                                         }
-//                                     }
-//                                     result.join(", ")
-//                                 }};
-//                             }
-//
-//                             let mut from = "Unknown Sender".to_string();
-//                             if let Some(f) = msg.from {
-//                                 if let Some(email) = f.email_address {
-//                                     let name = email.name.unwrap_or_default();
-//                                     let addr = email.address.unwrap_or_default();
-//                                     from = if !name.is_empty() { format!("{} <{}>", name, addr) } else { addr };
-//                                 }
-//                             }
-//
-//                             let to_addr = format_graph_addrs!(msg.to_recipients);
-//                             let cc = format_graph_addrs!(msg.cc_recipients);
-//                             let reply_to = format_graph_addrs!(msg.reply_to);
-//
-//                             let is_flagged = msg.flag.and_then(|f| f.flag_status).map_or(false, |s| s.to_lowercase() == "flagged");
-//
-//                             app.page_emails.push(EmailMeta {
-//                                 id: msg.id, // Native Graph String ID
-//                                 uid: 0,
-//                                 timestamp: internal_date,
-//                                 subject: msg.subject.unwrap_or_else(|| "No Subject".to_string()),
-//                                 from,
-//                                 reply_to,
-//                                 reply_to_display: String::new(),
-//                                 to_addr,
-//                                 cc,
-//                                 date: date_str,
-//                                 size: 0,
-//                                 is_read: msg.is_read,
-//                                 is_deleted: false,
-//                                 is_flagged,
-//                                 is_answered: false,
-//                             });
-//                         }
-//
-//                         if let Some(idx_from_end) = app.restore_index_from_end {
-//                             if sort_newest_first {
-//                                 app.selected_index = if !app.page_emails.is_empty() { idx_from_end as usize } else { 0 };
-//                             } else {
-//                                 app.selected_index = if !app.page_emails.is_empty() { app.page_emails.len().saturating_sub(1).saturating_sub(idx_from_end as usize) } else { 0 };
-//                             }
-//                             app.restore_index_from_end = None;
-//                         } else if app.selected_index >= app.page_emails.len() {
-//                             // If the cursor is out of bounds, snap it to the bottom of the current list!
-//                             app.selected_index = app.page_emails.len().saturating_sub(1);
-//                         }
-//
-//                     } else {
-//                         app.update_status("Failed to parse Graph JSON data.".to_string());
-//                     }
-//                 }
-//                 Ok(response) => {
-//                     app.update_status(format!("Graph API Error: {}", response.status()));
-//                 }
-//                 Err(e) => {
-//                     app.update_status(format!("Network error: {}", e));
-//                     app.needs_reconnect = true;
-//                 }
-//             }
-//         }
-//     }
-// }
-
 
 pub fn fetch_emails(session: &mut MailSession, app: &mut App, items_per_page: u32, sort_newest_first: bool) {
     match session {
@@ -1095,5 +801,54 @@ pub fn move_to_folder(session: &mut MailSession, seq_id: &str, folder: &str) -> 
 
             Ok(())
         }
+    }
+}
+
+pub fn send_graph_email(
+    access_token: &str,
+    to: &str,
+    cc: &str,
+    subject: &str,
+    body: &str,
+) -> Result<(), String> {
+    let client = reqwest::blocking::Client::new();
+    let url = "https://graph.microsoft.com/v1.0/me/sendMail";
+
+    // Split comma-separated recipients and format them as JSON objects
+    let to_recipients: Vec<_> = to.split(',')
+        .filter(|s| !s.trim().is_empty())
+        .map(|email| serde_json::json!({ "emailAddress": { "address": email.trim() } }))
+        .collect();
+
+    let cc_recipients: Vec<_> = cc.split(',')
+        .filter(|s| !s.trim().is_empty())
+        .map(|email| serde_json::json!({ "emailAddress": { "address": email.trim() } }))
+        .collect();
+
+    let payload = serde_json::json!({
+        "message": {
+            "subject": subject,
+            "body": {
+                "contentType": "Text",
+                "content": body
+            },
+            "toRecipients": to_recipients,
+            "ccRecipients": cc_recipients
+        },
+        "saveToSentItems": "true"
+    });
+
+    let res = client.post(url)
+        .header("Authorization", format!("Bearer {}", access_token))
+        .header("Content-Type", "application/json")
+        .json(&payload)
+        .send()
+        .map_err(|e| format!("Network error: {}", e))?;
+
+    if res.status().is_success() {
+        Ok(())
+    } else {
+        let err_text = res.text().unwrap_or_default();
+        Err(format!("Graph API Send Failed: {}", err_text))
     }
 }
