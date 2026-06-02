@@ -114,6 +114,18 @@ impl imap::Authenticator for OAuth2 {
     }
 }
 
+#[derive(Deserialize, Debug)]
+pub struct GraphFolderResponse {
+    pub value: Vec<GraphFolder>,
+}
+
+#[derive(Deserialize, Debug)]
+pub struct GraphFolder {
+    pub id: String,
+    #[serde(rename = "displayName")]
+    pub display_name: String,
+}
+
 
 
 pub fn request_microsoft_device_code(client_id: &str) -> Result<DeviceCodeResponse, String> {
@@ -482,7 +494,34 @@ pub fn fetch_emails(session: &mut MailSession, app: &mut App, items_per_page: u3
         MailSession::Graph { access_token } => {
             app.page_emails.clear();
 
-            let folder = if app.current_folder == "INBOX" { "inbox" } else { &app.current_folder };
+            // let folder = if app.current_folder == "INBOX" { "inbox" } else { &app.current_folder };
+
+            let mut folder_id = match app.current_folder.as_str() {
+                "INBOX" => "inbox".to_string(),
+                "Sent Items" => "sentitems".to_string(),
+                "Deleted Items" => "deleteditems".to_string(),
+                "Drafts" => "drafts".to_string(),
+                "Junk Email" => "junkemail".to_string(),
+                "Archive" => "archive".to_string(),
+                other => {
+                    let mut id = other.to_string();
+                    let client = reqwest::blocking::Client::new();
+                    let encoded = urlencoding::encode(other);
+                    let lookup_url = format!("https://graph.microsoft.com/v1.0/me/mailFolders?$filter=displayName%20eq%20'{}'", encoded);
+
+                    if let Ok(res) = client.get(&lookup_url).header("Authorization", format!("Bearer {}", access_token)).send() {
+                        if let Ok(data) = res.json::<GraphFolderResponse>() {
+                            if let Some(f) = data.value.into_iter().next() {
+                                id = f.id;
+                            }
+                        }
+                    }
+                    id
+                }
+            };
+
+            let folder = &folder_id;
+
             let skip = app.current_page * items_per_page;
 
             let mut is_text_search = false;
@@ -1284,12 +1323,20 @@ pub fn move_to_folder(session: &mut MailSession, seq_id: &str, folder: &str) -> 
         },
         MailSession::Graph { access_token } => {
             // Resolve standard folder names to Graph's known folder IDs
+            // let destination_id = match folder {
+            //     "INBOX" => "inbox",
+            //     "Junk" | "[Gmail]/Spam" => "junkemail",
+            //     _ => folder,
+            // };
             let destination_id = match folder {
                 "INBOX" => "inbox",
-                "Junk" | "[Gmail]/Spam" => "junkemail",
-                _ => folder,
+                "Junk" | "Junk Email" | "[Gmail]/Spam" => "junkemail",
+                "Sent Items" => "sentitems",
+                "Deleted Items" => "deleteditems",
+                "Archive" => "archive",
+                _ => folder, // Note: custom folders moved via quick-action might need the same lookup logic!
             };
-
+            
             let url = format!("https://graph.microsoft.com/v1.0/me/messages/{}/move", seq_id);
             let body_str = format!(r#"{{"destinationId": "{}"}}"#, destination_id);
 

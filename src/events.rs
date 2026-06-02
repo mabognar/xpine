@@ -327,7 +327,19 @@ pub fn handle_event(event: Event, app: &mut App, session: &mut Option<MailSessio
                                                 for mb in mailboxes.iter() { fetched.push(mb.name().to_string()); }
                                             }
                                         }
-                                        net::MailSession::Graph { .. } => {}
+                                        net::MailSession::Graph { access_token } => {
+                                            let client = reqwest::blocking::Client::new();
+                                            let url = "https://graph.microsoft.com/v1.0/me/mailFolders?$top=100";
+                                            if let Ok(res) = client.get(url)
+                                                .header("Authorization", format!("Bearer {}", access_token))
+                                                .send() {
+                                                if let Ok(graph_data) = res.json::<crate::net::GraphFolderResponse>() {
+                                                    for folder in graph_data.value {
+                                                        fetched.push(folder.display_name);
+                                                    }
+                                                }
+                                            }
+                                        }
                                     }
                                 }
                                 if fetched.is_empty() { fetched.push("INBOX".to_string()); }
@@ -701,7 +713,34 @@ pub fn handle_event(event: Event, app: &mut App, session: &mut Option<MailSessio
                                                 for mb in mailboxes.iter() { fetched.push(mb.name().to_string()); }
                                             }
                                         }
-                                        net::MailSession::Graph { .. } => {}
+                                        net::MailSession::Graph { .. } => {
+                                            let mut fetched = Vec::new();
+                                            if let Some(sess) = session {
+                                                match sess {
+                                                    net::MailSession::Imap(imap_sess) => {
+                                                        if let Ok(mailboxes) = imap_sess.list(Some(""), Some("*")) {
+                                                            for mb in mailboxes.iter() { fetched.push(mb.name().to_string()); }
+                                                        }
+                                                    }
+                                                    // NEW: Fetch Graph API folders
+                                                    net::MailSession::Graph { access_token } => {
+                                                        let client = reqwest::blocking::Client::new();
+                                                        let url = "https://graph.microsoft.com/v1.0/me/mailFolders?$top=100";
+                                                        if let Ok(res) = client.get(url)
+                                                            .header("Authorization", format!("Bearer {}", access_token))
+                                                            .send() {
+                                                            if let Ok(graph_data) = res.json::<crate::net::GraphFolderResponse>() {
+                                                                for folder in graph_data.value {
+                                                                    fetched.push(folder.display_name);
+                                                                }
+                                                            }
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                            if fetched.is_empty() { fetched.push("INBOX".to_string()); }
+                                            fetched.sort();
+                                        }
                                     }
                                 }
                                 if fetched.is_empty() { fetched.push("INBOX".to_string()); }
