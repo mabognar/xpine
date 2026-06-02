@@ -881,8 +881,8 @@ pub fn draw_app(stdout: &mut std::io::Stdout, app: &App, theme_provider: &Editor
 
             let m_col = (cols as usize / 6).max(1);
 
-            Editor::draw_menu_line(stdout, rows - 2, cols, m_col, &[("", ""),          ("P", " Prev"), ("X", " Select"), ("", ""), ("", ""), ("", "")], colors.menu_bg, colors.accent, colors.fg)?;
-            Editor::draw_menu_line(stdout, rows - 1, cols, m_col, &[("<", " Back"),    ("N", " Next"), ("Meta+T", " Theme"), ("", ""), ("", ""), ("", "")], colors.menu_bg, colors.accent, colors.fg)?;
+            Editor::draw_menu_line(stdout, rows - 2, cols, m_col, &[("", ""),       ("P", " Prev"), ("X", " Select"), ("", ""), ("", ""), ("", "")], colors.menu_bg, colors.accent, colors.fg)?;
+            Editor::draw_menu_line(stdout, rows - 1, cols, m_col, &[("<", " Back"), ("N", " Next"), ("Meta+T", " Theme"), ("", ""), ("", ""), ("", "")], colors.menu_bg, colors.accent, colors.fg)?;
         }
         _ => {}
     }

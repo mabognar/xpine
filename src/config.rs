@@ -42,11 +42,15 @@ pub struct Account {
     pub imap_port: u16,
     #[serde(default = "default_smtp")]
     pub smtp_server: String,
+
+    #[serde(default = "default_smtp_port")]
+    pub smtp_port: u16,
 }
 
 fn default_imap() -> String { "imap.gmail.com".to_string() }
 fn default_imap_port() -> u16 { 993 }
 fn default_smtp() -> String { "smtp.gmail.com".to_string() }
+fn default_smtp_port() -> u16 { 587 }
 
 #[derive(Deserialize, Serialize, Default)]
 pub struct AppConfig {

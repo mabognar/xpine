@@ -166,6 +166,7 @@ pub fn handle_event(event: Event, app: &mut App, session: &mut Option<MailSessio
                                                     imap_server: imap_server.trim().to_string(),
                                                     imap_port: imap_port.trim().parse().unwrap_or(993),
                                                     smtp_server: smtp_server.trim().to_string(),
+                                                    smtp_port: imap_port.trim().parse().unwrap_or(587),
                                                 };
 
                                                 app.accounts.push(new_acc);
@@ -251,6 +252,7 @@ pub fn handle_event(event: Event, app: &mut App, session: &mut Option<MailSessio
                                                         imap_server: imap_server.trim().to_string(),
                                                         imap_port: imap_port.trim().parse().unwrap_or(993),
                                                         smtp_server: smtp_server.trim().to_string(),
+                                                        smtp_port: imap_port.trim().parse().unwrap_or(587),
                                                     };
                                                     crate::config::save_config(&app.accounts);
 

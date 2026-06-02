@@ -337,16 +337,25 @@ pub fn compose_email(account: &Account, default_to: Option<&str>, default_subjec
                 }
             } else {
                 // STANDARD LETTRE SMTP (Used for Google / Custom SMTP / Enabled Enterprise Accounts)
+                // let creds = SmtpCredentials::new(account.email.clone(), token_or_pass);
+                // let mut mailer = SmtpTransport::starttls_relay(&account.smtp_server)
+                //     .unwrap()
+                //     .port(587)
+                //     .credentials(creds);
+                //
+                // if account.refresh_token.is_some() {
+                //     mailer = mailer.authentication(vec![Mechanism::Xoauth2]);
+                // }
                 let creds = SmtpCredentials::new(account.email.clone(), token_or_pass);
                 let mut mailer = SmtpTransport::starttls_relay(&account.smtp_server)
                     .unwrap()
-                    .port(587)
+                    // --- CHANGE THIS LINE ---
+                    .port(account.smtp_port)
                     .credentials(creds);
 
                 if account.refresh_token.is_some() {
                     mailer = mailer.authentication(vec![Mechanism::Xoauth2]);
                 }
-
                 match mailer.build().send(&email_msg) {
                     Ok(_) => Some("Message Sent".to_string()),
                     Err(e) => {

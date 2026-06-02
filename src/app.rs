@@ -72,6 +72,7 @@ impl App {
                     imap_server: String::new(),
                     imap_port: 993,
                     smtp_server: String::new(),
+                    smtp_port: 587,
                 },
                 // Assuming '3' is the index for "E Email Accounts" in your Main Menu array
                 AppMode::MainMenu { selected_idx: 3 },
