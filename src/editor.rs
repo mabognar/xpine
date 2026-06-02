@@ -457,10 +457,33 @@ impl Editor {
         self.cursor_x += 4; self.desired_cursor_x = self.cursor_x; self.mark_modified();
     }
 
+    // pub(crate) fn page_up(&mut self) -> io::Result<()> {
+    //     let (_, rows) = terminal::size()?;
+    //     let visible_rows = rows.saturating_sub(4 + self.top_margin) as usize;
+    //     self.cursor_y = self.cursor_y.saturating_sub(visible_rows);
+    //     self.cursor_x = self.desired_cursor_x.min(self.line_len(self.cursor_y));
+    //     Ok(())
+    // }
+    //
+    // pub(crate) fn page_down(&mut self) -> io::Result<()> {
+    //     let (_, rows) = terminal::size()?;
+    //     let visible_rows = rows.saturating_sub(4 + self.top_margin) as usize;
+    //     let max_y = self.buffer.len_lines().saturating_sub(1);
+    //     self.cursor_y = (self.cursor_y + visible_rows).min(max_y);
+    //     self.cursor_x = self.desired_cursor_x.min(self.line_len(self.cursor_y));
+    //     Ok(())
+    // }
+
     pub(crate) fn page_up(&mut self) -> io::Result<()> {
         let (_, rows) = terminal::size()?;
         let visible_rows = rows.saturating_sub(4 + self.top_margin) as usize;
+
+        // Move the cursor up by a page
         self.cursor_y = self.cursor_y.saturating_sub(visible_rows);
+
+        // Explicitly move the viewport up by a page
+        self.row_offset = self.row_offset.saturating_sub(visible_rows);
+
         self.cursor_x = self.desired_cursor_x.min(self.line_len(self.cursor_y));
         Ok(())
     }
@@ -468,8 +491,15 @@ impl Editor {
     pub(crate) fn page_down(&mut self) -> io::Result<()> {
         let (_, rows) = terminal::size()?;
         let visible_rows = rows.saturating_sub(4 + self.top_margin) as usize;
+
+        // Move the cursor down by a page
         let max_y = self.buffer.len_lines().saturating_sub(1);
         self.cursor_y = (self.cursor_y + visible_rows).min(max_y);
+
+        // Explicitly move the viewport down by a page
+        let max_offset = self.buffer.len_lines().saturating_sub(visible_rows);
+        self.row_offset = (self.row_offset + visible_rows).min(max_offset);
+
         self.cursor_x = self.desired_cursor_x.min(self.line_len(self.cursor_y));
         Ok(())
     }

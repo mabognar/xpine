@@ -785,7 +785,7 @@ pub fn draw_app(stdout: &mut std::io::Stdout, app: &App, theme_provider: &Editor
                 ("A", "ADDRESS BOOK", "Update address book"),
                 ("F", "FOLDER LIST", "Select folder"),
                 ("S", "SETTINGS", "Configure xpine"),
-                ("E", "EMAIL ACCOUNTS", "Edit/Add email accounts"),
+                ("E", "EMAIL ACCOUNTS", "Edit email accounts"),
                 ("H", "HELP", "Get help using xpine"),
                 ("Q", "QUIT", "Leave the xpine program"),
             ];
