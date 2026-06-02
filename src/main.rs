@@ -234,9 +234,9 @@ fn main() {
                                 };
 
                                 let raw_reply = if reply_to.trim().is_empty() {
-                                    crate::events::extract_email(&email_from) // Ensure this function is available
+                                    crate::mail::extract_email(&email_from) // Ensure this function is available
                                 } else {
-                                    crate::events::extract_email(&reply_to)
+                                    crate::mail::extract_email(&reply_to)
                                 };
 
                                 if let Some(s) = compose::compose_email(

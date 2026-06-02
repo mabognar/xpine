@@ -184,7 +184,6 @@ pub fn handle_event(event: Event, app: &mut App, session: &mut Option<MailSessio
                                 }
                             }
                         }
-
                         KeyCode::Char('m') | KeyCode::Char('M') => {
                             if !app.accounts.is_empty() {
                                 let mut acc = app.accounts[*selected_idx].clone();
@@ -233,7 +232,6 @@ pub fn handle_event(event: Event, app: &mut App, session: &mut Option<MailSessio
                                 );
                             }
                         },
-
                         KeyCode::Char('e') | KeyCode::Char('E') => {
                             if !app.accounts.is_empty() {
                                 let acc = &app.accounts[*selected_idx].clone();
@@ -329,8 +327,7 @@ pub fn handle_event(event: Event, app: &mut App, session: &mut Option<MailSessio
                                         }
                                         net::MailSession::Graph { access_token } => {
                                             let client = reqwest::blocking::Client::new();
-                                            let url = "https://graph.microsoft.com/v1.0/me/mailFolders?$top=100";
-                                            if let Ok(res) = client.get(url)
+                                            let url = "https://graph.microsoft.com/v1.0/me/mailFolders?includeHiddenFolders=true&$top=100";                                            if let Ok(res) = client.get(url)
                                                 .header("Authorization", format!("Bearer {}", access_token))
                                                 .send() {
                                                 if let Ok(graph_data) = res.json::<crate::net::GraphFolderResponse>() {
@@ -588,9 +585,9 @@ pub fn handle_event(event: Event, app: &mut App, session: &mut Option<MailSessio
                                     // Replying Logic
                                     else {
                                         let raw_reply = if reply_to.trim().is_empty() {
-                                            extract_email(&from)
+                                            crate::mail::extract_email(&from)
                                         } else {
-                                            extract_email(&reply_to)
+                                            crate::mail::extract_email(&reply_to)
                                         };
 
                                         let sub = if subject.to_lowercase().starts_with("re:") { subject.clone() } else { format!("Re: {}", subject) };
@@ -690,70 +687,54 @@ pub fn handle_event(event: Event, app: &mut App, session: &mut Option<MailSessio
                         }
                         KeyCode::Enter | KeyCode::Char('>') | KeyCode::Right => {
                             if *step == 0 {
-                                let new_idx = *selected_idx;
-                                if new_idx != app.current_account_idx {
-                                    app.current_account_idx = new_idx;
-                                    app.active_account = app.accounts[app.current_account_idx].clone();
+                                if *selected_idx < app.accounts.len() {
+                                    app.active_account = app.accounts[*selected_idx].clone();
+                                    app.current_account_idx = *selected_idx;
+                                    *session = crate::net::connect(&mut app.active_account).ok();
 
-                                    if let Some(s) = session.take() {
-                                        match s {
-                                            net::MailSession::Imap(mut imap_sess) => { let _ = imap_sess.logout(); }
-                                            net::MailSession::Graph { .. } => {}
-                                        }
-                                    }
-
-                                    *session = net::connect(&mut app.active_account).ok();
-                                }
-
-                                let mut fetched = Vec::new();
-                                if let Some(sess) = session {
-                                    match sess {
-                                        net::MailSession::Imap(imap_sess) => {
-                                            if let Ok(mailboxes) = imap_sess.list(Some(""), Some("*")) {
-                                                for mb in mailboxes.iter() { fetched.push(mb.name().to_string()); }
-                                            }
-                                        }
-                                        net::MailSession::Graph { .. } => {
-                                            let mut fetched = Vec::new();
-                                            if let Some(sess) = session {
-                                                match sess {
-                                                    net::MailSession::Imap(imap_sess) => {
-                                                        if let Ok(mailboxes) = imap_sess.list(Some(""), Some("*")) {
-                                                            for mb in mailboxes.iter() { fetched.push(mb.name().to_string()); }
-                                                        }
+                                    let mut fetched = Vec::new();
+                                    // Removed 'ref mut' here to properly utilize match ergonomics
+                                    if let Some(sess) = session {
+                                        match sess {
+                                            net::MailSession::Imap(imap_sess) => {
+                                                if let Ok(mailboxes) = imap_sess.list(Some(""), Some("*")) {
+                                                    for mb in mailboxes.iter() {
+                                                        fetched.push(mb.name().to_string());
                                                     }
-                                                    // NEW: Fetch Graph API folders
-                                                    net::MailSession::Graph { access_token } => {
-                                                        let client = reqwest::blocking::Client::new();
-                                                        let url = "https://graph.microsoft.com/v1.0/me/mailFolders?$top=100";
-                                                        if let Ok(res) = client.get(url)
-                                                            .header("Authorization", format!("Bearer {}", access_token))
-                                                            .send() {
-                                                            if let Ok(graph_data) = res.json::<crate::net::GraphFolderResponse>() {
-                                                                for folder in graph_data.value {
-                                                                    fetched.push(folder.display_name);
-                                                                }
-                                                            }
+                                                }
+                                            }
+                                            net::MailSession::Graph { access_token } => {
+                                                let client = reqwest::blocking::Client::new();
+                                                let url = "https://graph.microsoft.com/v1.0/me/mailFolders?includeHiddenFolders=true&$top=100";
+                                                if let Ok(res) = client.get(url)
+                                                    .header("Authorization", format!("Bearer {}", access_token))
+                                                    .send() {
+                                                    if let Ok(graph_data) = res.json::<crate::net::GraphFolderResponse>() {
+                                                        for folder in graph_data.value {
+                                                            fetched.push(folder.display_name);
                                                         }
                                                     }
                                                 }
                                             }
-                                            if fetched.is_empty() { fetched.push("INBOX".to_string()); }
-                                            fetched.sort();
                                         }
                                     }
+
+                                    if fetched.is_empty() {
+                                        fetched.push("INBOX".to_string());
+                                    }
+
+                                    *folders = fetched;
+                                    *step = 1;
+                                    *selected_idx = 0;
                                 }
-                                if fetched.is_empty() { fetched.push("INBOX".to_string()); }
-                                fetched.sort();
-                                *folders = fetched;
-                                *step = 1;
-                                *selected_idx = 0;
-                            } else {
-                                app.current_folder = folders[*selected_idx].clone();
-                                app.current_page = 0;
-                                app.restore_index_from_end = Some(0);
-                                app.needs_fetch = true;
-                                app.mode = AppMode::EmailList;
+                            } else if *step == 1 {
+                                if !folders.is_empty() {
+                                    app.current_folder = folders[*selected_idx].clone();
+                                    app.current_page = 0;
+                                    app.restore_index_from_end = Some(0);
+                                    app.needs_fetch = true;
+                                    app.mode = AppMode::EmailList;
+                                }
                             }
                         }
                         KeyCode::Char('t') | KeyCode::Char('T') if k.modifiers.contains(KeyModifiers::ALT) => {
@@ -821,9 +802,7 @@ pub fn handle_event(event: Event, app: &mut App, session: &mut Option<MailSessio
                     match k.code {
                         KeyCode::Up | KeyCode::Char('p') | KeyCode::Char('P') => *selected_idx = selected_idx.saturating_sub(1),
                         KeyCode::Down | KeyCode::Char('n') | KeyCode::Char('N') => *selected_idx = (*selected_idx + 1).min(2),
-
                         KeyCode::Left | KeyCode::Char('<') | KeyCode::Char('q') | KeyCode::Char('Q') | KeyCode::Char('s') | KeyCode::Char('S') => app.mode = AppMode::MainMenu { selected_idx: 3 },
-
                         KeyCode::Char('x') | KeyCode::Char('X') | KeyCode::Right | KeyCode::Enter => {
                             if *selected_idx == 0 { theme_provider.soft_wrap = !theme_provider.soft_wrap; theme_provider.save_settings(); }
                             else if *selected_idx == 1 { theme_provider.show_line_numbers = !theme_provider.show_line_numbers; theme_provider.save_settings(); }
@@ -833,7 +812,6 @@ pub fn handle_event(event: Event, app: &mut App, session: &mut Option<MailSessio
                                 app.needs_fetch = true;
                             }
                         }
-
                         KeyCode::Char('w') | KeyCode::Char('W') => { theme_provider.soft_wrap = !theme_provider.soft_wrap; theme_provider.save_settings(); }
                         KeyCode::Char('l') | KeyCode::Char('L') => { theme_provider.show_line_numbers = !theme_provider.show_line_numbers; theme_provider.save_settings(); }
                         KeyCode::Char('o') | KeyCode::Char('O') => {
@@ -862,13 +840,13 @@ pub fn handle_event(event: Event, app: &mut App, session: &mut Option<MailSessio
     quit
 }
 
-pub(crate) fn extract_email(formatted: &str) -> String {
-    // If it contains <...>, extract what's inside
-    if let Some(start) = formatted.find('<') {
-        if let Some(end) = formatted.find('>') {
-            return formatted[start + 1..end].trim().to_string();
-        }
-    }
-    // Otherwise, assume it's already just an email
-    formatted.trim().to_string()
-}
+// pub(crate) fn extract_email(formatted: &str) -> String {
+//     // If it contains <...>, extract what's inside
+//     if let Some(start) = formatted.find('<') {
+//         if let Some(end) = formatted.find('>') {
+//             return formatted[start + 1..end].trim().to_string();
+//         }
+//     }
+//     // Otherwise, assume it's already just an email
+//     formatted.trim().to_string()
+// }

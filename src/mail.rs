@@ -84,3 +84,15 @@ pub fn format_reply_text(original_text: &str) -> String {
 
     reply
 }
+
+pub(crate) fn extract_email(formatted: &str) -> String {
+    // If it contains <...>, extract what's inside
+    if let Some(start) = formatted.find('<') {
+        if let Some(end) = formatted.find('>') {
+            return formatted[start + 1..end].trim().to_string();
+        }
+    }
+    // Otherwise, assume it's already just an email
+    formatted.trim().to_string()
+}
+
