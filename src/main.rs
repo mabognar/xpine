@@ -17,7 +17,6 @@ use app::{App, AppMode};
 use config::load_config;
 use editor::{Editor, MenuState, EditorResult};
 use ui::UiExt;
-
 use ropey::Rope;
 use crossterm::{
     cursor, event, execute, queue,
@@ -44,8 +43,25 @@ fn main() {
     let mut session = if app.accounts.is_empty() {
         None
     } else {
-        net::connect(&mut app.active_account).ok()
+        match net::connect(&mut app.active_account) {
+            Ok(sess) => Some(sess),
+            Err(e) => {
+                let err_str = e.to_lowercase();
+                if err_str.contains("timeout") || err_str.contains("timed out") || err_str.contains("would block") {
+                    app.update_status("Attempted connection timed out".to_string());
+                } else {
+                    app.update_status("Connection failed".to_string());
+                }
+                None
+            }
+        }
     };
+
+    // let mut session = if app.accounts.is_empty() {
+    //     None
+    // } else {
+    //     net::connect(&mut app.active_account).ok()
+    // };
 
     loop {
         if app.needs_reconnect {
@@ -58,15 +74,37 @@ fn main() {
                         net::MailSession::Graph { .. } => {}
                     }
                 }
-                session = net::connect(&mut app.active_account).ok();
-                app.needs_fetch = true;
+                match net::connect(&mut app.active_account) {
+                    Ok(sess) => {
+                        session = Some(sess);
+                        app.needs_fetch = true;
+                    }
+                    Err(e) => {
+                        session = None;
+                        let err_str = e.to_lowercase();
+                        if err_str.contains("timeout") || err_str.contains("timed out") || err_str.contains("would block") {
+                            app.update_status("Attempted connection timed out".to_string());
+                        } else {
+                            // Optionally display other connection errors!
+                            app.update_status("Connection failed".to_string());
+                        }
+                    }
+                }
+                // session = net::connect(&mut app.active_account).ok();
+                // app.needs_fetch = true;
             }
             app.needs_reconnect = false;
             app.last_fetch_time = Instant::now();
         }
 
+        // if app.last_fetch_time.elapsed() >= app.auto_refresh_interval {
+        //     app.needs_fetch = true;
+        // }
+
         if app.last_fetch_time.elapsed() >= app.auto_refresh_interval {
             app.needs_fetch = true;
+            // Add this line to reset the timer and stop the 1ms spin loop!
+            app.last_fetch_time = Instant::now();
         }
 
         let (_, rows) = term_size().unwrap_or((80, 24));
@@ -369,11 +407,9 @@ fn main() {
         }
     }
 
-    // FIX: Restored cursor::Show from earlier
     execute!(stdout, cursor::Show, LeaveAlternateScreen).unwrap();
     disable_raw_mode().expect("Failed to disable raw mode");
 
-    // FIX: Wrapped logout
     if let Some(mut s) = session {
         match s {
             net::MailSession::Imap(mut imap_sess) => { let _ = imap_sess.logout(); }

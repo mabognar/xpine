@@ -359,6 +359,36 @@ impl PromptExt for Editor {
                 ResetColor
             )?;
 
+            let (_, rows) = terminal::size().unwrap_or((80, 24));
+
+            // We queue the commands to temporarily overwrite the menu
+            queue!(
+                stdout(),
+                cursor::SavePosition, // 1. Save where the typing cursor currently is!
+
+                SetBackgroundColor(colors.menu_bg),
+                SetForegroundColor(colors.fg),
+
+                // 2. Move to the menu area (Assuming a standard 2-line menu at the bottom)
+                cursor::MoveTo(0, rows - 2),
+                terminal::Clear(terminal::ClearType::CurrentLine),
+                cursor::MoveTo(0, rows - 1),
+                terminal::Clear(terminal::ClearType::CurrentLine),
+
+                // 3. Draw the contextual menu
+                cursor::MoveTo(0, rows - 1),
+                // You can wrap these in your app's theme colors if you pass them into the function!
+                Print("^C"),
+                Print(" Cancel"),
+
+                // 4. Put the cursor back exactly where it was so the user can type
+                cursor::RestorePosition,
+                ResetColor,
+            ).unwrap();
+
+            // Flush to make sure it draws to the screen before the blocking loop starts
+            stdout().flush().unwrap();
+
             // Calculate cursor position based on the INTERNAL index, not the total length
             let prompt_len = prompt_text.chars().count();
             let cursor_x = (prompt_len + 1 + cursor_idx) as u16;
@@ -373,6 +403,9 @@ impl PromptExt for Editor {
 
             if let Event::Key(key) = event::read()? {
                 match key.code {
+                    KeyCode::Char('c') | KeyCode::Char('C') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+                        return Ok(None);
+                    }
                     KeyCode::Enter => {
                         queue!(stdout(), cursor::Hide, ResetColor)?;
                         stdout().flush()?;

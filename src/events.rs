@@ -54,6 +54,9 @@ pub fn handle_event(event: Event, app: &mut App, session: &mut Option<MailSessio
 
     if let Event::Key(k) = event {
         if k.kind == KeyEventKind::Press {
+
+            let mut pending_status = None;
+
             match &mut app.mode {
 
                 AppMode::AddressBook { selected_idx, addresses } => {
@@ -137,48 +140,131 @@ pub fn handle_event(event: Event, app: &mut App, session: &mut Option<MailSessio
                     }
                 }
 
+                AppMode::Compose { to, cc, bcc, subject, attachments, active_idx, editor } => {
+                    // 1. Global Shortcuts (Control)
+                }
+
                 AppMode::EmailAccounts { selected_idx } => {
                     match k.code {
                         KeyCode::Up | KeyCode::Char('p') | KeyCode::Char('P') => *selected_idx = selected_idx.saturating_sub(1),
                         KeyCode::Down | KeyCode::Char('n') | KeyCode::Char('N') => *selected_idx = (*selected_idx + 1).min(app.accounts.len().saturating_sub(1)),
-                        KeyCode::Char('<') | KeyCode::Left | KeyCode::Char('q') | KeyCode::Esc => app.mode = AppMode::MainMenu { selected_idx: 4 },
+                        KeyCode::Char('<') | KeyCode::Left | KeyCode::Esc => app.mode = AppMode::MainMenu { selected_idx: 4 },
+                        KeyCode::Char('c') | KeyCode::Char('C') if k.modifiers.contains(KeyModifiers::CONTROL) => app.mode = AppMode::MainMenu { selected_idx: 4 },
                         KeyCode::Char('a') | KeyCode::Char('A') => {
                             if let Ok(Some(email)) = theme_provider.prompt("Email: ", false) {
-                                if let Ok(Some(password)) = theme_provider.prompt("Password: ", false) {
+                                let email_lower = email.trim().to_lowercase();
 
-                                    let defaults = crate::config::get_provider_defaults(&email);
+                                // Auto-detect standard Microsoft domains
+                                let mut is_microsoft = email_lower.ends_with("@outlook.com")
+                                    || email_lower.ends_with("@hotmail.com")
+                                    || email_lower.ends_with("@live.com")
+                                    || email_lower.ends_with("@msn.com");
 
-                                    let default_imap = defaults.as_ref().map(|d| d.imap).unwrap_or("imap.");
-                                    if let Ok(Some(imap_server)) = theme_provider.prompt_edit("IMAP Server: ", default_imap) {
+                                // If it isn't a standard domain, ask the user (handles custom/enterprise MS accounts)
+                                if !is_microsoft {
+                                    if let Ok(Some(yes)) = theme_provider.prompt_yn("Is this a Microsoft / Graph API account?") {
+                                        is_microsoft = yes;
+                                    }
+                                }
 
-                                        let default_port = defaults.as_ref().map(|d| d.port.to_string()).unwrap_or("993".to_string());
-                                        if let Ok(Some(imap_port)) = theme_provider.prompt_edit("IMAP Port: ", &default_port) {
+                                if is_microsoft {
+                                    // Hardcode your application's Client ID
+                                    let client_id = "014bd274-beed-47dd-afba-c2fc4f48ede0".to_string();
 
-                                            let default_smtp = defaults.as_ref().map(|d| d.smtp).unwrap_or("smtp.");
-                                            if let Ok(Some(smtp_server)) = theme_provider.prompt_edit("SMTP Server: ", default_smtp) {
+                                    // 1. Create the Microsoft Account with the hardcoded ID and no secret
+                                    let mut new_acc = crate::config::Account {
+                                        email: email.trim().to_string(),
+                                        password: None,
+                                        client_id: Some(client_id.clone()),
+                                        client_secret: Some("dummy_secret_do_not_remove".to_string()),
+                                        refresh_token: None,
+                                        imap_server: String::new(),
+                                        imap_port: 0,
+                                        smtp_server: String::new(),
+                                        smtp_port: 0,
+                                    };
 
-                                                let new_acc = crate::config::Account {
-                                                    email: email.trim().to_string(),
-                                                    password: Some(password.trim().to_string()),
-                                                    client_id: None,
-                                                    client_secret: None,
-                                                    refresh_token: None,
-                                                    imap_server: imap_server.trim().to_string(),
-                                                    imap_port: imap_port.trim().parse().unwrap_or(993),
-                                                    smtp_server: smtp_server.trim().to_string(),
-                                                    smtp_port: imap_port.trim().parse().unwrap_or(587),
-                                                };
+                                    let _ = crossterm::terminal::disable_raw_mode();
+                                    let _ = crossterm::execute!(std::io::stdout(), crossterm::terminal::LeaveAlternateScreen);
 
-                                                app.accounts.push(new_acc);
-                                                crate::config::save_config(&app.accounts);
+                                    println!("Account Email: {}", new_acc.email);
+                                    println!("Client ID being sent: '{}'", client_id);
 
-                                                app.current_account_idx = app.accounts.len() - 1;
-                                                app.active_account = app.accounts[app.current_account_idx].clone();
-                                                app.needs_reconnect = true;
+                                    // 2. Trigger the "M" screen authentication flow
+                                    // Passing an empty string for the secret since it is not needed
+                                    match crate::net::run_microsoft_auth_flow(&client_id, "") {
+                                        Ok(tokens) => {
+                                            if let Some(refresh) = tokens.refresh_token {
+                                                new_acc.refresh_token = Some(refresh);
+                                                pending_status = Some("MS Auth Successful. Account added.".to_string());
+                                            }
+                                        },
+                                        Err(e) => {
+                                            println!("\r\nAuthentication Failed!");
+                                            println!("Error details: {}\r\n", e);
+                                            println!("Press ENTER to return to xpine...");
+                                            let mut input = String::new();
+                                            let _ = std::io::stdin().read_line(&mut input);
+                                            pending_status = Some("MS Auth Failed. Account added without token.".to_string());
+                                        }
+                                    }
 
-                                                app.current_folder = "INBOX".to_string();
-                                                app.current_page = 0;
-                                                app.restore_index_from_end = Some(0);
+                                    let _ = crossterm::terminal::enable_raw_mode();
+                                    let _ = crossterm::execute!(
+                                        std::io::stdout(),
+                                        crossterm::terminal::EnterAlternateScreen,
+                                        crossterm::terminal::Clear(crossterm::terminal::ClearType::All)
+                                    );
+
+                                    // 3. Save the account and set it as active
+                                    app.accounts.push(new_acc);
+                                    crate::config::save_config(&app.accounts);
+
+                                    app.current_account_idx = app.accounts.len() - 1;
+                                    app.active_account = app.accounts[app.current_account_idx].clone();
+                                    app.needs_reconnect = true;
+
+                                    app.current_folder = "INBOX".to_string();
+                                    app.current_page = 0;
+                                    app.restore_index_from_end = Some(0);
+                                    *selected_idx = app.current_account_idx;
+                                } else {
+                                    // 4. STANDARD IMAP FLOW (Google, Custom, etc.)
+                                    if let Ok(Some(password)) = theme_provider.prompt("Password: ", false) {
+                                        let defaults = crate::config::get_provider_defaults(&email);
+                                        let default_imap = defaults.as_ref().map(|d| d.imap).unwrap_or("imap.");
+
+                                        if let Ok(Some(imap_server)) = theme_provider.prompt_edit("IMAP Server: ", default_imap) {
+                                            let default_port = defaults.as_ref().map(|d| d.port.to_string()).unwrap_or("993".to_string());
+
+                                            if let Ok(Some(imap_port)) = theme_provider.prompt_edit("IMAP Port: ", &default_port) {
+                                                let default_smtp = defaults.as_ref().map(|d| d.smtp).unwrap_or("smtp.");
+
+                                                if let Ok(Some(smtp_server)) = theme_provider.prompt_edit("SMTP Server: ", default_smtp) {
+                                                    let new_acc = crate::config::Account {
+                                                        email: email.trim().to_string(),
+                                                        password: Some(password.trim().to_string()),
+                                                        client_id: None,
+                                                        client_secret: None,
+                                                        refresh_token: None,
+                                                        imap_server: imap_server.trim().to_string(),
+                                                        imap_port: imap_port.trim().parse().unwrap_or(993),
+                                                        smtp_server: smtp_server.trim().to_string(),
+                                                        smtp_port: 587,
+                                                    };
+
+                                                    app.accounts.push(new_acc);
+                                                    crate::config::save_config(&app.accounts);
+
+                                                    app.current_account_idx = app.accounts.len() - 1;
+                                                    app.active_account = app.accounts[app.current_account_idx].clone();
+                                                    app.needs_reconnect = true;
+
+                                                    app.current_folder = "INBOX".to_string();
+                                                    app.current_page = 0;
+                                                    app.restore_index_from_end = Some(0);
+                                                    *selected_idx = app.current_account_idx;
+                                                }
                                             }
                                         }
                                     }
@@ -195,11 +281,9 @@ pub fn handle_event(event: Event, app: &mut App, session: &mut Option<MailSessio
                                 let _ = crossterm::terminal::disable_raw_mode();
                                 let _ = crossterm::execute!(std::io::stdout(), crossterm::terminal::LeaveAlternateScreen);
 
-                                println!("\r\n===== DEBUG INFO =====");
                                 println!("Account Email: {}", acc.email);
                                 println!("Client ID being sent: '{}'", client_id);
                                 println!("Client Secret being sent: '{}'", client_secret);
-                                println!("======================\r\n");
 
                                 let auth_result = crate::net::run_microsoft_auth_flow(client_id, client_secret);
 
@@ -834,6 +918,9 @@ pub fn handle_event(event: Event, app: &mut App, session: &mut Option<MailSessio
                 }
                 _ => {}
             }
+            if let Some(status) = pending_status {
+                app.update_status(status);
+            }
         }
     } else if let Event::Resize(_, _) = event {
         app.needs_fetch = true;
@@ -841,14 +928,3 @@ pub fn handle_event(event: Event, app: &mut App, session: &mut Option<MailSessio
 
     quit
 }
-
-// pub(crate) fn extract_email(formatted: &str) -> String {
-//     // If it contains <...>, extract what's inside
-//     if let Some(start) = formatted.find('<') {
-//         if let Some(end) = formatted.find('>') {
-//             return formatted[start + 1..end].trim().to_string();
-//         }
-//     }
-//     // Otherwise, assume it's already just an email
-//     formatted.trim().to_string()
-// }

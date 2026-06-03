@@ -113,13 +113,10 @@ pub fn load_config() -> AppConfig {
 
     let contents = fs::read_to_string(&config_path).expect("Failed to read xpinerc");
 
-    match toml::from_str(&contents) {
-        Ok(config) => config,
-        Err(e) => {
-            eprintln!("Failed to parse xpinerc: {}", e);
-            AppConfig { accounts: Vec::new() }
-        }
-    }
+    toml::from_str(&contents).unwrap_or_else(|e| {
+        eprintln!("Failed to parse xpinerc: {}", e);
+        AppConfig { accounts: Vec::new() }
+    })
 }
 
 pub trait ConfigExt {

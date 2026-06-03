@@ -268,19 +268,11 @@ pub fn compose_email(account: &Account, default_to: Option<&str>, default_subjec
                 ) {
                     Ok(token) => token,
                     Err(_) if is_microsoft => {
-                        // INCREMENTAL CONSENT TRIGGER
                         // The refresh failed because the user hasn't consented to Mail.Send yet.
                         execute!(stdout, Clear(ClearType::All), cursor::MoveTo(0, 0)).unwrap();
                         queue!(stdout, Print("Microsoft requires separate authorization to send emails.\r\n")).unwrap();
                         queue!(stdout, Print("Initiating a one-time sending authorization...\r\n\n")).unwrap();
                         stdout.flush().unwrap();
-
-                        // TODO: Call your device code polling logic here, but explicitly request:
-                        // "offline_access https://graph.microsoft.com/Mail.Send"
-
-                        // 1. Run Device Flow for the Graph scope
-                        // 2. Save the NEW refresh_token to your xpinerc TOML file
-                        // 3. Return the new access_token so the email can send
 
                         queue!(stdout, Print("\r\nPress Enter to return and complete authorization...")).unwrap();
                         stdout.flush().unwrap();
@@ -298,9 +290,7 @@ pub fn compose_email(account: &Account, default_to: Option<&str>, default_subjec
             };
 
             if is_microsoft && account.refresh_token.is_some() {
-                // MICROSOFT GRAPH API BYPASS
-                // Microsoft blocks standard SMTP Client Submission on many personal accounts.
-                // We must submit the raw MIME as a base64 encoded text/plain string to the Graph API.
+                // Submit the raw MIME as a base64 encoded text/plain string to the Graph API
 
                 use base64::{Engine as _, engine::general_purpose::STANDARD as base64_engine};
                 let email_bytes = email_msg.formatted();
@@ -337,15 +327,6 @@ pub fn compose_email(account: &Account, default_to: Option<&str>, default_subjec
                 }
             } else {
                 // STANDARD LETTRE SMTP (Used for Google / Custom SMTP / Enabled Enterprise Accounts)
-                // let creds = SmtpCredentials::new(account.email.clone(), token_or_pass);
-                // let mut mailer = SmtpTransport::starttls_relay(&account.smtp_server)
-                //     .unwrap()
-                //     .port(587)
-                //     .credentials(creds);
-                //
-                // if account.refresh_token.is_some() {
-                //     mailer = mailer.authentication(vec![Mechanism::Xoauth2]);
-                // }
                 let creds = SmtpCredentials::new(account.email.clone(), token_or_pass);
                 let mut mailer = SmtpTransport::starttls_relay(&account.smtp_server)
                     .unwrap()

@@ -530,6 +530,7 @@ pub fn draw_app(stdout: &mut std::io::Stdout, app: &App, theme_provider: &Editor
     queue!(stdout, SetBackgroundColor(colors.bg), terminal::Clear(ClearType::All))?;
 
     match &app.mode {
+
         AppMode::AddressBook { selected_idx, addresses } => {
             let title = "xpine - Address Book";
             queue!(stdout, cursor::MoveTo(0, 0), SetBackgroundColor(colors.menu_bg), SetForegroundColor(colors.accent), Print(title), Print(" ".repeat((cols as usize).saturating_sub(title.chars().count()))), ResetColor)?;
@@ -585,6 +586,11 @@ pub fn draw_app(stdout: &mut std::io::Stdout, app: &App, theme_provider: &Editor
                 colors.menu_bg, colors.accent, colors.fg
             )?;
         }
+
+        AppMode::Compose { .. } => {
+            // We will hook up the UI rendering logic later.
+        }
+
         AppMode::EmailAccounts { selected_idx } => {
             let title = "xpine - Email Accounts";
             let title_len = title.chars().count();
@@ -600,7 +606,7 @@ pub fn draw_app(stdout: &mut std::io::Stdout, app: &App, theme_provider: &Editor
                 ResetColor
             )?;
 
-            // Calculate pagination
+            // Pagination
             let items_per_page = (rows.saturating_sub(4) as usize).max(1);
             let start_idx = if *selected_idx >= items_per_page {
                 selected_idx - items_per_page + 1
@@ -617,7 +623,7 @@ pub fn draw_app(stdout: &mut std::io::Stdout, app: &App, theme_provider: &Editor
 
                     let acc = &app.accounts[actual_idx];
                     // Format: user@email.com (imap.server.com)
-                    let display_str = format!("  {} ({})", acc.email, acc.imap_server);
+                    let display_str = format!("  {}", acc.email);
 
                     queue!(
                 stdout,
@@ -642,59 +648,30 @@ pub fn draw_app(stdout: &mut std::io::Stdout, app: &App, theme_provider: &Editor
             Editor::draw_menu_line(
                 stdout, rows - 2, cols, m_col,
                 // Changed "N New Account" to "A Add Account"
-                &[("", ""), ("A", " Add Acct"), ("D", " Del Acct"), ("P", " Prev"), ("M", " Microsoft Auth"), ("", "")],
+                &[("", ""), ("A", " Add Acct"), ("D", " Del Acct"), ("P", " Prev"), ("M", " MS Auth"), ("", "")],
                 colors.menu_bg, colors.accent, colors.fg
             )?;
             Editor::draw_menu_line(
                 stdout, rows - 1, cols, m_col,
                 // Added ("N", " Next") here to match the navigation
-                &[("<", " Back"), ("E", " Edit Acct"), ("", ""), ("N", " Next"), ("", ""), ("", "")],
+                &[(" <", " Back"), ("E", " Edit Acct"), ("", ""), ("N", " Next"), ("", ""), ("", "")],
                 colors.menu_bg, colors.accent, colors.fg
             )?;
 
             queue!(
                 stdout,
                 SetBackgroundColor(colors.bg),    // Set background to theme color
-                SetForegroundColor(Color::Red),      // Set text to red
+                SetForegroundColor(colors.accent),      // Set text to red
                 cursor::MoveTo(0, rows - 6),
-                Print("  - App Specific Passwords are required for GMail & Yahoo"),
+                Print("  - App Specific Passwords are required for Gmail & Yahoo"),
                 cursor::MoveTo(0, rows - 5),
-                Print("  - Generate online with your email provider (Google for help)"),
+                Print("  - Generate online with your email provider"),
                 cursor::MoveTo(0, rows - 4),
                 Print("  - Enter the App Specific Password WITHOUT spaces"),
                 ResetColor                           // Reset all colors
             )?;
         }
-        AppMode::FolderList { step, selected_idx, folders } => {
-            let header_title = if *step == 0 { "xpine - Select Account".to_string() } else { format!("xpine - Folders ({})", app.active_account.email) };
-            queue!(stdout, cursor::MoveTo(0, 0), SetBackgroundColor(colors.menu_bg), terminal::Clear(ClearType::UntilNewLine), SetForegroundColor(colors.accent), Print(header_title), ResetColor)?;
 
-            let items_count = if *step == 0 { app.accounts.len() } else { folders.len() };
-            let visible_items = (rows.saturating_sub(5)) as usize;
-            let start_idx = if *selected_idx >= visible_items { *selected_idx - visible_items + 1 } else { 0 };
-
-
-            for i in 0..visible_items {
-                let actual_idx = start_idx + i;
-                if actual_idx < items_count {
-                    let text = if *step == 0 { app.accounts[actual_idx].email.clone() } else { folders[actual_idx].clone() };
-                    let y = 1 + i as u16; // Using the updated Y coordinate from our previous fix
-                    let x = 2;
-                    let is_selected = actual_idx == *selected_idx;
-                    let row_bg = if is_selected { colors.selected_bg } else { colors.bg };
-
-                    // 1. Set the background for the whole line
-                    queue!(stdout, cursor::MoveTo(0, y), SetBackgroundColor(row_bg), terminal::Clear(ClearType::CurrentLine))?;
-
-                    // 2. Print the text with the correct foreground
-                    queue!(stdout, cursor::MoveTo(x, y), SetForegroundColor(colors.fg), Print(&text), ResetColor)?;
-                }
-            }
-
-            let m_col = (cols as usize / 6).max(1);
-            Editor::draw_menu_line(stdout, rows - 2, cols, m_col, &[("M", " Main Menu"), ("P", " Prev"), ("Y", " Prev Pg"), (">", " Select"),  ("", ""), ("", "")], colors.menu_bg, colors.accent, colors.fg)?;
-            Editor::draw_menu_line(stdout, rows - 1, cols, m_col, &[("<", " Back"),      ("N", " Next"), ("V", " Next Pg"), ("", ""), ("", ""), ("", "")], colors.menu_bg, colors.accent, colors.fg)?;
-        }
         AppMode::EmailList => {
             let header_title = format!("xpine - {} ({})", app.current_folder, app.active_account.email);
 
@@ -779,6 +756,38 @@ pub fn draw_app(stdout: &mut std::io::Stdout, app: &App, theme_provider: &Editor
                 }
             }
         }
+
+        AppMode::FolderList { step, selected_idx, folders } => {
+            let header_title = if *step == 0 { "xpine - Select Account".to_string() } else { format!("xpine - Folders ({})", app.active_account.email) };
+            queue!(stdout, cursor::MoveTo(0, 0), SetBackgroundColor(colors.menu_bg), terminal::Clear(ClearType::UntilNewLine), SetForegroundColor(colors.accent), Print(header_title), ResetColor)?;
+
+            let items_count = if *step == 0 { app.accounts.len() } else { folders.len() };
+            let visible_items = (rows.saturating_sub(5)) as usize;
+            let start_idx = if *selected_idx >= visible_items { *selected_idx - visible_items + 1 } else { 0 };
+
+
+            for i in 0..visible_items {
+                let actual_idx = start_idx + i;
+                if actual_idx < items_count {
+                    let text = if *step == 0 { app.accounts[actual_idx].email.clone() } else { folders[actual_idx].clone() };
+                    let y = 1 + i as u16; // Using the updated Y coordinate from our previous fix
+                    let x = 2;
+                    let is_selected = actual_idx == *selected_idx;
+                    let row_bg = if is_selected { colors.selected_bg } else { colors.bg };
+
+                    // 1. Set the background for the whole line
+                    queue!(stdout, cursor::MoveTo(0, y), SetBackgroundColor(row_bg), terminal::Clear(ClearType::CurrentLine))?;
+
+                    // 2. Print the text with the correct foreground
+                    queue!(stdout, cursor::MoveTo(x, y), SetForegroundColor(colors.fg), Print(&text), ResetColor)?;
+                }
+            }
+
+            let m_col = (cols as usize / 6).max(1);
+            Editor::draw_menu_line(stdout, rows - 2, cols, m_col, &[("M", " Main Menu"), ("P", " Prev"), ("Y", " Prev Pg"), (">", " Select"),  ("", ""), ("", "")], colors.menu_bg, colors.accent, colors.fg)?;
+            Editor::draw_menu_line(stdout, rows - 1, cols, m_col, &[("<", " Back"),      ("N", " Next"), ("V", " Next Pg"), ("", ""), ("", ""), ("", "")], colors.menu_bg, colors.accent, colors.fg)?;
+        }
+
         AppMode::MainMenu { selected_idx } => {
             let menu_options = [
                 ("I", "INBOX", "Go to the default Inbox"),

@@ -4,11 +4,23 @@ use std::time::{Duration, Instant};
 use std::collections::{HashMap, HashSet};
 
 pub enum AppMode {
+    AddressBook {
+        selected_idx: usize,
+        addresses: Vec<String>,
+    },
+    EmailAccounts {
+        selected_idx: usize,
+    },
     EmailList,
     EmailRead {
         text_body: String,
         html_body: Option<String>,
         attachments: Vec<(String, Vec<u8>)>,
+    },
+    FolderList {
+        step: u8,
+        selected_idx: usize,
+        folders: Vec<String>,
     },
     MainMenu {
         selected_idx: usize,
@@ -16,17 +28,14 @@ pub enum AppMode {
     Settings {
         selected_idx: usize,
     },
-    FolderList {
-        step: u8,
-        selected_idx: usize,
-        folders: Vec<String>,
-    },
-    AddressBook {
-        selected_idx: usize,
-        addresses: Vec<String>,
-    },
-    EmailAccounts {
-        selected_idx: usize,
+    Compose {
+        to: String,
+        cc: String,
+        bcc: String,
+        subject: String,
+        attachments: Vec<String>,
+        active_idx: usize,
+        editor: crate::editor::Editor,
     },
 }
 
