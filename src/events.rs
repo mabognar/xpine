@@ -831,6 +831,153 @@ pub fn handle_event(event: Event, app: &mut App, session: &mut Option<MailSessio
                                 theme_provider.save_settings();
                             }
                         }
+                        // Inside AppMode::FolderList (or your specific Folders mode) in src/events.rs:
+
+                        KeyCode::Char('a') | KeyCode::Char('A') => {
+                            if let Ok(Some(folder_name)) = theme_provider.prompt("New Folder Name: ", false) {
+                                let clean_name = folder_name.trim();
+
+                                if !clean_name.is_empty() {
+                                    if let Some(sess) = session {
+                                        match crate::net::create_folder(sess, clean_name) {
+                                            Ok(_) => {
+                                                // DEFER THE STATUS
+                                                pending_status = Some(format!("Created folder: {}", clean_name));
+
+                                                if let Ok(new_folders) = crate::net::list_folders(sess) {
+                                                    *folders = new_folders;
+                                                }
+                                            }
+                                            Err(e) => {
+                                                // DEFER THE STATUS
+                                                pending_status = Some(e);
+                                            }
+                                        }
+                                        // match crate::net::create_folder(sess, clean_name) {
+                                        //     Ok(_) => {
+                                        //         app.update_status(format!("Created folder: {}", clean_name));
+                                        //
+                                        //         // NOTE: You will likely need to tell the app to re-fetch the
+                                        //         // folder list from the server here so the new folder appears!
+                                        //         // e.g., app.needs_folder_refresh = true;
+                                        //     }
+                                        //     Err(e) => {
+                                        //         app.update_status(e);
+                                        //     }
+                                        // }
+                                    } else {
+                                        app.update_status("Offline: Cannot create folder".to_string());
+                                    }
+                                }
+                            }
+                        }
+
+                        KeyCode::Char('d') | KeyCode::Char('D') => {
+                            let folder_name = folders[*selected_idx].clone();
+                            let lower_name = folder_name.to_lowercase();
+
+                            let is_system = matches!(
+                                lower_name.as_str(),
+                                "inbox" | "sent" | "sent items" | "drafts" | "trash" | "deleted items" |
+                                "spam" | "junk" | "archive" | "[gmail]/sent mail" | "[gmail]/drafts" |
+                                "[gmail]/trash" | "[gmail]/spam" | "[gmail]/important" | "[gmail]/starred"
+                            );
+
+                            if is_system {
+                                pending_status = Some(format!("Cannot delete system folder: {}", folder_name));
+                            } else {
+                                // STEP 1: First Confirmation
+                                if let Ok(Some(true)) = theme_provider.prompt_yn(&format!("Really delete folder '{}'? (y/n): ", folder_name)) {
+
+                                    // STEP 2: The "Absolutely Sure" Confirmation
+                                    let absolute_msg = format!("Are you absolutely sure? All emails in '{}' will be lost. (y/n): ", folder_name);
+
+                                    if let Ok(Some(true)) = theme_provider.prompt_yn(&absolute_msg) {
+                                        // Both prompts answered Yes, proceed with deletion
+                                        if let Some(sess) = session {
+                                            match crate::net::delete_folder(sess, &folder_name) {
+                                                Ok(_) => {
+                                                    pending_status = Some(format!("Deleted folder: {}", folder_name));
+
+                                                    if let Ok(new_folders) = crate::net::list_folders(sess) {
+                                                        *folders = new_folders;
+
+                                                        if *selected_idx >= folders.len() {
+                                                            *selected_idx = folders.len().saturating_sub(1);
+                                                        }
+                                                    }
+                                                }
+                                                Err(e) => {
+                                                    pending_status = Some(e);
+                                                }
+                                            }
+                                        } else {
+                                            pending_status = Some("Offline: Cannot delete folder".to_string());
+                                        }
+                                    } else {
+                                        // User backed out at the second prompt
+                                        pending_status = Some("Folder deletion cancelled.".to_string());
+                                    }
+                                } else {
+                                    // User backed out at the first prompt
+                                    pending_status = Some("Folder deletion cancelled.".to_string());
+                                }
+                            }
+                        }
+                        // KeyCode::Char('d') | KeyCode::Char('D') => {
+                        //     // 1. Grab the name of the currently selected folder
+                        //     // NOTE: Update `app.folders[*selected_idx].name` to match your actual struct/variables!
+                        //     let folder_name = folders[*selected_idx].clone();
+                        //     // let folder_name = app.folders[*selected_idx].name.clone();
+                        //     let lower_name = folder_name.to_lowercase();
+                        //
+                        //     // 2. Safeguard: Define standard system folders (including Gmail's specific prefixes)
+                        //     let is_system = matches!(
+                        //         lower_name.as_str(),
+                        //         "inbox" | "sent" | "sent items" | "drafts" | "trash" | "deleted items" |
+                        //         "spam" | "junk" | "archive" | "[gmail]/sent mail" | "[gmail]/drafts" |
+                        //         "[gmail]/trash" | "[gmail]/spam" | "[gmail]/important" | "[gmail]/starred"
+                        //     );
+                        //
+                        //     if is_system {
+                        //         app.update_status(format!("Cannot delete system folder: {}", folder_name));
+                        //     } else {
+                        //         // 3. Prompt for confirmation to prevent accidental keypresses
+                        //         if let Ok(Some(true)) = theme_provider.prompt_yn(&format!("Really delete folder '{}'? (y/n): ", folder_name)) {
+                        //             if let Some(sess) = session {
+                        //                 // 4. Execute the deletion
+                        //                 match crate::net::delete_folder(sess, &folder_name) {
+                        //                     Ok(_) => {
+                        //                         // DEFER THE STATUS
+                        //                         pending_status = Some(format!("Deleted folder: {}", folder_name));
+                        //
+                        //                         if let Ok(new_folders) = crate::net::list_folders(sess) {
+                        //                             *folders = new_folders;
+                        //
+                        //                             if *selected_idx >= folders.len() {
+                        //                                 *selected_idx = folders.len().saturating_sub(1);
+                        //                             }
+                        //                         }
+                        //                     }
+                        //                     Err(e) => {
+                        //                         // DEFER THE STATUS
+                        //                         pending_status = Some(e);
+                        //                     }
+                        //                 }
+                        //                 // match crate::net::delete_folder(sess, &folder_name) {
+                        //                 //     Ok(_) => {
+                        //                 //         app.update_status(format!("Deleted folder: {}", folder_name));
+                        //                 //         // Flag the app to re-fetch the folder list from the server
+                        //                 //         // app.needs_folder_refresh = true;
+                        //                 //     }
+                        //                 //     Err(e) => {
+                        //                 //         app.update_status(e);
+                        //                 //     }
+                        //                 // }
+                        //             } else {
+                        //                 app.update_status("Offline: Cannot delete folder".to_string());
+                        //             }
+                        //         }
                         _ => {}
                     }
                 }
@@ -928,3 +1075,4 @@ pub fn handle_event(event: Event, app: &mut App, session: &mut Option<MailSessio
 
     quit
 }
+

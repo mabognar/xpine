@@ -953,3 +953,53 @@ pub fn move_to_folder(session: &mut MailSession, seq_id: &str, folder: &str) -> 
     }
 }
 
+pub fn create_folder(session: &mut MailSession, folder_name: &str) -> Result<(), String> {
+    match session {
+        MailSession::Imap(imap_sess) => {
+            // IMAP standard CREATE command
+            imap_sess.create(folder_name).map_err(|e| format!("Failed to create folder: {}", e))?;
+            Ok(())
+        }
+        MailSession::Graph { .. } => {
+            // We will drop the HTTP POST request in here next!
+            Err("Graph API folder creation coming next!".to_string())
+        }
+    }
+}
+
+
+pub fn delete_folder(session: &mut MailSession, folder_name: &str) -> Result<(), String> {
+    match session {
+        MailSession::Imap(imap_sess) => {
+            // IMAP standard DELETE command
+            imap_sess.delete(folder_name).map_err(|e| format!("Failed to delete folder: {}", e))?;
+            Ok(())
+        }
+        MailSession::Graph { .. } => {
+            // Stubbed for the next phase
+            Err("Graph API folder deletion coming next!".to_string())
+        }
+    }
+}
+
+pub fn list_folders(session: &mut MailSession) -> Result<Vec<String>, String> {
+    match session {
+        MailSession::Imap(imap_sess) => {
+            // Ask the IMAP server for all folders ("*" wildcard)
+            let mailboxes = imap_sess.list(Some(""), Some("*"))
+                .map_err(|e| format!("Failed to fetch folders: {}", e))?;
+
+            let mut folders = Vec::new();
+            for mbox in mailboxes.iter() {
+                folders.push(mbox.name().to_string());
+            }
+
+            // Sort alphabetically for a clean UI
+            folders.sort_by(|a, b| a.to_lowercase().cmp(&b.to_lowercase()));
+            Ok(folders)
+        }
+        MailSession::Graph { .. } => {
+            Err("Graph API folder fetching coming next!".to_string())
+        }
+    }
+}

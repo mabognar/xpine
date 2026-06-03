@@ -305,7 +305,7 @@ pub fn compose_email(account: &Account, default_to: Option<&str>, default_subjec
                     .send();
 
                 match res {
-                    Ok(r) if r.status().is_success() => Some("Message Sent via Graph API".to_string()),
+                    Ok(r) if r.status().is_success() => Some("Message Sent via MS Graph API".to_string()),
                     Ok(r) => {
                         let status = r.status();
                         let text = r.text().unwrap_or_default();
