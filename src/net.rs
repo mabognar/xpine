@@ -960,9 +960,26 @@ pub fn create_folder(session: &mut MailSession, folder_name: &str) -> Result<(),
             imap_sess.create(folder_name).map_err(|e| format!("Failed to create folder: {}", e))?;
             Ok(())
         }
-        MailSession::Graph { .. } => {
-            // We will drop the HTTP POST request in here next!
-            Err("Graph API folder creation coming next!".to_string())
+        MailSession::Graph { access_token } => {
+            let client = reqwest::blocking::Client::new();
+
+            // Graph API expects a simple JSON body with the displayName
+            let body = serde_json::json!({
+                "displayName": folder_name
+            });
+
+            let res = client.post("https://graph.microsoft.com/v1.0/me/mailFolders")
+                .header("Authorization", format!("Bearer {}", access_token))
+                .header("Content-Type", "application/json")
+                .json(&body)
+                .send()
+                .map_err(|e| e.to_string())?;
+
+            if res.status().is_success() {
+                Ok(())
+            } else {
+                Err(format!("Graph API error: {}", res.status()))
+            }
         }
     }
 }
@@ -975,9 +992,43 @@ pub fn delete_folder(session: &mut MailSession, folder_name: &str) -> Result<(),
             imap_sess.delete(folder_name).map_err(|e| format!("Failed to delete folder: {}", e))?;
             Ok(())
         }
-        MailSession::Graph { .. } => {
-            // Stubbed for the next phase
-            Err("Graph API folder deletion coming next!".to_string())
+        MailSession::Graph { access_token } => {
+            let client = reqwest::blocking::Client::new();
+
+            // STEP 1: Ask Microsoft to find the folder by its name so we can get its ID
+            let filter_query = format!("displayName eq '{}'", folder_name);
+            let res = client.get("https://graph.microsoft.com/v1.0/me/mailFolders")
+                .query(&[("$filter", filter_query)]) // .query() safely URL-encodes spaces!
+                .header("Authorization", format!("Bearer {}", access_token))
+                .send()
+                .map_err(|e| e.to_string())?;
+
+            if !res.status().is_success() {
+                return Err(format!("Graph API error: {}", res.status()));
+            }
+
+            let json: serde_json::Value = res.json().map_err(|e| e.to_string())?;
+
+            // Drill down into the JSON response to grab the first matching ID
+            let folder_id = json.get("value")
+                .and_then(|v| v.as_array())
+                .and_then(|arr| arr.get(0))
+                .and_then(|f| f.get("id"))
+                .and_then(|id| id.as_str())
+                .ok_or("Folder not found on Microsoft servers")?;
+
+            // STEP 2: Issue the actual DELETE request using the ID
+            let delete_url = format!("https://graph.microsoft.com/v1.0/me/mailFolders/{}", folder_id);
+            let del_res = client.delete(&delete_url)
+                .header("Authorization", format!("Bearer {}", access_token))
+                .send()
+                .map_err(|e| e.to_string())?;
+
+            if del_res.status().is_success() {
+                Ok(())
+            } else {
+                Err(format!("Graph API deletion error: {}", del_res.status()))
+            }
         }
     }
 }
@@ -994,12 +1045,87 @@ pub fn list_folders(session: &mut MailSession) -> Result<Vec<String>, String> {
                 folders.push(mbox.name().to_string());
             }
 
-            // Sort alphabetically for a clean UI
-            folders.sort_by(|a, b| a.to_lowercase().cmp(&b.to_lowercase()));
+            // folders.sort_by(|a, b| a.to_lowercase().cmp(&b.to_lowercase()));
             Ok(folders)
         }
-        MailSession::Graph { .. } => {
-            Err("Graph API folder fetching coming next!".to_string())
+        MailSession::Graph { access_token } => {
+            let client = reqwest::blocking::Client::new();
+
+            // Get up to 250 folders
+            let res = client.get("https://graph.microsoft.com/v1.0/me/mailFolders?$top=250")
+                .header("Authorization", format!("Bearer {}", access_token))
+                .send()
+                .map_err(|e| e.to_string())?;
+
+            if !res.status().is_success() {
+                return Err(format!("Graph API error: {}", res.status()));
+            }
+
+            let json: serde_json::Value = res.json().map_err(|e| e.to_string())?;
+            let mut folders = Vec::new();
+
+            // Parse the JSON array and extract all the displayNames
+            if let Some(values) = json.get("value").and_then(|v| v.as_array()) {
+                for v in values {
+                    if let Some(name) = v.get("displayName").and_then(|n| n.as_str()) {
+                        folders.push(name.to_string());
+                    }
+                }
+            }
+
+            Ok(folders)
+        }
+    }
+}
+pub fn rename_folder(session: &mut MailSession, old_name: &str, new_name: &str) -> Result<(), String> {
+    match session {
+        MailSession::Imap(imap_sess) => {
+            imap_sess.rename(old_name, new_name)
+                .map_err(|e| format!("Failed to rename folder: {}", e))?;
+            Ok(())
+        }
+        MailSession::Graph { access_token } => {
+            let client = reqwest::blocking::Client::new();
+
+            // STEP 1: Find the folder ID by its old name
+            let filter_query = format!("displayName eq '{}'", old_name);
+            let res = client.get("https://graph.microsoft.com/v1.0/me/mailFolders")
+                .query(&[("$filter", filter_query)])
+                .header("Authorization", format!("Bearer {}", access_token))
+                .send()
+                .map_err(|e| e.to_string())?;
+
+            if !res.status().is_success() {
+                return Err(format!("Graph API error finding folder: {}", res.status()));
+            }
+
+            let json: serde_json::Value = res.json().map_err(|e| e.to_string())?;
+
+            let folder_id = json.get("value")
+                .and_then(|v| v.as_array())
+                .and_then(|arr| arr.get(0))
+                .and_then(|f| f.get("id"))
+                .and_then(|id| id.as_str())
+                .ok_or("Folder not found on Microsoft servers")?;
+
+            // STEP 2: Issue a PATCH request to change the displayName
+            let patch_url = format!("https://graph.microsoft.com/v1.0/me/mailFolders/{}", folder_id);
+            let body = serde_json::json!({
+                "displayName": new_name
+            });
+
+            let patch_res = client.patch(&patch_url)
+                .header("Authorization", format!("Bearer {}", access_token))
+                .header("Content-Type", "application/json")
+                .json(&body)
+                .send()
+                .map_err(|e| e.to_string())?;
+
+            if patch_res.status().is_success() {
+                Ok(())
+            } else {
+                Err(format!("Graph API rename error: {}", patch_res.status()))
+            }
         }
     }
 }

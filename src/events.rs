@@ -853,18 +853,6 @@ pub fn handle_event(event: Event, app: &mut App, session: &mut Option<MailSessio
                                                 pending_status = Some(e);
                                             }
                                         }
-                                        // match crate::net::create_folder(sess, clean_name) {
-                                        //     Ok(_) => {
-                                        //         app.update_status(format!("Created folder: {}", clean_name));
-                                        //
-                                        //         // NOTE: You will likely need to tell the app to re-fetch the
-                                        //         // folder list from the server here so the new folder appears!
-                                        //         // e.g., app.needs_folder_refresh = true;
-                                        //     }
-                                        //     Err(e) => {
-                                        //         app.update_status(e);
-                                        //     }
-                                        // }
                                     } else {
                                         app.update_status("Offline: Cannot create folder".to_string());
                                     }
@@ -879,7 +867,7 @@ pub fn handle_event(event: Event, app: &mut App, session: &mut Option<MailSessio
                             let is_system = matches!(
                                 lower_name.as_str(),
                                 "inbox" | "sent" | "sent items" | "drafts" | "trash" | "deleted items" |
-                                "spam" | "junk" | "archive" | "[gmail]/sent mail" | "[gmail]/drafts" |
+                                "spam" | "junk" | "archive" | "[gmail]" | "[gmail]/all mail" | "[gmail]/sent mail" | "[gmail]/drafts" |
                                 "[gmail]/trash" | "[gmail]/spam" | "[gmail]/important" | "[gmail]/starred"
                             );
 
@@ -924,60 +912,59 @@ pub fn handle_event(event: Event, app: &mut App, session: &mut Option<MailSessio
                                 }
                             }
                         }
-                        // KeyCode::Char('d') | KeyCode::Char('D') => {
-                        //     // 1. Grab the name of the currently selected folder
-                        //     // NOTE: Update `app.folders[*selected_idx].name` to match your actual struct/variables!
-                        //     let folder_name = folders[*selected_idx].clone();
-                        //     // let folder_name = app.folders[*selected_idx].name.clone();
-                        //     let lower_name = folder_name.to_lowercase();
-                        //
-                        //     // 2. Safeguard: Define standard system folders (including Gmail's specific prefixes)
-                        //     let is_system = matches!(
-                        //         lower_name.as_str(),
-                        //         "inbox" | "sent" | "sent items" | "drafts" | "trash" | "deleted items" |
-                        //         "spam" | "junk" | "archive" | "[gmail]/sent mail" | "[gmail]/drafts" |
-                        //         "[gmail]/trash" | "[gmail]/spam" | "[gmail]/important" | "[gmail]/starred"
-                        //     );
-                        //
-                        //     if is_system {
-                        //         app.update_status(format!("Cannot delete system folder: {}", folder_name));
-                        //     } else {
-                        //         // 3. Prompt for confirmation to prevent accidental keypresses
-                        //         if let Ok(Some(true)) = theme_provider.prompt_yn(&format!("Really delete folder '{}'? (y/n): ", folder_name)) {
-                        //             if let Some(sess) = session {
-                        //                 // 4. Execute the deletion
-                        //                 match crate::net::delete_folder(sess, &folder_name) {
-                        //                     Ok(_) => {
-                        //                         // DEFER THE STATUS
-                        //                         pending_status = Some(format!("Deleted folder: {}", folder_name));
-                        //
-                        //                         if let Ok(new_folders) = crate::net::list_folders(sess) {
-                        //                             *folders = new_folders;
-                        //
-                        //                             if *selected_idx >= folders.len() {
-                        //                                 *selected_idx = folders.len().saturating_sub(1);
-                        //                             }
-                        //                         }
-                        //                     }
-                        //                     Err(e) => {
-                        //                         // DEFER THE STATUS
-                        //                         pending_status = Some(e);
-                        //                     }
-                        //                 }
-                        //                 // match crate::net::delete_folder(sess, &folder_name) {
-                        //                 //     Ok(_) => {
-                        //                 //         app.update_status(format!("Deleted folder: {}", folder_name));
-                        //                 //         // Flag the app to re-fetch the folder list from the server
-                        //                 //         // app.needs_folder_refresh = true;
-                        //                 //     }
-                        //                 //     Err(e) => {
-                        //                 //         app.update_status(e);
-                        //                 //     }
-                        //                 // }
-                        //             } else {
-                        //                 app.update_status("Offline: Cannot delete folder".to_string());
-                        //             }
-                        //         }
+                        KeyCode::Char('r') | KeyCode::Char('R') => {
+                            let folder_name = folders[*selected_idx].clone();
+                            let lower_name = folder_name.to_lowercase();
+
+                            let is_system = matches!(
+                                lower_name.as_str(),
+                                "inbox" | "sent" | "sent items" | "drafts" | "trash" | "deleted items" |
+                                "spam" | "junk" | "archive" | "[gmail]/sent mail" | "[gmail]/drafts" |
+                                "[gmail]/trash" | "[gmail]/spam" | "[gmail]/important" | "[gmail]/starred"
+                            );
+
+                            if is_system {
+                                pending_status = Some(format!("Cannot rename system folder: {}", folder_name));
+                            } else {
+                                // Prompt for the new name, putting the old name in the prompt as a hint
+                                let prompt_str = format!("Rename '{}' to: ", folder_name);
+                                if let Ok(Some(new_name_input)) = theme_provider.prompt(&prompt_str, false) {
+                                    let clean_new_name = new_name_input.trim();
+
+                                    if !clean_new_name.is_empty() && clean_new_name != folder_name {
+                                        if let Some(sess) = session {
+                                            match crate::net::rename_folder(sess, &folder_name, clean_new_name) {
+                                                Ok(_) => {
+                                                    pending_status = Some(format!("Renamed to: {}", clean_new_name));
+
+                                                    // Fetch the fresh, newly-sorted list
+                                                    if let Ok(new_folders) = crate::net::list_folders(sess) {
+                                                        *folders = new_folders.clone();
+
+                                                        // UX Polish: Find where the renamed folder landed after sorting
+                                                        // so the user's cursor follows the folder to its new position!
+                                                        if let Some(new_pos) = new_folders.iter().position(|f| f == clean_new_name) {
+                                                            *selected_idx = new_pos;
+                                                        } else if *selected_idx >= folders.len() {
+                                                            *selected_idx = folders.len().saturating_sub(1);
+                                                        }
+                                                    }
+                                                }
+                                                Err(e) => {
+                                                    pending_status = Some(e);
+                                                }
+                                            }
+                                        } else {
+                                            pending_status = Some("Offline: Cannot rename folder".to_string());
+                                        }
+                                    } else if clean_new_name.is_empty() {
+                                        pending_status = Some("Rename cancelled: Name cannot be empty.".to_string());
+                                    }
+                                } else {
+                                    pending_status = Some("Rename cancelled.".to_string());
+                                }
+                            }
+                        }
                         _ => {}
                     }
                 }
@@ -1065,9 +1052,17 @@ pub fn handle_event(event: Event, app: &mut App, session: &mut Option<MailSessio
                 }
                 _ => {}
             }
+            // THIS IS REQUIRED TO ACTUALLY UPDATE THE APP
             if let Some(status) = pending_status {
-                app.update_status(status);
+                app.list_status = status;
+                app.list_status_time = Some(std::time::Instant::now());
+
+                // Or if you use a helper method:
+                // app.update_status(status);
             }
+            // if let Some(status) = pending_status {
+            //     app.update_status(status);
+            // }
         }
     } else if let Event::Resize(_, _) = event {
         app.needs_fetch = true;

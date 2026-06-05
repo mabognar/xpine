@@ -765,7 +765,6 @@ pub fn draw_app(stdout: &mut std::io::Stdout, app: &App, theme_provider: &Editor
             let visible_items = (rows.saturating_sub(5)) as usize;
             let start_idx = if *selected_idx >= visible_items { *selected_idx - visible_items + 1 } else { 0 };
 
-
             for i in 0..visible_items {
                 let actual_idx = start_idx + i;
                 if actual_idx < items_count {
@@ -784,8 +783,9 @@ pub fn draw_app(stdout: &mut std::io::Stdout, app: &App, theme_provider: &Editor
             }
 
             let m_col = (cols as usize / 6).max(1);
-            Editor::draw_menu_line(stdout, rows - 2, cols, m_col, &[("M", " Main Menu"), ("P", " Prev"), ("Y", " Prev Pg"), (">", " Select"),  ("A", " Add Fldr"), ("", "")], colors.menu_bg, colors.accent, colors.fg)?;
+            Editor::draw_menu_line(stdout, rows - 2, cols, m_col, &[("M", " Main Menu"), ("P", " Prev"), ("Y", " Prev Pg"), (">", " Select"),  ("A", " Add Fldr"), ("R", " Rename")], colors.menu_bg, colors.accent, colors.fg)?;
             Editor::draw_menu_line(stdout, rows - 1, cols, m_col, &[("<", " Back"),      ("N", " Next"), ("V", " Next Pg"), ("", ""),          ("D", " Del Fldr"), ("", "")], colors.menu_bg, colors.accent, colors.fg)?;
+
         }
 
         AppMode::MainMenu { selected_idx } => {
