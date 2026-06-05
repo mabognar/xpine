@@ -140,10 +140,6 @@ pub fn handle_event(event: Event, app: &mut App, session: &mut Option<MailSessio
                     }
                 }
 
-                AppMode::Compose { to, cc, bcc, subject, attachments, active_idx, editor } => {
-                    // 1. Global Shortcuts (Control)
-                }
-
                 AppMode::EmailAccounts { selected_idx } => {
                     match k.code {
                         KeyCode::Up | KeyCode::Char('p') | KeyCode::Char('P') => *selected_idx = selected_idx.saturating_sub(1),
@@ -464,35 +460,35 @@ pub fn handle_event(event: Event, app: &mut App, session: &mut Option<MailSessio
 
                             let _ = execute!(std::io::stdout(), crossterm::cursor::Show);
                         }
-                        KeyCode::Char('j') if k.modifiers.contains(KeyModifiers::ALT) => {
-                            if !app.page_emails.is_empty() {
-                                if let Ok(Some(true)) = theme_provider.prompt_yn("Move to Junk/Spam folder?") {
-                                    if let Some(sess) = session {
-                                        let seq_id = app.page_emails[app.selected_index].id.to_string();
-                                        let junk_folder = if app.active_account.email.contains("@gmail.com") { "[Gmail]/Spam" } else { "Junk" };
-
-                                        match net::move_to_folder(sess, &seq_id, junk_folder) {
-                                            Ok(_) => { app.update_status(format!("Moved to {}.", junk_folder)); app.needs_fetch = true; },
-                                            Err(e) => app.update_status(format!("Error: {}", e)),
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                        KeyCode::Char('i') if k.modifiers.contains(KeyModifiers::ALT) => {
-                            if !app.page_emails.is_empty() {
-                                if let Ok(Some(true)) = theme_provider.prompt_yn("Move to Inbox?") {
-                                    if let Some(sess) = session {
-                                        let seq_id = app.page_emails[app.selected_index].id.to_string();
-
-                                        match net::move_to_folder(sess, &seq_id, "INBOX") {
-                                            Ok(_) => { app.update_status("Moved to INBOX.".to_string()); app.needs_fetch = true; },
-                                            Err(e) => app.update_status(format!("Error: {}", e)),
-                                        }
-                                    }
-                                }
-                            }
-                        }
+                        // KeyCode::Char('j') if k.modifiers.contains(KeyModifiers::ALT) => {
+                        //     if !app.page_emails.is_empty() {
+                        //         if let Ok(Some(true)) = theme_provider.prompt_yn("Move to Junk/Spam folder?") {
+                        //             if let Some(sess) = session {
+                        //                 let seq_id = app.page_emails[app.selected_index].id.to_string();
+                        //                 let junk_folder = if app.active_account.email.contains("@gmail.com") { "[Gmail]/Spam" } else { "Junk" };
+                        //
+                        //                 match net::move_to_folder(sess, &seq_id, junk_folder) {
+                        //                     Ok(_) => { app.update_status(format!("Moved to {}.", junk_folder)); app.needs_fetch = true; },
+                        //                     Err(e) => app.update_status(format!("Error: {}", e)),
+                        //                 }
+                        //             }
+                        //         }
+                        //     }
+                        // }
+                        // KeyCode::Char('i') if k.modifiers.contains(KeyModifiers::ALT) => {
+                        //     if !app.page_emails.is_empty() {
+                        //         if let Ok(Some(true)) = theme_provider.prompt_yn("Move to Inbox?") {
+                        //             if let Some(sess) = session {
+                        //                 let seq_id = app.page_emails[app.selected_index].id.to_string();
+                        //
+                        //                 match net::move_to_folder(sess, &seq_id, "INBOX") {
+                        //                     Ok(_) => { app.update_status("Moved to INBOX.".to_string()); app.needs_fetch = true; },
+                        //                     Err(e) => app.update_status(format!("Error: {}", e)),
+                        //                 }
+                        //             }
+                        //         }
+                        //     }
+                        // }
                         KeyCode::Char(c) if c.is_ascii_digit() => {
                             if let Some(digit) = c.to_digit(10) {
                                 let idx = (digit as usize).saturating_sub(1);
@@ -549,7 +545,57 @@ pub fn handle_event(event: Event, app: &mut App, session: &mut Option<MailSessio
                                 else { app.selected_index = app.page_emails.len().saturating_sub(1); }
                             }
                         }
-                        KeyCode::Char('m') | KeyCode::Char('M') => {
+                        KeyCode::Char('m') | KeyCode::Char('M') if k.modifiers.contains(KeyModifiers::ALT) => {
+                            if app.page_emails.is_empty() {
+                                pending_status = Some("No email selected.".to_string());
+                            } else {
+                                if let Some(sess) = session {
+                                    // 1. FETCH FIRST: Grab the live folder list so we can use it for suggestions
+                                    match crate::net::list_folders(sess) {
+                                        Ok(folders) => {
+
+                                            // 2. THE PROMPT: Pass the `folders` list into your autocomplete prompt method.
+                                            // *** NOTE: Change `prompt_with_suggestions` to match the actual method
+                                            // name you built for your email address suggestions! ***
+                                            if let Ok(Some(dest_input)) = theme_provider.prompt_for_folder("Move to folder: ", &folders) {
+                                                let clean_dest = dest_input.trim();
+
+                                                if !clean_dest.is_empty() {
+                                                    // 3. VALIDATE: We already have the folders list, so we just check it here
+                                                    if let Some(exact_folder) = folders.iter().find(|f| f.eq_ignore_ascii_case(clean_dest)) {
+
+                                                        let msg_id = app.page_emails[app.selected_index].id.to_string();
+
+                                                        // 4. EXECUTE MOVE
+                                                        match crate::net::move_email(sess, &msg_id, exact_folder) {
+                                                            Ok(_) => {
+                                                                pending_status = Some(format!("Moved to '{}'", exact_folder));
+                                                                app.needs_fetch = true;
+                                                            }
+                                                            Err(e) => {
+                                                                pending_status = Some(e);
+                                                            }
+                                                        }
+                                                    } else {
+                                                        pending_status = Some("Folder does not exist. Email not moved.".to_string());
+                                                    }
+                                                } else {
+                                                    pending_status = Some("Move cancelled.".to_string());
+                                                }
+                                            } else {
+                                                pending_status = Some("Move cancelled.".to_string());
+                                            }
+                                        }
+                                        Err(e) => {
+                                            pending_status = Some(format!("Failed to fetch folders: {}", e));
+                                        }
+                                    }
+                                } else {
+                                    pending_status = Some("Offline: Cannot move email".to_string());
+                                }
+                            }
+                        }
+                        KeyCode::Char('m') | KeyCode::Char('M') if k.modifiers.contains(KeyModifiers::NONE) => {
                             check_and_expunge_outlook(app, session, theme_provider);
                             app.mode = AppMode::MainMenu { selected_idx: 0 };
                         },
@@ -680,7 +726,7 @@ pub fn handle_event(event: Event, app: &mut App, session: &mut Option<MailSessio
                                         let reply_body = crate::mail::format_reply_text(&t_body);
 
                                         // --- 1. Compose First ---
-                                        if let Some(s) = compose_email(&app.active_account, Some(&raw_reply), Some(&sub), Some(&reply_body), &mut theme_provider.current_theme) {
+                                        if let Some(_) = compose_email(&app.active_account, Some(&raw_reply), Some(&sub), Some(&reply_body), &mut theme_provider.current_theme) {
                                             match sess {
                                                 net::MailSession::Imap(imap_sess) => {
                                                     let _ = imap_sess.store(&fetch_seq, "+FLAGS (\\Answered)");

@@ -25,6 +25,7 @@ use crossterm::{
 };
 use std::io::stdout;
 use std::time::{Duration, Instant};
+use mailparse::{parse_header};
 
 fn main() {
     let config = load_config();
@@ -57,12 +58,6 @@ fn main() {
         }
     };
 
-    // let mut session = if app.accounts.is_empty() {
-    //     None
-    // } else {
-    //     net::connect(&mut app.active_account).ok()
-    // };
-
     loop {
         if app.needs_reconnect {
             if !app.accounts.is_empty() {
@@ -90,16 +85,10 @@ fn main() {
                         }
                     }
                 }
-                // session = net::connect(&mut app.active_account).ok();
-                // app.needs_fetch = true;
             }
             app.needs_reconnect = false;
             app.last_fetch_time = Instant::now();
         }
-
-        // if app.last_fetch_time.elapsed() >= app.auto_refresh_interval {
-        //     app.needs_fetch = true;
-        // }
 
         if app.last_fetch_time.elapsed() >= app.auto_refresh_interval {
             app.needs_fetch = true;

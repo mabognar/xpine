@@ -14,6 +14,7 @@ pub trait PromptExt {
     fn prompt_replace(&mut self, prompt_text: &str) -> io::Result<Option<char>>;
     fn prompt_with_autocomplete(&mut self, prompt_text: &str, suggestions: &[String]) -> io::Result<Option<String>>;
     fn prompt_edit(&mut self, prompt_text: &str, initial_text: &str) -> io::Result<Option<String>>;
+    fn prompt_for_folder(&mut self, prompt_text: &str, folders: &[String]) -> io::Result<Option<String>>;
 }
 
 impl PromptExt for Editor {
@@ -177,6 +178,101 @@ impl PromptExt for Editor {
         }
     }
 
+    fn prompt_for_folder(&mut self, prompt_text: &str, folders: &[String]) -> io::Result<Option<String>> {
+        let mut stdout = stdout();
+        let mut input = String::new();
+        let (cols, rows) = term_size()?;
+
+        let theme = &self.theme_set.themes[&self.current_theme];
+        let colors = derive_ui_colors(theme);
+
+        // Calculate standard column width for your menu items
+        let col_width = (cols as usize / 6).max(1);
+
+        loop {
+            // Calculate the current autocomplete hint using our helper
+            let suggestion = crate::prompt::find_folder_suggestion(&input, folders);
+            let hint = suggestion.clone().unwrap_or_default();
+
+            // 1. Draw the prompt and input text (moved up to row - 3)
+            queue!(
+                stdout,
+                cursor::MoveTo(0, rows.saturating_sub(3)),
+                SetBackgroundColor(colors.menu_bg),
+                terminal::Clear(ClearType::CurrentLine),
+                SetForegroundColor(colors.accent),
+                Print(prompt_text),
+                SetForegroundColor(colors.fg),
+                Print(&input),
+                SetForegroundColor(colors.date_color),
+                Print(&hint),
+                ResetColor
+            )?;
+
+            // 2. Draw the upper menu line (blank)
+            Self::draw_menu_line(
+                &mut stdout, rows.saturating_sub(2), cols, col_width,
+                &[("", ""), ("", ""), ("", ""), ("", ""), ("", ""), ("", "")],
+                colors.menu_bg, colors.accent, colors.fg,
+            )?;
+
+            // 3. Draw the lower menu line with just the Cancel command
+            Self::draw_menu_line(
+                &mut stdout, rows.saturating_sub(1), cols, col_width,
+                &[("^C", " Cancel"), ("", ""), ("", ""), ("", ""), ("", ""), ("", "")],
+                colors.menu_bg, colors.accent, colors.fg,
+            )?;
+
+            // 4. Place the cursor securely at the end of the user's typed input
+            let prompt_len = prompt_text.chars().count();
+            let input_len = input.chars().count();
+            let cursor_x = (prompt_len + input_len) as u16;
+
+            queue!(
+                stdout,
+                cursor::MoveTo(cursor_x, rows.saturating_sub(3)),
+                cursor::Show
+            )?;
+
+            stdout.flush()?;
+
+            // 5. Handle Keyboard Events
+            if let Event::Key(key) = event::read()? {
+                if key.kind == event::KeyEventKind::Press {
+                    match key.code {
+                        KeyCode::Enter => {
+                            queue!(stdout, cursor::Hide, ResetColor)?;
+                            stdout.flush()?;
+                            return Ok(Some(input));
+                        }
+                        KeyCode::Esc => {
+                            queue!(stdout, cursor::Hide, ResetColor)?;
+                            stdout.flush()?;
+                            return Ok(None);
+                        }
+                        KeyCode::Char('c') | KeyCode::Char('C') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+                            queue!(stdout, cursor::Hide, ResetColor)?;
+                            stdout.flush()?;
+                            return Ok(None);
+                        }
+                        KeyCode::Backspace => { input.pop(); },
+                        KeyCode::Char(c) => {
+                            if !key.modifiers.intersects(KeyModifiers::CONTROL | KeyModifiers::ALT | KeyModifiers::META) {
+                                input.push(c);
+                            }
+                        },
+                        KeyCode::Right | KeyCode::Tab => {
+                            if !hint.is_empty() {
+                                input.push_str(&hint);
+                            }
+                        }
+                        _ => {}
+                    }
+                }
+            }
+        }
+    }
+
     fn prompt_yn(&mut self, prompt_text: &str) -> io::Result<Option<bool>> {
         let previous_state = self.menu_state;
         self.menu_state = MenuState::YesNoCancel;
@@ -276,7 +372,7 @@ impl PromptExt for Editor {
     fn prompt_with_autocomplete(&mut self, prompt_text: &str, suggestions: &[String]) -> io::Result<Option<String>> {
         let mut stdout = stdout();
         let mut input = String::new();
-        let (cols, rows) = term_size()?;
+        let (_, rows) = term_size()?;
 
         let theme = &self.theme_set.themes[&self.current_theme];
         let colors = derive_ui_colors(theme);
@@ -510,5 +606,17 @@ pub fn prompt_cancel(stdout: &mut std::io::Stdout, colors: &UiColors) -> bool {
             }
         }
     }
+}
+
+pub fn find_folder_suggestion(input: &str, folders: &[String]) -> Option<String> {
+    if input.is_empty() { return None; }
+
+    for folder in folders {
+        if folder.to_lowercase().starts_with(&input.to_lowercase()) {
+            let remainder = &folder[input.len()..];
+            if !remainder.is_empty() { return Some(remainder.to_string()); }
+        }
+    }
+    None
 }
 

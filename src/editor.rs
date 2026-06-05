@@ -1,5 +1,5 @@
 use std::collections::{HashSet, HashMap};
-use std::time::{Duration, Instant};
+use std::time::{Instant};
 use std::path::Path;
 use std::fs::{self, File};
 use std::env;
@@ -328,7 +328,7 @@ impl Editor {
     }
 
     pub(crate) fn scroll(&mut self) -> io::Result<()> {
-        let (cols, rows) = terminal::size()?;
+        let (cols, _) = terminal::size()?;
         // let visible_rows = rows.saturating_sub(4 + self.top_margin) as usize;
 
         let (_, rows) = crossterm::terminal::size().unwrap_or((80, 24));

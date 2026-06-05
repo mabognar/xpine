@@ -123,3 +123,4 @@ pub fn ensure_themes_unpacked() -> std::io::Result<PathBuf> {
     Ok(xpine_themes_dir)
 }
 
+

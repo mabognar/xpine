@@ -5,8 +5,8 @@ use crate::ui::UiExt;
 use std::path::Path;
 use lettre::transport::smtp::authentication::{Credentials as SmtpCredentials, Mechanism};
 use lettre::{Message, SmtpTransport, Transport};
-use lettre::message::Mailbox;
-use std::str::FromStr;
+// use lettre::message::Mailbox;
+use std;
 
 use ropey::Rope;
 use std::fs;
@@ -254,7 +254,7 @@ pub fn compose_email(account: &Account, default_to: Option<&str>, default_subjec
 
             let is_microsoft = account.email.ends_with("@outlook.com") || account.email.ends_with("@hotmail.com");
 
-            let target_scope = if is_microsoft { Some("https://graph.microsoft.com/Mail.Send") } else { None };
+            // let target_scope = if is_microsoft { Some("https://graph.microsoft.com/Mail.Send") } else { None };
 
             let token_or_pass = if let Some(ref rt) = account.refresh_token {
                 let target_scope = if is_microsoft { Some("https://graph.microsoft.com/Mail.Send") } else { None };
@@ -280,7 +280,7 @@ pub fn compose_email(account: &Account, default_to: Option<&str>, default_subjec
 
                         return None;
                     }
-                    Err(e) => {
+                    Err(_) => {
                         // Handle standard Google/Network errors...
                         return None;
                     }

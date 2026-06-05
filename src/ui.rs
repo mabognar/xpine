@@ -587,10 +587,6 @@ pub fn draw_app(stdout: &mut std::io::Stdout, app: &App, theme_provider: &Editor
             )?;
         }
 
-        AppMode::Compose { .. } => {
-            // We will hook up the UI rendering logic later.
-        }
-
         AppMode::EmailAccounts { selected_idx } => {
             let title = "xpine - Email Accounts";
             let title_len = title.chars().count();
@@ -744,8 +740,8 @@ pub fn draw_app(stdout: &mut std::io::Stdout, app: &App, theme_provider: &Editor
                 Editor::draw_menu_line(stdout, rows - 2, cols, r_col, &[("<", " Back"), (">", " View"), ("C", " Compose"), ("R", " Reply"),   ("D", " Delete"), ("O", " Other (1/2)")], colors.menu_bg, colors.accent, colors.fg)?;
                 Editor::draw_menu_line(stdout, rows - 1, cols, r_col, &[("Q", " Quit"), ("M", " Menu"), ("*", " Flag"),    ("F", " Forward"), ("X", " Expunge"), ("Tab", " Acct")], colors.menu_bg, colors.accent, colors.fg)?;
             } else {
-                Editor::draw_menu_line(stdout, rows - 2, cols, r_col, &[("U", " (Un)Read"), ("P", " Prev"), ("Y", " Prev Pg"),  ("M+I", " To Inbox"), ("M+T", " Theme"),  ("O", " Other (2/2)")], colors.menu_bg, colors.accent, colors.fg)?;
-                Editor::draw_menu_line(stdout, rows - 1, cols, r_col, &[("S", " Search"), ("N", " Next"), ("V", " Next Pg"),    ("M+J", " To Junk"), ("", ""), ("", "")], colors.menu_bg, colors.accent, colors.fg)?;
+                Editor::draw_menu_line(stdout, rows - 2, cols, r_col, &[("U", " (Un)Read"), ("P", " Prev"), ("Y", " Prev Pg"),  ("M+T", " Theme"),   ("", ""), ("O", " Other (2/2)")], colors.menu_bg, colors.accent, colors.fg)?;
+                Editor::draw_menu_line(stdout, rows - 1, cols, r_col, &[("S", " Search"), ("N", " Next"), ("V", " Next Pg"),    ("M+M", " Move To"), ("", ""), ("", "")], colors.menu_bg, colors.accent, colors.fg)?;
             }
 
             if let Some(time) = app.list_status_time {

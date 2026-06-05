@@ -676,7 +676,6 @@ pub fn fetch_emails(session: &mut MailSession, app: &mut App, items_per_page: u3
                                     }
                                 }
                             }
-                            // --- PARSING LOGIC END ---
 
                             let internal_date = DateTime::parse_from_rfc3339(&msg.received_date_time)
                                 .map(|dt| dt.timestamp())
@@ -1129,3 +1128,63 @@ pub fn rename_folder(session: &mut MailSession, old_name: &str, new_name: &str) 
         }
     }
 }
+
+pub fn move_email(session: &mut MailSession, message_seq: &str, dest_folder: &str) -> Result<(), String> {
+    match session {
+        MailSession::Imap(imap_sess) => {
+            // Step 1: Copy to destination
+            imap_sess.copy(message_seq, dest_folder)
+                .map_err(|e| format!("Failed to copy email: {}", e))?;
+
+            // Step 2: Flag the original as deleted
+            imap_sess.store(message_seq, "+FLAGS (\\Deleted)")
+                .map_err(|e| format!("Failed to delete original: {}", e))?;
+
+            // Step 3: Expunge the current folder to finalize the move
+            imap_sess.expunge()
+                .map_err(|e| format!("Failed to expunge: {}", e))?;
+
+            Ok(())
+        }
+        MailSession::Graph { access_token } => {
+            let client = reqwest::blocking::Client::new();
+
+            // STEP 1: Find the Destination Folder ID
+            let filter_query = format!("displayName eq '{}'", dest_folder);
+            let res = client.get("https://graph.microsoft.com/v1.0/me/mailFolders")
+                .query(&[("$filter", filter_query)])
+                .header("Authorization", format!("Bearer {}", access_token))
+                .send()
+                .map_err(|e| e.to_string())?;
+
+            let json: serde_json::Value = res.json().map_err(|e| e.to_string())?;
+            let dest_id = json.get("value")
+                .and_then(|v| v.as_array())
+                .and_then(|arr| arr.get(0))
+                .and_then(|f| f.get("id"))
+                .and_then(|id| id.as_str())
+                .ok_or("Destination folder not found on Microsoft servers")?;
+
+            // STEP 2: POST to the /move endpoint
+            // Note: message_seq here must be the Graph Message ID, not an IMAP sequence number
+            let move_url = format!("https://graph.microsoft.com/v1.0/me/messages/{}/move", message_seq);
+            let body = serde_json::json!({
+                "destinationId": dest_id
+            });
+
+            let move_res = client.post(&move_url)
+                .header("Authorization", format!("Bearer {}", access_token))
+                .header("Content-Type", "application/json")
+                .json(&body)
+                .send()
+                .map_err(|e| e.to_string())?;
+
+            if move_res.status().is_success() {
+                Ok(())
+            } else {
+                Err(format!("Graph API move error: {}", move_res.status()))
+            }
+        }
+    }
+}
+

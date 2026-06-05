@@ -1,7 +1,7 @@
 use crate::config::Account;
 use crate::mail::EmailMeta;
 use std::time::{Duration, Instant};
-use std::collections::{HashMap, HashSet};
+// use std::collections::{HashMap, HashSet};
 
 pub enum AppMode {
     AddressBook {
@@ -28,15 +28,15 @@ pub enum AppMode {
     Settings {
         selected_idx: usize,
     },
-    Compose {
-        to: String,
-        cc: String,
-        bcc: String,
-        subject: String,
-        attachments: Vec<String>,
-        active_idx: usize,
-        editor: crate::editor::Editor,
-    },
+    // Compose {
+    //     to: String,
+    //     cc: String,
+    //     bcc: String,
+    //     subject: String,
+    //     attachments: Vec<String>,
+    //     active_idx: usize,
+    //     editor: crate::editor::Editor,
+    // },
 }
 
 #[derive(Clone)]
