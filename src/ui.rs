@@ -748,7 +748,7 @@ pub fn draw_app(stdout: &mut std::io::Stdout, app: &App, theme_provider: &Editor
                 if time.elapsed() >= app.list_status_duration {
                     // Timeout handled in main loop logic
                 } else if !app.list_status.is_empty() {
-                    queue!(stdout, cursor::MoveTo(0, rows - 3), SetBackgroundColor(colors.selected_bg), terminal::Clear(ClearType::UntilNewLine), SetForegroundColor(colors.accent), Print(format!(" {} ", app.list_status)), ResetColor)?;
+                    queue!(stdout, cursor::MoveTo(0, rows - 3), SetBackgroundColor(colors.selected_bg), terminal::Clear(ClearType::UntilNewLine), SetForegroundColor(colors.accent), Print(format!("{} ", app.list_status)), ResetColor)?;
                 }
             }
         }

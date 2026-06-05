@@ -913,7 +913,8 @@ pub fn handle_event(event: Event, app: &mut App, session: &mut Option<MailSessio
                             let is_system = matches!(
                                 lower_name.as_str(),
                                 "inbox" | "sent" | "sent items" | "drafts" | "trash" | "deleted items" |
-                                "spam" | "junk" | "archive" | "[gmail]" | "[gmail]/all mail" | "[gmail]/sent mail" | "[gmail]/drafts" |
+                                "spam" | "junk" | "junk email" | "outbox" | "archive" | "conversation history" |
+                                "[gmail]" | "[gmail]/all mail" | "[gmail]/sent mail" | "[gmail]/drafts" |
                                 "[gmail]/trash" | "[gmail]/spam" | "[gmail]/important" | "[gmail]/starred"
                             );
 
@@ -965,7 +966,8 @@ pub fn handle_event(event: Event, app: &mut App, session: &mut Option<MailSessio
                             let is_system = matches!(
                                 lower_name.as_str(),
                                 "inbox" | "sent" | "sent items" | "drafts" | "trash" | "deleted items" |
-                                "spam" | "junk" | "archive" | "[gmail]/sent mail" | "[gmail]/drafts" |
+                                "spam" | "junk" | "junk email" | "outbox" | "archive" | "conversation history" |
+                                "[gmail]" | "[gmail]/all mail" | "[gmail]/sent mail" | "[gmail]/drafts" |
                                 "[gmail]/trash" | "[gmail]/spam" | "[gmail]/important" | "[gmail]/starred"
                             );
 
