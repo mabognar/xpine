@@ -91,125 +91,6 @@ pub fn compose_email(account: &Account, default_to: Option<&str>, default_subjec
                 SetForegroundColor(colors.fg), Print(" ")
             ).unwrap();
 
-            // if is_active {
-            //     // EXPANDED STATE: Draw multiple lines
-            //     let wrapped_lines = wrap_text(val, available_width);
-            //
-            //     for (line_idx, line) in wrapped_lines.iter().enumerate() {
-            //         queue!(
-            //             stdout,
-            //             cursor::MoveTo(label_width as u16, current_y + line_idx as u16),
-            //             SetBackgroundColor(colors.menu_bg), SetForegroundColor(colors.fg),
-            //             Print(line)
-            //         ).unwrap();
-            //     }
-            //
-            //     // Handle the autocomplete hint
-            //     if i < 3 {
-            //         let suggestions = crate::prompt::find_email_suggestions(val, &address_book);
-            //         if !suggestions.is_empty() {
-            //             let current_suggestion = &suggestions[suggestion_idx % suggestions.len()];
-            //             let last_part = val.split(',').last().unwrap_or("").trim_start();
-            //
-            //             if last_part.to_lowercase() != current_suggestion.to_lowercase() {
-            //                 let hint = if current_suggestion.to_lowercase().starts_with(&last_part.to_lowercase()) {
-            //                     format!("{}", &current_suggestion[last_part.len()..])
-            //                 } else {
-            //                     format!("  -> {}", current_suggestion)
-            //                 };
-            //                 let dim_c = if colors.is_dark { Color::DarkGrey } else { Color::Grey };
-            //
-            //                 // Calculate where the current text ends on the screen
-            //                 let last_line_len = wrapped_lines.last().map(|l| l.len()).unwrap_or(0);
-            //                 let remaining_space = available_width.saturating_sub(last_line_len);
-            //
-            //                 let (hint_x, hint_y) = if hint.len() <= remaining_space {
-            //                     // Hint fits on current line
-            //                     (label_width + last_line_len as u16, current_y + wrapped_lines.len() as u16 - 1)
-            //                 } else {
-            //                     // Move to next line
-            //                     (label_width, current_y + wrapped_lines.len() as u16)
-            //                 };
-            //
-            //                 queue!(
-            //                     stdout,
-            //                     cursor::MoveTo(hint_x as u16, hint_y as u16),
-            //                     SetForegroundColor(dim_c),
-            //                     Print(hint)
-            //                 ).unwrap();
-            //             }
-            //         }
-            //     }
-            //
-            //     // Calculate the true hardware cursor position based on exact character math
-            //     let cursor_row = (cursor_pos / available_width) as u16;
-            //     let cursor_col = (cursor_pos % available_width) as u16;
-            //     active_cursor_x = label_width as u16 + cursor_col;
-            //     active_cursor_y = current_y + cursor_row;
-            //
-            //     current_y += wrapped_lines.len() as u16;
-
-            // if is_active {
-            //     // 1. Draw the wrapped lines
-            //     let wrapped_lines = wrap_text(val, available_width);
-            //     for (line_idx, line) in wrapped_lines.iter().enumerate() {
-            //         queue!(
-            //             stdout,
-            //             cursor::MoveTo(label_width as u16, current_y + line_idx as u16),
-            //             SetBackgroundColor(colors.menu_bg), SetForegroundColor(colors.fg),
-            //             Print(line)
-            //         ).unwrap();
-            //     }
-            //
-            //     // 2. Handle Autocomplete and calculate row offset if it wraps
-            //     let mut hint_row_offset = 0;
-            //     if i < 3 {
-            //         let suggestions = crate::prompt::find_email_suggestions(val, &address_book);
-            //         if !suggestions.is_empty() {
-            //             let current_suggestion = &suggestions[suggestion_idx % suggestions.len()];
-            //             let last_part = val.split(',').last().unwrap_or("").trim_start();
-            //
-            //             if last_part.to_lowercase() != current_suggestion.to_lowercase() {
-            //                 let hint = if current_suggestion.to_lowercase().starts_with(&last_part.to_lowercase()) {
-            //                     format!("{}", &current_suggestion[last_part.len()..])
-            //                 } else {
-            //                     format!("  -> {}", current_suggestion)
-            //                 };
-            //
-            //                 let dim_c = if colors.is_dark { Color::DarkGrey } else { Color::Grey };
-            //                 let last_line_len = wrapped_lines.last().map(|l| l.chars().count()).unwrap_or(0);
-            //                 let remaining_space = available_width.saturating_sub(last_line_len);
-            //
-            //                 if hint.chars().count() <= remaining_space {
-            //                     // Fit on same line
-            //                     queue!(
-            //                         stdout,
-            //                         cursor::MoveTo((label_width + last_line_len as u16), (current_y + wrapped_lines.len() as u16 - 1)),
-            //                         SetForegroundColor(dim_c),
-            //                         Print(hint)
-            //                     ).unwrap();
-            //                 } else {
-            //                     // Move hint to next line, notify logic to drop the next field down
-            //                     queue!(
-            //                         stdout,
-            //                         cursor::MoveTo(label_width as u16, (current_y + wrapped_lines.len() as u16) as u16),
-            //                         SetForegroundColor(dim_c),
-            //                         Print(hint)
-            //                     ).unwrap();
-            //                     hint_row_offset = 1;
-            //                 }
-            //             }
-            //         }
-            //     }
-            //
-            //     // 3. Calculate hardware cursor position
-            //     let cursor_row = (cursor_pos / available_width) as u16;
-            //     let cursor_col = (cursor_pos % available_width) as u16;
-            //     active_cursor_x = label_width as u16 + cursor_col;
-            //     active_cursor_y = current_y + cursor_row;
-            //
-            //     // 4. Advance Y, adding the offset if the hint forced a new line
-            //     current_y += wrapped_lines.len() as u16 + hint_row_offset;
             if is_active {
                 let wrapped_lines = wrap_text(val, available_width);
                 // Dynamically set height: full height if < 10, otherwise capped at 10
@@ -326,10 +207,6 @@ pub fn compose_email(account: &Account, default_to: Option<&str>, default_subjec
         }
         queue!(stdout, ResetColor).unwrap();
 
-        // editor.draw_screen().unwrap();
-
-        // current_y currently points to the row immediately after attachments.
-        // Update the editor's top margin dynamically so it knows exactly where to start.
         editor.top_margin = current_y;
 
         // Now draw the editor body
@@ -417,7 +294,7 @@ pub fn compose_email(account: &Account, default_to: Option<&str>, default_subjec
                                         if state.active_idx > 0 {
                                             state.active_idx -= 1;
                                             let new_target = match state.active_idx { 0 => &state.to, 1 => &state.cc, 2 => &state.bcc, 3 => &state.subject, _ => unreachable!() };
-                                            cursor_pos = 0; // Fix: Jump to start, not end
+                                            cursor_pos = new_target.len(); // Fix: Jump to start, not end
                                             state.scroll_offset = 0; // Reset scroll
                                         } else {
                                             cursor_pos = 0;
@@ -548,7 +425,7 @@ pub fn compose_email(account: &Account, default_to: Option<&str>, default_subjec
     let (_, rows) = term_size().unwrap_or((80, 24));
     let theme = &editor.theme_set.themes[&editor.current_theme];
     let colors = derive_ui_colors(theme);
-    queue!(stdout, cursor::MoveTo(0, rows - 3), SetBackgroundColor(colors.selected_bg), Clear(ClearType::UntilNewLine), SetForegroundColor(colors.accent), Print(" Sending message... Please wait "), ResetColor).unwrap();
+    queue!(stdout, cursor::MoveTo(0, rows - 3), SetBackgroundColor(colors.selected_bg), Clear(ClearType::UntilNewLine), SetForegroundColor(colors.accent), Print("Sending message... Please wait "), ResetColor).unwrap();
     stdout.flush().unwrap();
 
     let mut builder = Message::builder()
@@ -732,20 +609,3 @@ fn wrap_text(text: &str, width: usize) -> Vec<String> {
     lines
 }
 
-// fn wrap_text(text: &str, width: usize) -> Vec<String> {
-//     if text.is_empty() || width == 0 { return vec![String::new()]; }
-//
-//     let mut lines = Vec::new();
-//     let mut current_line = String::new();
-//
-//     for c in text.chars() {
-//         if current_line.chars().count() == width {
-//             lines.push(current_line);
-//             current_line = String::new();
-//         }
-//         current_line.push(c);
-//     }
-//
-//     lines.push(current_line);
-//     lines
-// }
