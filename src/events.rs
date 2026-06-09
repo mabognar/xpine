@@ -68,10 +68,14 @@ pub fn handle_event(event: Event, app: &mut App, session: &mut Option<MailSessio
                             if !addresses.is_empty() {
                                 let prompt_msg = format!("Delete '{}'?", addresses[*selected_idx]);
                                 if let Ok(Some(true)) = theme_provider.prompt_yn(&prompt_msg) {
-                                    addresses.remove(*selected_idx);
-                                    let _ = crate::address::save_address_book(addresses);
-                                    if *selected_idx >= addresses.len() {
-                                        *selected_idx = addresses.len().saturating_sub(1);
+                                    // Second confirmation: Are you sure?
+                                    if let Ok(Some(true)) = theme_provider.prompt_yn("Are you sure?") {
+                                        addresses.remove(*selected_idx);
+                                        let _ = crate::address::save_address_book(addresses);
+
+                                        if *selected_idx >= addresses.len() {
+                                            *selected_idx = addresses.len().saturating_sub(1);
+                                        }
                                     }
                                 }
                             }
@@ -116,6 +120,83 @@ pub fn handle_event(event: Event, app: &mut App, session: &mut Option<MailSessio
                                 }
                             }
                         }
+                        // KeyCode::Char('t') | KeyCode::Char('T') => {
+                        //     if k.modifiers.contains(KeyModifiers::ALT) {
+                        //         // ... (Keep your existing theme switching logic)
+                        //     } else {
+                        //         if let Ok(Some(team_name)) = theme_provider.prompt("Team Name (e.g. My Team): ", false) {
+                        //             let team_name = team_name.trim();
+                        //             if !team_name.is_empty() {
+                        //                 // Interactive loop for email suggestions
+                        //                 let mut team_emails = String::new();
+                        //                 let mut suggestion_idx = 0;
+                        //                 let mut finished = false;
+                        //
+                        //                 while !finished {
+                        //                     // 1. Draw the prompt
+                        //                     let suggestions = crate::prompt::find_email_suggestions(&team_emails, addresses);
+                        //                     // (Assuming you have a function to draw your UI state or print to stdout)
+                        //                     // theme_provider.draw_team_prompt(&team_emails, &suggestions, suggestion_idx);
+                        //
+                        //                     if let Ok(event) = crossterm::event::read() {
+                        //                         if let Event::Key(key) = event {
+                        //                             match key.code {
+                        //                                 KeyCode::Char(c) => {
+                        //                                     team_emails.push(c);
+                        //                                     suggestion_idx = 0;
+                        //                                 }
+                        //                                 KeyCode::Backspace => {
+                        //                                     team_emails.pop();
+                        //                                     suggestion_idx = 0;
+                        //                                 }
+                        //                                 KeyCode::Up => {
+                        //                                     if !suggestions.is_empty() {
+                        //                                         suggestion_idx = if suggestion_idx == 0 { suggestions.len() - 1 } else { suggestion_idx - 1 };
+                        //                                     }
+                        //                                 }
+                        //                                 KeyCode::Down => {
+                        //                                     if !suggestions.is_empty() {
+                        //                                         suggestion_idx = (suggestion_idx + 1) % suggestions.len();
+                        //                                     }
+                        //                                 }
+                        //                                 KeyCode::Tab | KeyCode::Right => {
+                        //                                     if !suggestions.is_empty() {
+                        //                                         let suggestion = &suggestions[suggestion_idx % suggestions.len()];
+                        //                                         if let Some(last_comma_idx) = team_emails.rfind(',') {
+                        //                                             team_emails.truncate(last_comma_idx + 1);
+                        //                                             team_emails.push(' ');
+                        //                                             team_emails.push_str(suggestion);
+                        //                                         } else {
+                        //                                             team_emails = suggestion.clone();
+                        //                                         }
+                        //                                         suggestion_idx = 0;
+                        //                                     }
+                        //                                 }
+                        //                                 KeyCode::Enter => {
+                        //                                     // Check if we are selecting a suggestion or accepting the full input
+                        //                                     let last_part = team_emails.split(',').last().unwrap_or("").trim_start();
+                        //                                     if suggestions.is_empty() || suggestions.get(suggestion_idx % suggestions.len()).map(|s| s.to_lowercase()) == Some(last_part.to_lowercase()) {
+                        //                                         finished = true;
+                        //                                     }
+                        //                                 }
+                        //                                 KeyCode::Esc => { finished = true; team_emails.clear(); }
+                        //                                 _ => {}
+                        //                             }
+                        //                         }
+                        //                     }
+                        //                 }
+                        //
+                        //                 // Save if input was provided
+                        //                 let trimmed_emails = team_emails.trim().trim_end_matches(';');
+                        //                 if !trimmed_emails.is_empty() {
+                        //                     let formatted_list = format!("{}: {};", team_name, trimmed_emails);
+                        //                     addresses.push(formatted_list);
+                        //                     crate::address::clean_and_save_address_book(addresses);
+                        //                 }
+                        //             }
+                        //         }
+                        //     }
+                        // }
                         KeyCode::Char('a') | KeyCode::Char('A') => {
                             if let Ok(Some(new_val)) = theme_provider.prompt("Add address: ", false) {
                                 let trimmed = new_val.trim();

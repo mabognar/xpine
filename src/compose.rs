@@ -29,19 +29,6 @@ struct ComposeState {
     active_idx: usize,
 }
 
-fn find_suggestion(input: &str, address_book: &[String]) -> Option<String> {
-    if input.is_empty() { return None; }
-    let last_part = input.split(',').last().unwrap_or("").trim_start();
-    if last_part.is_empty() { return None; }
-    for addr in address_book {
-        if addr.to_lowercase().starts_with(&last_part.to_lowercase()) {
-            let remainder = &addr[last_part.len()..];
-            if !remainder.is_empty() { return Some(remainder.to_string()); }
-        }
-    }
-    None
-}
-
 pub fn compose_email(account: &Account, default_to: Option<&str>, default_subject: Option<&str>, default_body: Option<&str>, current_theme: &mut String) -> Option<String> {
     let mut state = ComposeState {
         to: default_to.unwrap_or("").to_string(),
@@ -64,6 +51,9 @@ pub fn compose_email(account: &Account, default_to: Option<&str>, default_subjec
     let mut cancelled = false;
     let address_book = crate::address::load_address_book();
 
+    let mut suggestion_idx = 0;
+    let mut cursor_pos = state.to.len(); // Starts at the end of the To: field
+
     loop {
         let (cols, rows) = term_size().unwrap_or((80, 24));
         let theme = &editor.theme_set.themes[&editor.current_theme];
@@ -79,22 +69,125 @@ pub fn compose_email(account: &Account, default_to: Option<&str>, default_subjec
         let fields = ["To:", "Cc:", "Bcc:", "Subject:"];
         let vals = [&state.to, &state.cc, &state.bcc, &state.subject];
 
+        // for i in 0..4 {
+        //     queue!(
+        //         stdout, cursor::MoveTo(0, (i + 1) as u16),
+        //         SetBackgroundColor(colors.menu_bg), SetForegroundColor(colors.accent), Print(format!("{:>8}", fields[i])),
+        //         SetForegroundColor(colors.fg), Print(" "), Print(vals[i])
+        //     ).unwrap();
+        //
+        //     if i < 3 && i == state.active_idx {
+        //         let suggestions = crate::prompt::find_email_suggestions(vals[i], &address_book);
+        //         if !suggestions.is_empty() {
+        //             // Keep index in bounds
+        //             suggestion_idx %= suggestions.len();
+        //             let current_suggestion = &suggestions[suggestion_idx];
+        //             let dim_c = if colors.is_dark { Color::DarkGrey } else { Color::Grey };
+        //
+        //             let last_part = vals[i].split(',').last().unwrap_or("").trim_start();
+        //
+        //             // FIX: Only build and draw the hint if the text doesn't already perfectly match
+        //             if last_part.to_lowercase() != current_suggestion.to_lowercase() {
+        //                 let match_indicator = if suggestions.len() > 1 {
+        //                     format!(" ({}/{})", suggestion_idx + 1, suggestions.len())
+        //                 } else {
+        //                     String::new()
+        //                 };
+        //
+        //                 let hint = if current_suggestion.to_lowercase().starts_with(&last_part.to_lowercase()) {
+        //                     // Prefix match: inline remainder
+        //                     format!("{}{}", &current_suggestion[last_part.len()..], match_indicator)
+        //                 } else {
+        //                     // Substring match: show full indicator
+        //                     format!("  -> {}{}", current_suggestion, match_indicator)
+        //                 };
+        //
+        //                 queue!(stdout, SetForegroundColor(dim_c), Print(hint)).unwrap();
+        //             }
+        //         } else {
+        //             suggestion_idx = 0; // Reset if no matches
+        //         }
+        //     }
+        // }
+
+        let label_width = 9;
+        let available_width = (cols.saturating_sub(label_width + 2)) as usize;
+        let mut current_y = 1; // Start at row 1
+
         for i in 0..4 {
+            let val = vals[i];
+            let is_active = i == state.active_idx;
+
+            // Draw the label
             queue!(
-                stdout, cursor::MoveTo(0, (i + 1) as u16),
-                SetBackgroundColor(colors.menu_bg), SetForegroundColor(colors.accent), Print(format!("{:>8}", fields[i])),
-                SetForegroundColor(colors.fg), Print(" "), Print(vals[i])
+                stdout, cursor::MoveTo(0, current_y),
+                SetBackgroundColor(colors.menu_bg), SetForegroundColor(colors.accent),
+                Print(format!("{:>8}", fields[i])),
+                SetForegroundColor(colors.fg), Print(" ")
             ).unwrap();
 
-            if i < 3 && i == state.active_idx {
-                if let Some(suggestion) = find_suggestion(vals[i], &address_book) {
-                    let dim_c = if colors.is_dark { Color::DarkGrey } else { Color::Grey };
-                    queue!(stdout, SetForegroundColor(dim_c), Print(suggestion)).unwrap();
+            if is_active {
+                // EXPANDED STATE: Draw multiple lines
+                let wrapped_lines = wrap_text(val, available_width);
+
+                for (line_idx, line) in wrapped_lines.iter().enumerate() {
+                    queue!(
+                        stdout,
+                        cursor::MoveTo(label_width as u16, current_y + line_idx as u16),
+                        SetBackgroundColor(colors.menu_bg), SetForegroundColor(colors.fg),
+                        Print(line)
+                    ).unwrap();
                 }
+
+                // Handle the autocomplete hint on the last wrapped line
+                if i < 3 {
+                    let suggestions = crate::prompt::find_email_suggestions(val, &address_book);
+                    if !suggestions.is_empty() {
+                        let current_suggestion = &suggestions[suggestion_idx % suggestions.len()];
+                        let last_part = val.split(',').last().unwrap_or("").trim_start();
+
+                        if last_part.to_lowercase() != current_suggestion.to_lowercase() {
+                            let hint = if current_suggestion.to_lowercase().starts_with(&last_part.to_lowercase()) {
+                                format!("{}", &current_suggestion[last_part.len()..])
+                            } else {
+                                format!("  -> {}", current_suggestion)
+                            };
+                            let dim_c = if colors.is_dark { Color::DarkGrey } else { Color::Grey };
+                            queue!(stdout, SetForegroundColor(dim_c), Print(hint)).unwrap();
+                        }
+                    }
+                }
+
+                // Position the hardware cursor for the active field
+                let cursor_line = (cursor_pos / available_width) as u16;
+                let cursor_x = (label_width + (cursor_pos as u16 % available_width as u16));
+                execute!(stdout, cursor::MoveTo(cursor_x, current_y + cursor_line), cursor::Show).unwrap();
+
+                current_y += wrapped_lines.len() as u16;
+
+            } else {
+                // COLLAPSED STATE: Truncate to one line
+                let display_text = if val.len() > available_width {
+                    // Show as much as possible, ending with an ellipsis
+                    format!("{}...", &val[..available_width.saturating_sub(3)])
+                } else {
+                    val.to_string()
+                };
+
+                queue!(
+                    stdout, cursor::MoveTo(label_width as u16, current_y),
+                    SetBackgroundColor(colors.menu_bg), SetForegroundColor(colors.fg),
+                    Print(display_text)
+                ).unwrap();
+
+                current_y += 1;
             }
         }
 
-        queue!(stdout, cursor::MoveTo(0, 5), SetBackgroundColor(colors.menu_bg), SetForegroundColor(colors.accent), Print(" Attach: "), SetForegroundColor(colors.fg)).unwrap();
+        // queue!(stdout, cursor::MoveTo(0, 5), SetBackgroundColor(colors.menu_bg), SetForegroundColor(colors.accent), Print(" Attach: "), SetForegroundColor(colors.fg)).unwrap();
+        queue!(stdout, cursor::MoveTo(0, current_y), SetBackgroundColor(colors.menu_bg), SetForegroundColor(colors.accent), Print(" Attach: "), SetForegroundColor(colors.fg)).unwrap();
+        // ... print attachment names ...
+        current_y += 1;
 
         if state.attachments.is_empty() {
             let dim_c = if colors.is_dark { Color::DarkGrey } else { Color::Grey };
@@ -109,6 +202,13 @@ pub fn compose_email(account: &Account, default_to: Option<&str>, default_subjec
         }
         queue!(stdout, ResetColor).unwrap();
 
+        // editor.draw_screen().unwrap();
+
+        // current_y currently points to the row immediately after attachments.
+        // Update the editor's top margin dynamically so it knows exactly where to start.
+        editor.top_margin = current_y;
+
+        // Now draw the editor body
         editor.draw_screen().unwrap();
 
         if state.active_idx < 4 {
@@ -116,9 +216,12 @@ pub fn compose_email(account: &Account, default_to: Option<&str>, default_subjec
             Editor::draw_menu_line(&mut stdout, rows - 2, cols, m_col, &[("^X", " Send"),   (" ^P", " Prev"), ("^A", " Attach"), ("", ""), ("", "")], colors.menu_bg, colors.accent, colors.fg).unwrap();
             Editor::draw_menu_line(&mut stdout, rows - 1, cols, m_col, &[("^C", " Cancel"), ("Tab", " Next"), ("", ""), ("", ""), ("", ""), ("", "")], colors.menu_bg, colors.accent, colors.fg).unwrap();
             queue!(stdout, cursor::Show).unwrap();
+
+            let label_width = 9; // Width of "      To: "
             let cursor_y = (state.active_idx as u16) + 1;
-            let cursor_x = 9 + vals[state.active_idx].chars().count() as u16;
-            execute!(stdout, cursor::MoveTo(cursor_x, cursor_y)).unwrap();
+            let cursor_x = (label_width + cursor_pos) as u16;
+
+            execute!(stdout, cursor::MoveTo(cursor_x, cursor_y), cursor::Show).unwrap();
         } else {
             queue!(stdout, cursor::Show).unwrap();
         }
@@ -144,34 +247,200 @@ pub fn compose_email(account: &Account, default_to: Option<&str>, default_subjec
                     }
 
                     if state.active_idx == 4 {
-                        if key_event.code == KeyCode::Up && editor.cursor_y == 0 { state.active_idx = 3; continue; }
+                        // if key_event.code == KeyCode::Up && editor.cursor_y == 0 { state.active_idx = 3; continue; }
+                        if key_event.code == KeyCode::Up && editor.cursor_y == 0 {
+                            state.active_idx = 3;
+                            cursor_pos = state.subject.len(); // Reset cursor to end of Subject
+                            continue;
+                        }
                         match editor.handle_keypress(key_event).unwrap() {
                             EditorResult::Send(content) => { final_body = content; break; }
                             EditorResult::Cancel => { if crate::prompt::prompt_cancel(&mut stdout, &colors) { cancelled = true; break; } }
                             EditorResult::Continue => {}
                         }
                     } else {
+
+                        let label_width = 9;
+                        let available_width = (cols.saturating_sub(label_width + 2)) as usize;
+
                         match key_event.code {
-                            KeyCode::Char('p') if key_event.modifiers.contains(KeyModifiers::CONTROL) => state.active_idx = state.active_idx.saturating_sub(1),
-                            KeyCode::Char('n') if key_event.modifiers.contains(KeyModifiers::CONTROL) => state.active_idx = (state.active_idx + 1).min(4),
-                            KeyCode::Up | KeyCode::BackTab => state.active_idx = state.active_idx.saturating_sub(1),
-                            KeyCode::Down => { state.active_idx = (state.active_idx + 1).min(4); }
+                            KeyCode::Left => {
+                                if cursor_pos > 0 { cursor_pos -= 1; }
+                            }
+                            KeyCode::Right => {
+                                let target = match state.active_idx { 0 => &state.to, 1 => &state.cc, 2 => &state.bcc, 3 => &state.subject, _ => "" };
+                                if cursor_pos < target.len() { cursor_pos += 1; }
+                            }
+                            KeyCode::Char('p') if key_event.modifiers.contains(KeyModifiers::CONTROL) => {
+                                state.active_idx = state.active_idx.saturating_sub(1);
+                                let new_target = match state.active_idx { 0 => &state.to, 1 => &state.cc, 2 => &state.bcc, 3 => &state.subject, _ => unreachable!() };
+                                cursor_pos = new_target.len();
+                            }
+                            KeyCode::Char('n') if key_event.modifiers.contains(KeyModifiers::CONTROL) => {
+                                state.active_idx = (state.active_idx + 1).min(4);
+                                if state.active_idx < 4 {
+                                    let new_target = match state.active_idx { 0 => &state.to, 1 => &state.cc, 2 => &state.bcc, 3 => &state.subject, _ => unreachable!() };
+                                    cursor_pos = new_target.len();
+                                }
+                            }
+                            KeyCode::Up => {
+                                // Move up one wrapped line
+                                if cursor_pos >= available_width {
+                                    cursor_pos -= available_width;
+                                } else {
+                                    let mut scrolled_suggestion = false;
+                                    if state.active_idx < 3 {
+                                        let target = match state.active_idx { 0 => &state.to, 1 => &state.cc, 2 => &state.bcc, _ => unreachable!() };
+                                        let suggestions = crate::prompt::find_email_suggestions(target, &address_book);
+                                        if suggestions.len() > 1 {
+                                            suggestion_idx = if suggestion_idx == 0 { suggestions.len() - 1 } else { suggestion_idx - 1 };
+                                            scrolled_suggestion = true;
+                                        }
+                                    }
+
+                                    if !scrolled_suggestion {
+                                        state.active_idx = state.active_idx.saturating_sub(1);
+                                        let new_target = match state.active_idx { 0 => &state.to, 1 => &state.cc, 2 => &state.bcc, 3 => &state.subject, _ => unreachable!() };
+                                        cursor_pos = new_target.len();
+                                        suggestion_idx = 0;
+                                    }
+                                }
+                            }
+                            // KeyCode::Up => {
+                            //     let mut scrolled_suggestion = false;
+                            //     if state.active_idx < 3 {
+                            //         let target = match state.active_idx { 0 => &state.to, 1 => &state.cc, 2 => &state.bcc, _ => unreachable!() };
+                            //         let suggestions = crate::prompt::find_email_suggestions(target, &address_book);
+                            //         if suggestions.len() > 1 {
+                            //             suggestion_idx = if suggestion_idx == 0 { suggestions.len() - 1 } else { suggestion_idx - 1 };
+                            //             scrolled_suggestion = true;
+                            //         }
+                            //     }
+                            //
+                            //     if !scrolled_suggestion {
+                            //         state.active_idx = state.active_idx.saturating_sub(1);
+                            //         let new_target = match state.active_idx { 0 => &state.to, 1 => &state.cc, 2 => &state.bcc, 3 => &state.subject, _ => unreachable!() };
+                            //         cursor_pos = new_target.len();
+                            //         suggestion_idx = 0;
+                            //     }
+                            // }
+                            KeyCode::Down => {
+                                // Move down one wrapped line
+                                let target = match state.active_idx { 0 => &state.to, 1 => &state.cc, 2 => &state.bcc, 3 => &state.subject, _ => "" };
+                                if cursor_pos + available_width <= target.len() {
+                                    cursor_pos += available_width;
+                                } else {
+                                    let mut scrolled_suggestion = false;
+                                    if state.active_idx < 3 {
+                                        let target = match state.active_idx { 0 => &state.to, 1 => &state.cc, 2 => &state.bcc, _ => unreachable!() };
+                                        let suggestions = crate::prompt::find_email_suggestions(target, &address_book);
+                                        if suggestions.len() > 1 {
+                                            suggestion_idx = (suggestion_idx + 1) % suggestions.len();
+                                            scrolled_suggestion = true;
+                                        }
+                                    }
+
+                                    if !scrolled_suggestion {
+                                        state.active_idx = (state.active_idx + 1).min(4);
+                                        if state.active_idx < 4 {
+                                            let new_target = match state.active_idx { 0 => &state.to, 1 => &state.cc, 2 => &state.bcc, 3 => &state.subject, _ => unreachable!() };
+                                            cursor_pos = new_target.len();
+                                        }
+                                        suggestion_idx = 0;
+                                    }
+                                }
+                            }
+                            // KeyCode::Down => {
+                            //     let mut scrolled_suggestion = false;
+                            //     if state.active_idx < 3 {
+                            //         let target = match state.active_idx { 0 => &state.to, 1 => &state.cc, 2 => &state.bcc, _ => unreachable!() };
+                            //         let suggestions = crate::prompt::find_email_suggestions(target, &address_book);
+                            //         if suggestions.len() > 1 {
+                            //             suggestion_idx = (suggestion_idx + 1) % suggestions.len();
+                            //             scrolled_suggestion = true;
+                            //         }
+                            //     }
+                            //
+                            //     if !scrolled_suggestion {
+                            //         state.active_idx = (state.active_idx + 1).min(4);
+                            //         if state.active_idx < 4 {
+                            //             let new_target = match state.active_idx { 0 => &state.to, 1 => &state.cc, 2 => &state.bcc, 3 => &state.subject, _ => unreachable!() };
+                            //             cursor_pos = new_target.len();
+                            //         }
+                            //         suggestion_idx = 0;
+                            //     }
+                            // }
                             KeyCode::Tab | KeyCode::Enter => {
                                 if state.active_idx < 3 {
                                     let target = match state.active_idx { 0 => &mut state.to, 1 => &mut state.cc, 2 => &mut state.bcc, _ => unreachable!() };
-                                    if let Some(suggestion) = find_suggestion(target, &address_book) { target.push_str(&suggestion); continue; }
+                                    let suggestions = crate::prompt::find_email_suggestions(target, &address_book);
+
+                                    if !suggestions.is_empty() {
+                                        let suggestion = &suggestions[suggestion_idx % suggestions.len()];
+                                        let last_part = target.split(',').last().unwrap_or("").trim_start();
+
+                                        if last_part.to_lowercase() != suggestion.to_lowercase() {
+                                            if let Some(last_comma_idx) = target.rfind(',') {
+                                                target.truncate(last_comma_idx + 1);
+                                                target.push(' ');
+                                                target.push_str(suggestion);
+                                            } else {
+                                                *target = suggestion.clone();
+                                            }
+
+                                            // FIX: Move the cursor to the end of the newly completed string
+                                            cursor_pos = target.len();
+
+                                            suggestion_idx = 0;
+                                            continue;
+                                        }
+                                    }
                                 }
                                 state.active_idx = (state.active_idx + 1).min(4);
+                                if state.active_idx < 4 {
+                                    let new_target = match state.active_idx { 0 => &state.to, 1 => &state.cc, 2 => &state.bcc, 3 => &state.subject, _ => unreachable!() };
+                                    cursor_pos = new_target.len();
+                                }
+                                suggestion_idx = 0;
+                            }
+                            KeyCode::Left => {
+                                if cursor_pos > 0 {
+                                    let target = match state.active_idx { 0 => &state.to, 1 => &state.cc, 2 => &state.bcc, 3 => &state.subject, _ => unreachable!() };
+                                    if let Some(c) = target[..cursor_pos].chars().next_back() {
+                                        cursor_pos -= c.len_utf8();
+                                    }
+                                }
+                                suggestion_idx = 0;
+                            }
+                            KeyCode::Right => {
+                                let target = match state.active_idx { 0 => &state.to, 1 => &state.cc, 2 => &state.bcc, 3 => &state.subject, _ => unreachable!() };
+                                if cursor_pos < target.len() {
+                                    if let Some(c) = target[cursor_pos..].chars().next() {
+                                        cursor_pos += c.len_utf8();
+                                    }
+                                }
+                                suggestion_idx = 0;
+                            }
+                            KeyCode::Char(c) => {
+                                let target = match state.active_idx { 0 => &mut state.to, 1 => &mut state.cc, 2 => &mut state.bcc, 3 => &mut state.subject, _ => unreachable!() };
+                                if cursor_pos >= target.len() {
+                                    target.push(c);
+                                } else {
+                                    target.insert(cursor_pos, c);
+                                }
+                                cursor_pos += c.len_utf8();
+                                suggestion_idx = 0;
                             }
                             KeyCode::Backspace => {
                                 let target = match state.active_idx { 0 => &mut state.to, 1 => &mut state.cc, 2 => &mut state.bcc, 3 => &mut state.subject, _ => unreachable!() };
-                                target.pop();
-                            }
-                            KeyCode::Char(c) => {
-                                if !key_event.modifiers.contains(KeyModifiers::CONTROL) && !key_event.modifiers.contains(KeyModifiers::ALT) {
-                                    let target = match state.active_idx { 0 => &mut state.to, 1 => &mut state.cc, 2 => &mut state.bcc, 3 => &mut state.subject, _ => unreachable!() };
-                                    target.push(c);
+                                if cursor_pos > 0 {
+                                    // Remove the character exactly before the cursor
+                                    if let Some(c) = target[..cursor_pos].chars().next_back() {
+                                        cursor_pos -= c.len_utf8();
+                                        target.remove(cursor_pos);
+                                    }
                                 }
+                                suggestion_idx = 0;
                             }
                             _ => {}
                         }
@@ -361,3 +630,22 @@ pub fn compose_email(account: &Account, default_to: Option<&str>, default_subjec
     }
 }
 
+fn wrap_text(text: &str, width: usize) -> Vec<String> {
+    if text.is_empty() { return vec![String::new()]; }
+
+    let mut lines = Vec::new();
+    let mut current_line = String::new();
+
+    // Simple word wrap by spaces
+    for word in text.split(' ') {
+        if current_line.len() + word.len() + 1 > width {
+            lines.push(current_line);
+            current_line = word.to_string();
+        } else {
+            if !current_line.is_empty() { current_line.push(' '); }
+            current_line.push_str(word);
+        }
+    }
+    if !current_line.is_empty() { lines.push(current_line); }
+    lines
+}

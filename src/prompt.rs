@@ -189,10 +189,36 @@ impl PromptExt for Editor {
         // Calculate standard column width for your menu items
         let col_width = (cols as usize / 6).max(1);
 
+        let mut suggestion_idx = 0;
+
         loop {
-            // Calculate the current autocomplete hint using our helper
-            let suggestion = crate::prompt::find_folder_suggestion(&input, folders);
-            let hint = suggestion.clone().unwrap_or_default();
+            let suggestions = crate::prompt::find_folder_suggestions(&input, folders);
+            if !suggestions.is_empty() {
+                suggestion_idx %= suggestions.len();
+            } else {
+                suggestion_idx = 0;
+            }
+
+            let current_suggestion = suggestions.get(suggestion_idx);
+
+            // Format the hint appropriately
+            let hint = if let Some(folder) = current_suggestion {
+                let match_indicator = if suggestions.len() > 1 {
+                    format!(" ({}/{})", suggestion_idx + 1, suggestions.len())
+                } else {
+                    String::new()
+                };
+
+                if folder.to_lowercase().starts_with(&input.to_lowercase()) {
+                    // Prefix match: inline remainder + indicator
+                    format!("{}{}", &folder[input.len()..], match_indicator)
+                } else {
+                    // Substring match: show full path + indicator
+                    format!("  -> {}{}", folder, match_indicator)
+                }
+            } else {
+                String::new()
+            };
 
             // 1. Draw the prompt and input text (moved up to row - 3)
             queue!(
@@ -253,17 +279,51 @@ impl PromptExt for Editor {
                         KeyCode::Char('c') | KeyCode::Char('C') if key.modifiers.contains(KeyModifiers::CONTROL) => {
                             queue!(stdout, cursor::Hide, ResetColor)?;
                             stdout.flush()?;
+                            suggestion_idx = 0;
                             return Ok(None);
                         }
-                        KeyCode::Backspace => { input.pop(); },
+                        // KeyCode::Backspace => {
+                        //     input.pop();
+                        //     suggestion_idx = 0;
+                        // },
+                        // KeyCode::Char(c) => {
+                        //     if !key.modifiers.intersects(KeyModifiers::CONTROL | KeyModifiers::ALT | KeyModifiers::META) {
+                        //         input.push(c);
+                        //     }
+                        // },
                         KeyCode::Char(c) => {
-                            if !key.modifiers.intersects(KeyModifiers::CONTROL | KeyModifiers::ALT | KeyModifiers::META) {
-                                input.push(c);
+                            input.push(c);
+                            suggestion_idx = 0; // Reset back to first match on typing
+                        }
+                        KeyCode::Backspace => {
+                            input.pop();
+                            suggestion_idx = 0; // Reset back to first match on deleting
+                        }
+                        // KeyCode::Right | KeyCode::Tab => {
+                        //     if !hint.is_empty() {
+                        //         input.push_str(&hint);
+                        //     }
+                        // }
+                        // KeyCode::Right | KeyCode::Tab => {
+                        //     // Replace the entire input with the full folder name
+                        //     if let Some(folder) = &suggestion {
+                        //         input = folder.clone();
+                        //     }
+                        // }
+                        KeyCode::Up => {
+                            if !suggestions.is_empty() {
+                                suggestion_idx = if suggestion_idx == 0 { suggestions.len() - 1 } else { suggestion_idx - 1 };
                             }
-                        },
+                        }
+                        KeyCode::Down => {
+                            if !suggestions.is_empty() {
+                                suggestion_idx = (suggestion_idx + 1) % suggestions.len();
+                            }
+                        }
                         KeyCode::Right | KeyCode::Tab => {
-                            if !hint.is_empty() {
-                                input.push_str(&hint);
+                            if let Some(folder) = current_suggestion {
+                                input = folder.clone();
+                                suggestion_idx = 0; // Reset index after completing
                             }
                         }
                         _ => {}
@@ -374,6 +434,7 @@ impl PromptExt for Editor {
         let mut input = String::new();
         let (_, rows) = term_size()?;
 
+        execute!(stdout, cursor::Show)?;
         let theme = &self.theme_set.themes[&self.current_theme];
         let colors = derive_ui_colors(theme);
 
@@ -393,25 +454,35 @@ impl PromptExt for Editor {
             }
 
             queue!(
-                stdout,
-                cursor::MoveTo(0, rows - 1),
-                SetBackgroundColor(colors.menu_bg),
-                terminal::Clear(ClearType::CurrentLine),
-                SetForegroundColor(colors.accent),
-                Print(prompt_text),
-                SetForegroundColor(colors.fg),
-                Print(&input),
-                SetForegroundColor(colors.date_color), // using date_color as a subtle grey for the hint
-                Print(&hint),
-                ResetColor
-            )?;
+            stdout,
+            cursor::MoveTo(0, rows - 3),
+            SetBackgroundColor(colors.menu_bg),
+            terminal::Clear(ClearType::CurrentLine),
+            SetForegroundColor(colors.fg),
+            Print(prompt_text),
+            Print(&input),
+            SetForegroundColor(colors.date_color),
+            Print(&hint),
+            ResetColor
+        )?;
+
+            // 3. Move the cursor to the end of the USER INPUT (not the end of the hint)
+            let cursor_x = prompt_text.len() as u16 + input.len() as u16;
+            queue!(stdout, cursor::MoveTo(cursor_x, rows - 3))?;
+
             stdout.flush()?;
 
             if let Event::Key(key) = event::read()? {
                 if key.kind == event::KeyEventKind::Press {
                     match key.code {
-                        KeyCode::Enter => return Ok(Some(input)),
-                        KeyCode::Esc => return Ok(None),
+                        KeyCode::Enter => {
+                            execute!(stdout, cursor::Hide)?; // Hide cursor before returning
+                            return Ok(Some(input));
+                        },
+                        KeyCode::Esc => {
+                            execute!(stdout, cursor::Hide)?; // Hide cursor before returning
+                            return Ok(None);
+                        },
                         KeyCode::Backspace => { input.pop(); },
                         KeyCode::Char(c) => input.push(c),
                         KeyCode::Right | KeyCode::Tab => {
@@ -608,15 +679,88 @@ pub fn prompt_cancel(stdout: &mut std::io::Stdout, colors: &UiColors) -> bool {
     }
 }
 
-pub fn find_folder_suggestion(input: &str, folders: &[String]) -> Option<String> {
-    if input.is_empty() { return None; }
+pub fn find_email_suggestions(input: &str, address_book: &[String]) -> Vec<String> {
+    let mut matches = Vec::new();
+    if input.is_empty() { return matches; }
 
-    for folder in folders {
-        if folder.to_lowercase().starts_with(&input.to_lowercase()) {
-            let remainder = &folder[input.len()..];
-            if !remainder.is_empty() { return Some(remainder.to_string()); }
+    let last_part = input.split(',').last().unwrap_or("").trim_start();
+    if last_part.is_empty() { return matches; }
+
+    let last_part_lower = last_part.to_lowercase();
+
+    for addr in address_book {
+        if addr.trim().is_empty() { continue; } // Skip empty spacer lines
+
+        // Extract the searchable portion: just the team name if it's a team,
+        // or the full email address if it's an individual.
+        let searchable_part = if let Some((team_name, _)) = addr.split_once(':') {
+            team_name.trim()
+        } else {
+            addr.as_str()
+        };
+
+        // Match against the isolated searchable part
+        if searchable_part.to_lowercase().starts_with(&last_part_lower) {
+            matches.push(addr.clone()); // Still return the full string for insertion
         }
     }
-    None
+
+    matches
 }
 
+pub fn find_folder_suggestions(input: &str, folders: &[String]) -> Vec<String> {
+    let mut matches = Vec::new();
+    if input.is_empty() { return matches; }
+
+    let input_lower = input.to_lowercase();
+
+    // 1. Try exact prefix matches first
+    for folder in folders {
+        if folder.to_lowercase().starts_with(&input_lower) {
+            matches.push(folder.clone());
+        }
+    }
+
+    // 2. Fallback to substring matches (exclude ones we already added)
+    for folder in folders {
+        if !folder.to_lowercase().starts_with(&input_lower) && folder.to_lowercase().contains(&input_lower) {
+            matches.push(folder.clone());
+        }
+    }
+
+    matches
+}
+
+// pub fn find_folder_suggestion(input: &str, folders: &[String]) -> Option<String> {
+//     if input.is_empty() { return None; }
+//
+//     for folder in folders {
+//         if folder.to_lowercase().starts_with(&input.to_lowercase()) {
+//             let remainder = &folder[input.len()..];
+//             if !remainder.is_empty() { return Some(remainder.to_string()); }
+//         }
+//     }
+//     None
+// }
+
+// pub fn find_folder_suggestion(input: &str, folders: &[String]) -> Option<String> {
+//     if input.is_empty() { return None; }
+//
+//     let input_lower = input.to_lowercase();
+//
+//     // 1. Try exact prefix match first
+//     for folder in folders {
+//         if folder.to_lowercase().starts_with(&input_lower) {
+//             return Some(folder.clone()); // Return the FULL folder name now
+//         }
+//     }
+//
+//     // 2. Fallback to substring match
+//     for folder in folders {
+//         if folder.to_lowercase().contains(&input_lower) {
+//             return Some(folder.clone()); // Return the FULL folder name
+//         }
+//     }
+//
+//     None
+// }
