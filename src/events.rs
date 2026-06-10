@@ -10,7 +10,7 @@ use crossterm::terminal::size as term_size;
 use crate::prompt::PromptExt;
 
 // Restored from earlier today to handle Outlook/Hotmail auto-expunging
-fn check_and_expunge_outlook(app: &mut App, session: &mut Option<net::MailSession>, theme_provider: &mut Editor) {
+fn check_and_expunge_outlook(app: &mut App, session: &mut Option<MailSession>, theme_provider: &mut Editor) {
     let is_outlook = app.active_account.imap_server.to_lowercase().contains("outlook") ||
         app.active_account.email.to_lowercase().contains("outlook") ||
         app.active_account.email.to_lowercase().contains("hotmail");
@@ -28,14 +28,14 @@ fn check_and_expunge_outlook(app: &mut App, session: &mut Option<net::MailSessio
         if yes {
             if let Some(sess) = session {
                 match sess {
-                    net::MailSession::Imap(imap_sess) => {
+                    MailSession::Imap(imap_sess) => {
                         for email in &app.page_emails {
                             if email.is_deleted {
                                 let _ = imap_sess.uid_store(&email.uid.to_string(), "+FLAGS (\\Deleted)");
                             }
                         }
                     }
-                    net::MailSession::Graph { .. } => {}
+                    MailSession::Graph { .. } => {}
                 }
 
                 let _ = net::expunge_deleted(sess, app);
@@ -120,83 +120,6 @@ pub fn handle_event(event: Event, app: &mut App, session: &mut Option<MailSessio
                                 }
                             }
                         }
-                        // KeyCode::Char('t') | KeyCode::Char('T') => {
-                        //     if k.modifiers.contains(KeyModifiers::ALT) {
-                        //         // ... (Keep your existing theme switching logic)
-                        //     } else {
-                        //         if let Ok(Some(team_name)) = theme_provider.prompt("Team Name (e.g. My Team): ", false) {
-                        //             let team_name = team_name.trim();
-                        //             if !team_name.is_empty() {
-                        //                 // Interactive loop for email suggestions
-                        //                 let mut team_emails = String::new();
-                        //                 let mut suggestion_idx = 0;
-                        //                 let mut finished = false;
-                        //
-                        //                 while !finished {
-                        //                     // 1. Draw the prompt
-                        //                     let suggestions = crate::prompt::find_email_suggestions(&team_emails, addresses);
-                        //                     // (Assuming you have a function to draw your UI state or print to stdout)
-                        //                     // theme_provider.draw_team_prompt(&team_emails, &suggestions, suggestion_idx);
-                        //
-                        //                     if let Ok(event) = crossterm::event::read() {
-                        //                         if let Event::Key(key) = event {
-                        //                             match key.code {
-                        //                                 KeyCode::Char(c) => {
-                        //                                     team_emails.push(c);
-                        //                                     suggestion_idx = 0;
-                        //                                 }
-                        //                                 KeyCode::Backspace => {
-                        //                                     team_emails.pop();
-                        //                                     suggestion_idx = 0;
-                        //                                 }
-                        //                                 KeyCode::Up => {
-                        //                                     if !suggestions.is_empty() {
-                        //                                         suggestion_idx = if suggestion_idx == 0 { suggestions.len() - 1 } else { suggestion_idx - 1 };
-                        //                                     }
-                        //                                 }
-                        //                                 KeyCode::Down => {
-                        //                                     if !suggestions.is_empty() {
-                        //                                         suggestion_idx = (suggestion_idx + 1) % suggestions.len();
-                        //                                     }
-                        //                                 }
-                        //                                 KeyCode::Tab | KeyCode::Right => {
-                        //                                     if !suggestions.is_empty() {
-                        //                                         let suggestion = &suggestions[suggestion_idx % suggestions.len()];
-                        //                                         if let Some(last_comma_idx) = team_emails.rfind(',') {
-                        //                                             team_emails.truncate(last_comma_idx + 1);
-                        //                                             team_emails.push(' ');
-                        //                                             team_emails.push_str(suggestion);
-                        //                                         } else {
-                        //                                             team_emails = suggestion.clone();
-                        //                                         }
-                        //                                         suggestion_idx = 0;
-                        //                                     }
-                        //                                 }
-                        //                                 KeyCode::Enter => {
-                        //                                     // Check if we are selecting a suggestion or accepting the full input
-                        //                                     let last_part = team_emails.split(',').last().unwrap_or("").trim_start();
-                        //                                     if suggestions.is_empty() || suggestions.get(suggestion_idx % suggestions.len()).map(|s| s.to_lowercase()) == Some(last_part.to_lowercase()) {
-                        //                                         finished = true;
-                        //                                     }
-                        //                                 }
-                        //                                 KeyCode::Esc => { finished = true; team_emails.clear(); }
-                        //                                 _ => {}
-                        //                             }
-                        //                         }
-                        //                     }
-                        //                 }
-                        //
-                        //                 // Save if input was provided
-                        //                 let trimmed_emails = team_emails.trim().trim_end_matches(';');
-                        //                 if !trimmed_emails.is_empty() {
-                        //                     let formatted_list = format!("{}: {};", team_name, trimmed_emails);
-                        //                     addresses.push(formatted_list);
-                        //                     crate::address::clean_and_save_address_book(addresses);
-                        //                 }
-                        //             }
-                        //         }
-                        //     }
-                        // }
                         KeyCode::Char('a') | KeyCode::Char('A') => {
                             if let Ok(Some(new_val)) = theme_provider.prompt("Add address: ", false) {
                                 let trimmed = new_val.trim();
@@ -262,14 +185,14 @@ pub fn handle_event(event: Event, app: &mut App, session: &mut Option<MailSessio
                                     };
 
                                     let _ = crossterm::terminal::disable_raw_mode();
-                                    let _ = crossterm::execute!(std::io::stdout(), crossterm::terminal::LeaveAlternateScreen);
+                                    let _ = execute!(std::io::stdout(), crossterm::terminal::LeaveAlternateScreen);
 
                                     println!("Account Email: {}", new_acc.email);
                                     println!("Client ID being sent: '{}'", client_id);
 
                                     // 2. Trigger the "M" screen authentication flow
                                     // Passing an empty string for the secret since it is not needed
-                                    match crate::net::run_microsoft_auth_flow(&client_id, "") {
+                                    match net::run_microsoft_auth_flow(&client_id, "") {
                                         Ok(tokens) => {
                                             if let Some(refresh) = tokens.refresh_token {
                                                 new_acc.refresh_token = Some(refresh);
@@ -287,7 +210,7 @@ pub fn handle_event(event: Event, app: &mut App, session: &mut Option<MailSessio
                                     }
 
                                     let _ = crossterm::terminal::enable_raw_mode();
-                                    let _ = crossterm::execute!(
+                                    let _ = execute!(
                                         std::io::stdout(),
                                         crossterm::terminal::EnterAlternateScreen,
                                         crossterm::terminal::Clear(crossterm::terminal::ClearType::All)
@@ -356,13 +279,13 @@ pub fn handle_event(event: Event, app: &mut App, session: &mut Option<MailSessio
                                 let client_secret = acc.client_secret.as_deref().unwrap_or("YOUR_MS_CLIENT_SECRET");
 
                                 let _ = crossterm::terminal::disable_raw_mode();
-                                let _ = crossterm::execute!(std::io::stdout(), crossterm::terminal::LeaveAlternateScreen);
+                                let _ = execute!(std::io::stdout(), crossterm::terminal::LeaveAlternateScreen);
 
                                 println!("Account Email: {}", acc.email);
                                 println!("Client ID being sent: '{}'", client_id);
                                 println!("Client Secret being sent: '{}'", client_secret);
 
-                                let auth_result = crate::net::run_microsoft_auth_flow(client_id, client_secret);
+                                let auth_result = net::run_microsoft_auth_flow(client_id, client_secret);
 
                                 match auth_result {
                                     Ok(tokens) => {
@@ -387,7 +310,7 @@ pub fn handle_event(event: Event, app: &mut App, session: &mut Option<MailSessio
                                 }
 
                                 let _ = crossterm::terminal::enable_raw_mode();
-                                let _ = crossterm::execute!(
+                                let _ = execute!(
                                     std::io::stdout(),
                                     crossterm::terminal::EnterAlternateScreen,
                                     crossterm::terminal::Clear(crossterm::terminal::ClearType::All)
@@ -483,17 +406,17 @@ pub fn handle_event(event: Event, app: &mut App, session: &mut Option<MailSessio
                                 let mut fetched = Vec::new();
                                 if let Some(sess) = session {
                                     match sess {
-                                        net::MailSession::Imap(imap_sess) => {
+                                        MailSession::Imap(imap_sess) => {
                                             if let Ok(mailboxes) = imap_sess.list(Some(""), Some("*")) {
                                                 for mb in mailboxes.iter() { fetched.push(mb.name().to_string()); }
                                             }
                                         }
-                                        net::MailSession::Graph { access_token } => {
+                                        MailSession::Graph { access_token } => {
                                             let client = reqwest::blocking::Client::new();
                                             let url = "https://graph.microsoft.com/v1.0/me/mailFolders?includeHiddenFolders=true&$top=100";                                            if let Ok(res) = client.get(url)
                                                 .header("Authorization", format!("Bearer {}", access_token))
                                                 .send() {
-                                                if let Ok(graph_data) = res.json::<crate::net::GraphFolderResponse>() {
+                                                if let Ok(graph_data) = res.json::<net::GraphFolderResponse>() {
                                                     for folder in graph_data.value {
                                                         fetched.push(folder.display_name);
                                                     }
@@ -541,35 +464,6 @@ pub fn handle_event(event: Event, app: &mut App, session: &mut Option<MailSessio
 
                             let _ = execute!(std::io::stdout(), crossterm::cursor::Show);
                         }
-                        // KeyCode::Char('j') if k.modifiers.contains(KeyModifiers::ALT) => {
-                        //     if !app.page_emails.is_empty() {
-                        //         if let Ok(Some(true)) = theme_provider.prompt_yn("Move to Junk/Spam folder?") {
-                        //             if let Some(sess) = session {
-                        //                 let seq_id = app.page_emails[app.selected_index].id.to_string();
-                        //                 let junk_folder = if app.active_account.email.contains("@gmail.com") { "[Gmail]/Spam" } else { "Junk" };
-                        //
-                        //                 match net::move_to_folder(sess, &seq_id, junk_folder) {
-                        //                     Ok(_) => { app.update_status(format!("Moved to {}.", junk_folder)); app.needs_fetch = true; },
-                        //                     Err(e) => app.update_status(format!("Error: {}", e)),
-                        //                 }
-                        //             }
-                        //         }
-                        //     }
-                        // }
-                        // KeyCode::Char('i') if k.modifiers.contains(KeyModifiers::ALT) => {
-                        //     if !app.page_emails.is_empty() {
-                        //         if let Ok(Some(true)) = theme_provider.prompt_yn("Move to Inbox?") {
-                        //             if let Some(sess) = session {
-                        //                 let seq_id = app.page_emails[app.selected_index].id.to_string();
-                        //
-                        //                 match net::move_to_folder(sess, &seq_id, "INBOX") {
-                        //                     Ok(_) => { app.update_status("Moved to INBOX.".to_string()); app.needs_fetch = true; },
-                        //                     Err(e) => app.update_status(format!("Error: {}", e)),
-                        //                 }
-                        //             }
-                        //         }
-                        //     }
-                        // }
                         KeyCode::Char(c) if c.is_ascii_digit() => {
                             if let Some(digit) = c.to_digit(10) {
                                 let idx = (digit as usize).saturating_sub(1);
@@ -632,12 +526,9 @@ pub fn handle_event(event: Event, app: &mut App, session: &mut Option<MailSessio
                             } else {
                                 if let Some(sess) = session {
                                     // 1. FETCH FIRST: Grab the live folder list so we can use it for suggestions
-                                    match crate::net::list_folders(sess) {
+                                    match net::list_folders(sess) {
                                         Ok(folders) => {
 
-                                            // 2. THE PROMPT: Pass the `folders` list into your autocomplete prompt method.
-                                            // *** NOTE: Change `prompt_with_suggestions` to match the actual method
-                                            // name you built for your email address suggestions! ***
                                             if let Ok(Some(dest_input)) = theme_provider.prompt_for_folder("Move to folder: ", &folders) {
                                                 let clean_dest = dest_input.trim();
 
@@ -648,7 +539,7 @@ pub fn handle_event(event: Event, app: &mut App, session: &mut Option<MailSessio
                                                         let msg_id = app.page_emails[app.selected_index].id.to_string();
 
                                                         // 4. EXECUTE MOVE
-                                                        match crate::net::move_email(sess, &msg_id, exact_folder) {
+                                                        match net::move_email(sess, &msg_id, exact_folder) {
                                                             Ok(_) => {
                                                                 pending_status = Some(format!("Moved to '{}'", exact_folder));
                                                                 app.needs_fetch = true;
@@ -721,14 +612,14 @@ pub fn handle_event(event: Event, app: &mut App, session: &mut Option<MailSessio
 
                                         if is_outlook {
                                             match sess {
-                                                net::MailSession::Imap(imap_sess) => {
+                                                MailSession::Imap(imap_sess) => {
                                                     for email in &app.page_emails {
                                                         if email.is_deleted {
                                                             let _ = imap_sess.uid_store(&email.uid.to_string(), "+FLAGS (\\Deleted)");
                                                         }
                                                     }
                                                 }
-                                                net::MailSession::Graph { .. } => {}
+                                                MailSession::Graph { .. } => {}
                                             }
                                         }
 
@@ -741,7 +632,7 @@ pub fn handle_event(event: Event, app: &mut App, session: &mut Option<MailSessio
                                                 };
 
                                                 match sess {
-                                                    net::MailSession::Imap(imap_sess) => {
+                                                    MailSession::Imap(imap_sess) => {
                                                         if let Ok(m) = imap_sess.select(&app.current_folder) {
                                                             app.total_messages = m.exists;
                                                             let safe_offset = offset.min(app.total_messages.saturating_sub(1));
@@ -749,7 +640,7 @@ pub fn handle_event(event: Event, app: &mut App, session: &mut Option<MailSessio
                                                             app.restore_index_from_end = Some(safe_offset % items_per_page);
                                                         }
                                                     }
-                                                    net::MailSession::Graph { .. } => {}
+                                                    MailSession::Graph { .. } => {}
                                                 }
                                             } else {
                                                 app.update_status("Expunge failed.".to_string());
@@ -795,7 +686,6 @@ pub fn handle_event(event: Event, app: &mut App, session: &mut Option<MailSessio
                                             app.update_status(s);
                                         }
                                     }
-                                    // Replying Logic
                                     else {
                                         let raw_reply = if reply_to.trim().is_empty() {
                                             crate::mail::extract_email(&from)
@@ -804,15 +694,17 @@ pub fn handle_event(event: Event, app: &mut App, session: &mut Option<MailSessio
                                         };
 
                                         let sub = if subject.to_lowercase().starts_with("re:") { subject.clone() } else { format!("Re: {}", subject) };
-                                        let reply_body = crate::mail::format_reply_text(&t_body);
+
+                                        // FIX: Use t_body, date, and from
+                                        let reply_body = crate::mail::format_reply_text(&t_body, &date, &from);
 
                                         // --- 1. Compose First ---
                                         if let Some(_) = compose_email(&app.active_account, Some(&raw_reply), Some(&sub), Some(&reply_body), &mut theme_provider.current_theme) {
                                             match sess {
-                                                net::MailSession::Imap(imap_sess) => {
+                                                MailSession::Imap(imap_sess) => {
                                                     let _ = imap_sess.store(&fetch_seq, "+FLAGS (\\Answered)");
                                                 }
-                                                net::MailSession::Graph { access_token } => {
+                                                MailSession::Graph { access_token } => {
                                                     let url = format!("https://graph.microsoft.com/v1.0/me/messages/{}", fetch_seq);
                                                     let client = reqwest::blocking::Client::new();
 
@@ -859,10 +751,10 @@ pub fn handle_event(event: Event, app: &mut App, session: &mut Option<MailSessio
 
                                     if !app.page_emails[app.selected_index].is_read {
                                         match sess {
-                                            net::MailSession::Imap(imap_sess) => {
+                                            MailSession::Imap(imap_sess) => {
                                                 let _ = imap_sess.store(&fetch_seq, "+FLAGS (\\Seen)");
                                             }
-                                            net::MailSession::Graph { .. } => {
+                                            MailSession::Graph { .. } => {
                                                 if let Some(sess) = session {
                                                     net::toggle_flag(sess, &mut app.page_emails, app.selected_index, "\\Seen");
                                                 }
@@ -903,26 +795,26 @@ pub fn handle_event(event: Event, app: &mut App, session: &mut Option<MailSessio
                                 if *selected_idx < app.accounts.len() {
                                     app.active_account = app.accounts[*selected_idx].clone();
                                     app.current_account_idx = *selected_idx;
-                                    *session = crate::net::connect(&mut app.active_account).ok();
+                                    *session = net::connect(&mut app.active_account).ok();
 
                                     let mut fetched = Vec::new();
                                     // Removed 'ref mut' here to properly utilize match ergonomics
                                     if let Some(sess) = session {
                                         match sess {
-                                            net::MailSession::Imap(imap_sess) => {
+                                            MailSession::Imap(imap_sess) => {
                                                 if let Ok(mailboxes) = imap_sess.list(Some(""), Some("*")) {
                                                     for mb in mailboxes.iter() {
                                                         fetched.push(mb.name().to_string());
                                                     }
                                                 }
                                             }
-                                            net::MailSession::Graph { access_token } => {
+                                            MailSession::Graph { access_token } => {
                                                 let client = reqwest::blocking::Client::new();
                                                 let url = "https://graph.microsoft.com/v1.0/me/mailFolders?includeHiddenFolders=true&$top=100";
                                                 if let Ok(res) = client.get(url)
                                                     .header("Authorization", format!("Bearer {}", access_token))
                                                     .send() {
-                                                    if let Ok(graph_data) = res.json::<crate::net::GraphFolderResponse>() {
+                                                    if let Ok(graph_data) = res.json::<net::GraphFolderResponse>() {
                                                         for folder in graph_data.value {
                                                             fetched.push(folder.display_name);
                                                         }
@@ -966,12 +858,12 @@ pub fn handle_event(event: Event, app: &mut App, session: &mut Option<MailSessio
 
                                 if !clean_name.is_empty() {
                                     if let Some(sess) = session {
-                                        match crate::net::create_folder(sess, clean_name) {
+                                        match net::create_folder(sess, clean_name) {
                                             Ok(_) => {
                                                 // DEFER THE STATUS
                                                 pending_status = Some(format!("Created folder: {}", clean_name));
 
-                                                if let Ok(new_folders) = crate::net::list_folders(sess) {
+                                                if let Ok(new_folders) = net::list_folders(sess) {
                                                     *folders = new_folders;
                                                 }
                                             }
@@ -1011,11 +903,11 @@ pub fn handle_event(event: Event, app: &mut App, session: &mut Option<MailSessio
                                     if let Ok(Some(true)) = theme_provider.prompt_yn(&absolute_msg) {
                                         // Both prompts answered Yes, proceed with deletion
                                         if let Some(sess) = session {
-                                            match crate::net::delete_folder(sess, &folder_name) {
+                                            match net::delete_folder(sess, &folder_name) {
                                                 Ok(_) => {
                                                     pending_status = Some(format!("Deleted folder: {}", folder_name));
 
-                                                    if let Ok(new_folders) = crate::net::list_folders(sess) {
+                                                    if let Ok(new_folders) = net::list_folders(sess) {
                                                         *folders = new_folders;
 
                                                         if *selected_idx >= folders.len() {
@@ -1062,12 +954,12 @@ pub fn handle_event(event: Event, app: &mut App, session: &mut Option<MailSessio
 
                                     if !clean_new_name.is_empty() && clean_new_name != folder_name {
                                         if let Some(sess) = session {
-                                            match crate::net::rename_folder(sess, &folder_name, clean_new_name) {
+                                            match net::rename_folder(sess, &folder_name, clean_new_name) {
                                                 Ok(_) => {
                                                     pending_status = Some(format!("Renamed to: {}", clean_new_name));
 
                                                     // Fetch the fresh, newly-sorted list
-                                                    if let Ok(new_folders) = crate::net::list_folders(sess) {
+                                                    if let Ok(new_folders) = net::list_folders(sess) {
                                                         *folders = new_folders.clone();
 
                                                         // UX Polish: Find where the renamed folder landed after sorting
@@ -1150,7 +1042,7 @@ pub fn handle_event(event: Event, app: &mut App, session: &mut Option<MailSessio
                 AppMode::Settings { selected_idx } => {
                     match k.code {
                         KeyCode::Up | KeyCode::Char('p') | KeyCode::Char('P') => *selected_idx = selected_idx.saturating_sub(1),
-                        KeyCode::Down | KeyCode::Char('n') | KeyCode::Char('N') => *selected_idx = (*selected_idx + 1).min(2),
+                        KeyCode::Down | KeyCode::Char('n') | KeyCode::Char('N') => *selected_idx = (*selected_idx + 1).min(3),
                         KeyCode::Left | KeyCode::Char('<') | KeyCode::Char('q') | KeyCode::Char('Q') | KeyCode::Char('s') | KeyCode::Char('S') => app.mode = AppMode::MainMenu { selected_idx: 3 },
                         KeyCode::Char('x') | KeyCode::Char('X') | KeyCode::Right | KeyCode::Enter => {
                             if *selected_idx == 0 { theme_provider.soft_wrap = !theme_provider.soft_wrap; theme_provider.save_settings(); }
@@ -1159,6 +1051,11 @@ pub fn handle_event(event: Event, app: &mut App, session: &mut Option<MailSessio
                                 theme_provider.sort_newest_first = !theme_provider.sort_newest_first;
                                 theme_provider.save_settings();
                                 app.needs_fetch = true;
+                            }
+                            // FIX 2: Add activation handler for the 4th item (index 3)
+                            else if *selected_idx == 3 {
+                                theme_provider.spellcheck_before_send = !theme_provider.spellcheck_before_send;
+                                theme_provider.save_settings();
                             }
                         }
                         KeyCode::Char('w') | KeyCode::Char('W') => { theme_provider.soft_wrap = !theme_provider.soft_wrap; theme_provider.save_settings(); }
@@ -1185,13 +1082,7 @@ pub fn handle_event(event: Event, app: &mut App, session: &mut Option<MailSessio
             if let Some(status) = pending_status {
                 app.list_status = status;
                 app.list_status_time = Some(std::time::Instant::now());
-
-                // Or if you use a helper method:
-                // app.update_status(status);
             }
-            // if let Some(status) = pending_status {
-            //     app.update_status(status);
-            // }
         }
     } else if let Event::Resize(_, _) = event {
         app.needs_fetch = true;

@@ -57,7 +57,7 @@ pub fn add_to_address_book(address: &str) -> std::io::Result<bool> {
     }
 
     let path = get_address_book_path();
-    let mut file = std::fs::OpenOptions::new()
+    let mut file = fs::OpenOptions::new()
         .create(true)
         .append(true)
         .open(path)?;
@@ -71,7 +71,7 @@ pub fn add_to_address_book(address: &str) -> std::io::Result<bool> {
 pub fn save_address_book(addresses: &[String]) -> std::io::Result<()> {
     use std::io::Write;
     let path = get_address_book_path();
-    let mut file = std::fs::File::create(path)?;
+    let mut file = fs::File::create(path)?;
     for addr in addresses {
         let trimmed = addr.trim();
         if !trimmed.is_empty() {
@@ -109,7 +109,7 @@ pub fn clean_and_save_address_book(addresses: &mut Vec<String>) {
     // Save
     let mut save_list = addresses.clone();
     save_list.retain(|a| !a.trim().is_empty());
-    let _ = crate::address::save_address_book(&save_list);
+    let _ = save_address_book(&save_list);
 }
 
 pub fn expand_address_lists(input: &str, address_book: &[String]) -> String {

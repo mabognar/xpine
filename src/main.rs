@@ -188,25 +188,6 @@ fn main() {
                     Clear(ClearType::UntilNewLine)
                 ).unwrap();
 
-                // if attachments.is_empty() {
-                //     let dim_c = if r_colors.is_dark { Color::DarkGrey } else { Color::Grey };
-                //     queue!(stdout, SetForegroundColor(dim_c), Print("None")).unwrap();
-                // } else {
-                //     let att_color = if r_colors.is_dark {
-                //         Color::Rgb { r: 255, g: 80, b: 80 }
-                //     } else {
-                //         Color::Rgb { r: 220, g: 0, b: 0 }
-                //     };
-                //
-                //     for (i, (n, data)) in attachments.iter().enumerate() {
-                //         let size_kb = (data.len() as f32 / 1024.0).max(1.0);
-                //         let size_str = if size_kb < 1024.0 { format!("{:.0}K", size_kb) } else { format!("{:.1}M", size_kb / 1024.0) };
-                //         let att_str = format!("{}. {} ({})", i + 1, n, size_str);
-                //
-                //         queue!(stdout, cursor::MoveTo(9, (5 + i) as u16), SetBackgroundColor(r_colors.menu_bg), SetForegroundColor(att_color), Print(att_str)).unwrap();
-                //     }
-                // }
-
                 if attachments.is_empty() {
                     queue!(
                         stdout,
@@ -349,21 +330,7 @@ fn main() {
                                 continue;
                             }
                             if key.code == event::KeyCode::Char('r') || key.code == event::KeyCode::Char('R') {
-                                if let Some(ref mut sess) = session {
-                                    // FIX: Wrapped store
-                                    match sess {
-                                        net::MailSession::Imap(imap_sess) => {
-                                            // let uid = app.page_emails[app.selected_index].uid.to_string();
-                                            // let _ = imap_sess.uid_store(&uid, "+FLAGS.SILENT (\\Answered)");
-                                            let _ = imap_sess.store(&fetch_seq, "+FLAGS (\\Answered)");
-                                        }
-                                        net::MailSession::Graph { .. } => {}
-                                    }
-                                }
-                                app.page_emails[app.selected_index].is_answered = true;
-                                // app.needs_fetch = true;
-
-                                let reply_body = mail::format_reply_text(&text_body);
+                                let reply_body = mail::format_reply_text(&text_body, &date, &email_from);
 
                                 let sub = if email_subject.to_lowercase().starts_with("re:") {
                                     email_subject.clone()
@@ -372,18 +339,31 @@ fn main() {
                                 };
 
                                 let raw_reply = if reply_to.trim().is_empty() {
-                                    crate::mail::extract_email(&email_from) // Ensure this function is available
+                                    mail::extract_email(&email_from)
                                 } else {
-                                    crate::mail::extract_email(&reply_to)
+                                    mail::extract_email(&reply_to)
                                 };
 
+                                // ONLY apply the 'Answered' flag if compose_email returns a success status
                                 if let Some(s) = compose::compose_email(
                                     &app.active_account,
-                                    Some(&raw_reply), // Pass the extracted email instead of raw reply_to
+                                    Some(&raw_reply),
                                     Some(&sub),
                                     Some(&reply_body),
                                     &mut reader.current_theme
                                 ) {
+                                    if let Some(ref mut sess) = session {
+                                        match sess {
+                                            net::MailSession::Imap(imap_sess) => {
+                                                let _ = imap_sess.store(&fetch_seq, "+FLAGS (\\Answered)");
+                                            }
+                                            net::MailSession::Graph { .. } => {}
+                                        }
+                                    }
+
+                                    // Update the local UI state immediately after sending
+                                    app.page_emails[app.selected_index].is_answered = true;
+
                                     reader.set_status(s);
                                 }
 

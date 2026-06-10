@@ -10,7 +10,8 @@ use crate::prompt::PromptExt;
 pub trait SpellExt {
     fn load_dictionary() -> HashSet<String>;
     fn find_next_misspelled(&self, start_idx: usize) -> Option<(String, usize, usize)>;
-    fn spell_check(&mut self) -> io::Result<()>;
+    // fn spell_check(&mut self) -> io::Result<()>;
+    fn spell_check(&mut self) -> io::Result<bool>;
     fn get_suggestions(word: &str, dict: &HashSet<String>) -> Vec<String>;
 }
 
@@ -41,39 +42,73 @@ impl SpellExt for Editor {
 
         dict
     }
-
+    
     fn find_next_misspelled(&self, start_idx: usize) -> Option<(String, usize, usize)> {
         let dict = self.dictionary.as_ref().unwrap();
-        let mut in_word = false;
-        let mut word_start = 0;
-        let mut word = String::new();
 
-        let chars = self.buffer.chars().skip(start_idx);
-        for (i, c) in chars.enumerate() {
-            let actual_idx = start_idx + i;
-            if c.is_alphabetic() {
-                if !in_word {
-                    in_word = true;
-                    word_start = actual_idx;
-                }
-                word.push(c);
+        let start_line = self.buffer.char_to_line(start_idx);
+        let num_lines = self.buffer.len_lines();
+
+        for line_idx in start_line..num_lines {
+            let line = self.buffer.line(line_idx);
+            let line_str = line.to_string();
+
+            // --- NEW: Skip quoted replies and stop at forwarded messages ---
+            if line_str.starts_with('>') {
+                continue; // Skip this line and move to the next one
+            }
+            if line_str.starts_with("On ") && line_str.ends_with(" wrote:") {
+                continue;
+            }
+            if line_str.contains("--- Forwarded message ---") {
+                return None; // Stop checking the rest of the buffer entirely
+            }
+            // --------------------------------------------------------------
+
+            let line_start_char = self.buffer.line_to_char(line_idx);
+
+            // If we are resuming mid-line after a correction, calculate the offset
+            let char_offset = if line_idx == start_line {
+                start_idx.saturating_sub(line_start_char)
             } else {
-                if in_word {
-                    if !dict.contains(&word.to_lowercase()) {
-                        return Some((word, word_start, actual_idx));
+                0
+            };
+
+            let mut in_word = false;
+            let mut word_start = 0;
+            let mut word = String::new();
+
+            for (i, c) in line.chars().enumerate().skip(char_offset) {
+                let actual_idx = line_start_char + i;
+
+                if c.is_alphabetic() {
+                    if !in_word {
+                        in_word = true;
+                        word_start = actual_idx;
                     }
-                    in_word = false;
-                    word.clear();
+                    word.push(c);
+                } else {
+                    if in_word {
+                        if !dict.contains(&word.to_lowercase()) {
+                            return Some((word, word_start, actual_idx));
+                        }
+                        in_word = false;
+                        word.clear();
+                    }
                 }
             }
+
+            // Check if the line ends with a misspelled word just before the newline
+            if in_word && !dict.contains(&word.to_lowercase()) {
+                let actual_idx = line_start_char + line.chars().count();
+                return Some((word, word_start, actual_idx));
+            }
         }
-        if in_word && !dict.contains(&word.to_lowercase()) {
-            return Some((word, word_start, self.buffer.len_chars()));
-        }
+
         None
     }
 
-    fn spell_check(&mut self) -> io::Result<()> {
+    fn spell_check(&mut self) -> io::Result<bool> {
         let previous_state = self.menu_state;
 
         if self.dictionary.is_none() {
@@ -154,18 +189,20 @@ impl SpellExt for Editor {
             } else {
                 self.highlight_match = None;
                 self.set_status(String::from("Spell check cancelled"));
-                // Restore UI state only when user exits early
                 self.menu_state = previous_state;
-                return Ok(());
+
+                // 3. Return false when cancelled
+                return Ok(false);
             }
 
             self.highlight_match = None;
         }
 
         self.set_status(format!("Spell check complete. {} corrections made.", corrections));
-        // Restore UI state safely now that the loop has finished entirely
         self.menu_state = previous_state;
-        Ok(())
+
+        // 4. Return true on completion
+        Ok(true)
     }
 
     fn get_suggestions(word: &str, dict: &HashSet<String>) -> Vec<String> {

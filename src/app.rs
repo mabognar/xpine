@@ -28,15 +28,6 @@ pub enum AppMode {
     Settings {
         selected_idx: usize,
     },
-    // Compose {
-    //     to: String,
-    //     cc: String,
-    //     bcc: String,
-    //     subject: String,
-    //     attachments: Vec<String>,
-    //     active_idx: usize,
-    //     editor: crate::editor::Editor,
-    // },
 }
 
 #[derive(Clone)]
@@ -74,16 +65,15 @@ impl App {
             (
                 Account {
                     email: String::new(),
-                    password: None,      // Updated to Option
-                    client_id: None,     // Added OAuth 2.0 field
-                    client_secret: None, // Added OAuth 2.0 field
-                    refresh_token: None, // Added OAuth 2.0 field
+                    password: None,
+                    client_id: None,
+                    client_secret: None,
+                    refresh_token: None,
                     imap_server: String::new(),
                     imap_port: 993,
                     smtp_server: String::new(),
                     smtp_port: 587,
                 },
-                // Assuming '3' is the index for "E Email Accounts" in your Main Menu array
                 AppMode::MainMenu { selected_idx: 3 },
                 false, // Don't fetch if no accounts exist
             )

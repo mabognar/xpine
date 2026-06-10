@@ -100,7 +100,7 @@ impl PromptExt for Editor {
             stdout_handle.flush()?;
 
             if let Event::Key(key) = event::read()? {
-                if key.kind != event::KeyEventKind::Press { continue; }
+                if key.kind != KeyEventKind::Press { continue; }
 
                 let is_ctrl = key.modifiers.contains(KeyModifiers::CONTROL);
                 let is_alt = key.modifiers.contains(KeyModifiers::ALT);
@@ -178,161 +178,6 @@ impl PromptExt for Editor {
         }
     }
 
-    fn prompt_for_folder(&mut self, prompt_text: &str, folders: &[String]) -> io::Result<Option<String>> {
-        let mut stdout = stdout();
-        let mut input = String::new();
-        let (cols, rows) = term_size()?;
-
-        let theme = &self.theme_set.themes[&self.current_theme];
-        let colors = derive_ui_colors(theme);
-
-        // Calculate standard column width for your menu items
-        let col_width = (cols as usize / 6).max(1);
-
-        let mut suggestion_idx = 0;
-
-        loop {
-            let suggestions = crate::prompt::find_folder_suggestions(&input, folders);
-            if !suggestions.is_empty() {
-                suggestion_idx %= suggestions.len();
-            } else {
-                suggestion_idx = 0;
-            }
-
-            let current_suggestion = suggestions.get(suggestion_idx);
-
-            // Format the hint appropriately
-            let hint = if let Some(folder) = current_suggestion {
-                let match_indicator = if suggestions.len() > 1 {
-                    format!(" ({}/{})", suggestion_idx + 1, suggestions.len())
-                } else {
-                    String::new()
-                };
-
-                if folder.to_lowercase().starts_with(&input.to_lowercase()) {
-                    // Prefix match: inline remainder + indicator
-                    format!("{}{}", &folder[input.len()..], match_indicator)
-                } else {
-                    // Substring match: show full path + indicator
-                    format!("  -> {}{}", folder, match_indicator)
-                }
-            } else {
-                String::new()
-            };
-
-            // 1. Draw the prompt and input text (moved up to row - 3)
-            queue!(
-                stdout,
-                cursor::MoveTo(0, rows.saturating_sub(3)),
-                SetBackgroundColor(colors.menu_bg),
-                terminal::Clear(ClearType::CurrentLine),
-                SetForegroundColor(colors.accent),
-                Print(prompt_text),
-                SetForegroundColor(colors.fg),
-                Print(&input),
-                SetForegroundColor(colors.date_color),
-                Print(&hint),
-                ResetColor
-            )?;
-
-            // 2. Draw the upper menu line (blank)
-            Self::draw_menu_line(
-                &mut stdout, rows.saturating_sub(2), cols, col_width,
-                &[("", ""), ("", ""), ("", ""), ("", ""), ("", ""), ("", "")],
-                colors.menu_bg, colors.accent, colors.fg,
-            )?;
-
-            // 3. Draw the lower menu line with just the Cancel command
-            Self::draw_menu_line(
-                &mut stdout, rows.saturating_sub(1), cols, col_width,
-                &[("^C", " Cancel"), ("", ""), ("", ""), ("", ""), ("", ""), ("", "")],
-                colors.menu_bg, colors.accent, colors.fg,
-            )?;
-
-            // 4. Place the cursor securely at the end of the user's typed input
-            let prompt_len = prompt_text.chars().count();
-            let input_len = input.chars().count();
-            let cursor_x = (prompt_len + input_len) as u16;
-
-            queue!(
-                stdout,
-                cursor::MoveTo(cursor_x, rows.saturating_sub(3)),
-                cursor::Show
-            )?;
-
-            stdout.flush()?;
-
-            // 5. Handle Keyboard Events
-            if let Event::Key(key) = event::read()? {
-                if key.kind == event::KeyEventKind::Press {
-                    match key.code {
-                        KeyCode::Enter => {
-                            queue!(stdout, cursor::Hide, ResetColor)?;
-                            stdout.flush()?;
-                            return Ok(Some(input));
-                        }
-                        KeyCode::Esc => {
-                            queue!(stdout, cursor::Hide, ResetColor)?;
-                            stdout.flush()?;
-                            return Ok(None);
-                        }
-                        KeyCode::Char('c') | KeyCode::Char('C') if key.modifiers.contains(KeyModifiers::CONTROL) => {
-                            queue!(stdout, cursor::Hide, ResetColor)?;
-                            stdout.flush()?;
-                            // suggestion_idx = 0;
-                            return Ok(None);
-                        }
-                        // KeyCode::Backspace => {
-                        //     input.pop();
-                        //     suggestion_idx = 0;
-                        // },
-                        // KeyCode::Char(c) => {
-                        //     if !key.modifiers.intersects(KeyModifiers::CONTROL | KeyModifiers::ALT | KeyModifiers::META) {
-                        //         input.push(c);
-                        //     }
-                        // },
-                        KeyCode::Char(c) => {
-                            input.push(c);
-                            suggestion_idx = 0; // Reset back to first match on typing
-                        }
-                        KeyCode::Backspace => {
-                            input.pop();
-                            suggestion_idx = 0; // Reset back to first match on deleting
-                        }
-                        // KeyCode::Right | KeyCode::Tab => {
-                        //     if !hint.is_empty() {
-                        //         input.push_str(&hint);
-                        //     }
-                        // }
-                        // KeyCode::Right | KeyCode::Tab => {
-                        //     // Replace the entire input with the full folder name
-                        //     if let Some(folder) = &suggestion {
-                        //         input = folder.clone();
-                        //     }
-                        // }
-                        KeyCode::Up => {
-                            if !suggestions.is_empty() {
-                                suggestion_idx = if suggestion_idx == 0 { suggestions.len() - 1 } else { suggestion_idx - 1 };
-                            }
-                        }
-                        KeyCode::Down => {
-                            if !suggestions.is_empty() {
-                                suggestion_idx = (suggestion_idx + 1) % suggestions.len();
-                            }
-                        }
-                        KeyCode::Right | KeyCode::Tab => {
-                            if let Some(folder) = current_suggestion {
-                                input = folder.clone();
-                                suggestion_idx = 0; // Reset index after completing
-                            }
-                        }
-                        _ => {}
-                    }
-                }
-            }
-        }
-    }
-
     fn prompt_yn(&mut self, prompt_text: &str) -> io::Result<Option<bool>> {
         let previous_state = self.menu_state;
         self.menu_state = MenuState::YesNoCancel;
@@ -348,7 +193,7 @@ impl PromptExt for Editor {
             stdout_handle,
             cursor::MoveTo(0, rows.saturating_sub(3)),
             SetBackgroundColor(ui_colors.menu_bg),
-            terminal::Clear(ClearType::CurrentLine),
+            Clear(ClearType::CurrentLine),
             SetForegroundColor(ui_colors.fg),
             Print(prompt_text),
             SetBackgroundColor(Color::Reset),
@@ -382,7 +227,7 @@ impl PromptExt for Editor {
 
         loop {
             if let Event::Key(key) = event::read()? {
-                if key.kind != event::KeyEventKind::Press { continue; }
+                if key.kind != KeyEventKind::Press { continue; }
                 match key.code {
                     KeyCode::Char('y') | KeyCode::Char('Y') => {
                         self.clear_status();
@@ -413,7 +258,7 @@ impl PromptExt for Editor {
 
         loop {
             if let Event::Key(key) = event::read()? {
-                if key.kind != event::KeyEventKind::Press { continue; }
+                if key.kind != KeyEventKind::Press { continue; }
                 if key.code == KeyCode::Char('c') && key.modifiers.contains(KeyModifiers::CONTROL) {
                     self.clear_status();
                     self.menu_state = previous_state; // Restore state on cancel
@@ -457,7 +302,7 @@ impl PromptExt for Editor {
             stdout,
             cursor::MoveTo(0, rows - 3),
             SetBackgroundColor(colors.menu_bg),
-            terminal::Clear(ClearType::CurrentLine),
+            Clear(ClearType::CurrentLine),
             SetForegroundColor(colors.fg),
             Print(prompt_text),
             Print(&input),
@@ -473,7 +318,7 @@ impl PromptExt for Editor {
             stdout.flush()?;
 
             if let Event::Key(key) = event::read()? {
-                if key.kind == event::KeyEventKind::Press {
+                if key.kind == KeyEventKind::Press {
                     match key.code {
                         KeyCode::Enter => {
                             execute!(stdout, cursor::Hide)?; // Hide cursor before returning
@@ -505,7 +350,7 @@ impl PromptExt for Editor {
         let (cols, rows) = terminal::size()?;
 
         let theme = self.theme_set.themes.get(&self.current_theme).expect("Theme not found");
-        let colors = crate::theme::derive_ui_colors(theme);
+        let colors = derive_ui_colors(theme);
 
         loop {
             let prompt_y = rows.saturating_sub(3);
@@ -538,9 +383,9 @@ impl PromptExt for Editor {
 
                 // 2. Move to the menu area (Assuming a standard 2-line menu at the bottom)
                 cursor::MoveTo(0, rows - 2),
-                terminal::Clear(terminal::ClearType::CurrentLine),
+                Clear(ClearType::CurrentLine),
                 cursor::MoveTo(0, rows - 1),
-                terminal::Clear(terminal::ClearType::CurrentLine),
+                Clear(ClearType::CurrentLine),
 
                 // 3. Draw the contextual menu
                 cursor::MoveTo(0, rows - 1),
@@ -551,10 +396,10 @@ impl PromptExt for Editor {
                 // 4. Put the cursor back exactly where it was so the user can type
                 cursor::RestorePosition,
                 ResetColor,
-            ).unwrap();
+            )?;
 
             // Flush to make sure it draws to the screen before the blocking loop starts
-            stdout().flush().unwrap();
+            stdout().flush()?;
 
             // Calculate cursor position based on the INTERNAL index, not the total length
             let prompt_len = prompt_text.chars().count();
@@ -625,9 +470,153 @@ impl PromptExt for Editor {
             }
         }
     }
+
+    fn prompt_for_folder(&mut self, prompt_text: &str, folders: &[String]) -> io::Result<Option<String>> {
+        let mut stdout = stdout();
+        let mut input = String::new();
+        let (cols, rows) = term_size()?;
+
+        let theme = &self.theme_set.themes[&self.current_theme];
+        let colors = derive_ui_colors(theme);
+
+        // Calculate standard column width for your menu items
+        let col_width = (cols as usize / 6).max(1);
+
+        let mut suggestion_idx = 0;
+
+        loop {
+            let suggestions = find_folder_suggestions(&input, folders);
+            if !suggestions.is_empty() {
+                suggestion_idx %= suggestions.len();
+            } else {
+                suggestion_idx = 0;
+            }
+
+            let current_suggestion = suggestions.get(suggestion_idx);
+
+            // Format the hint appropriately
+            let hint = if let Some(folder) = current_suggestion {
+                let match_indicator = if suggestions.len() > 1 {
+                    format!(" ({}/{})", suggestion_idx + 1, suggestions.len())
+                } else {
+                    String::new()
+                };
+
+                if folder.to_lowercase().starts_with(&input.to_lowercase()) {
+                    // Prefix match: inline remainder + indicator
+                    format!("{}{}", &folder[input.len()..], match_indicator)
+                } else {
+                    // Substring match: show full path + indicator
+                    format!("  -> {}{}", folder, match_indicator)
+                }
+            } else {
+                String::new()
+            };
+
+            // 1. Draw the prompt and input text (moved up to row - 3)
+            queue!(
+                stdout,
+                cursor::MoveTo(0, rows.saturating_sub(3)),
+                SetBackgroundColor(colors.menu_bg),
+                Clear(ClearType::CurrentLine),
+                SetForegroundColor(colors.accent),
+                Print(prompt_text),
+                SetForegroundColor(colors.fg),
+                Print(&input),
+                SetForegroundColor(colors.date_color),
+                Print(&hint),
+                ResetColor
+            )?;
+
+            // 2. Draw the upper menu line (blank)
+            Self::draw_menu_line(
+                &mut stdout, rows.saturating_sub(2), cols, col_width,
+                &[("", ""), ("", ""), ("", ""), ("", ""), ("", ""), ("", "")],
+                colors.menu_bg, colors.accent, colors.fg,
+            )?;
+
+            // 3. Draw the lower menu line with just the Cancel command
+            Self::draw_menu_line(
+                &mut stdout, rows.saturating_sub(1), cols, col_width,
+                &[("^C", " Cancel"), ("", ""), ("", ""), ("", ""), ("", ""), ("", "")],
+                colors.menu_bg, colors.accent, colors.fg,
+            )?;
+
+            // 4. Place the cursor securely at the end of the user's typed input
+            let prompt_len = prompt_text.chars().count();
+            let input_len = input.chars().count();
+            let cursor_x = (prompt_len + input_len) as u16;
+
+            queue!(
+                stdout,
+                cursor::MoveTo(cursor_x, rows.saturating_sub(3)),
+                cursor::Show
+            )?;
+
+            stdout.flush()?;
+
+            // 5. Handle Keyboard Events
+            if let Event::Key(key) = event::read()? {
+                if key.kind == KeyEventKind::Press {
+                    match key.code {
+                        KeyCode::Enter => {
+                            queue!(stdout, cursor::Hide, ResetColor)?;
+                            stdout.flush()?;
+                            return Ok(Some(input));
+                        }
+                        KeyCode::Esc => {
+                            queue!(stdout, cursor::Hide, ResetColor)?;
+                            stdout.flush()?;
+                            return Ok(None);
+                        }
+                        KeyCode::Char('c') | KeyCode::Char('C') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+                            queue!(stdout, cursor::Hide, ResetColor)?;
+                            stdout.flush()?;
+                            // suggestion_idx = 0;
+                            return Ok(None);
+                        }
+                        // KeyCode::Backspace => {
+                        //     input.pop();
+                        //     suggestion_idx = 0;
+                        // },
+                        // KeyCode::Char(c) => {
+                        //     if !key.modifiers.intersects(KeyModifiers::CONTROL | KeyModifiers::ALT | KeyModifiers::META) {
+                        //         input.push(c);
+                        //     }
+                        // },
+                        KeyCode::Char(c) => {
+                            input.push(c);
+                            suggestion_idx = 0; // Reset back to first match on typing
+                        }
+                        KeyCode::Backspace => {
+                            input.pop();
+                            suggestion_idx = 0; // Reset back to first match on deleting
+                        }
+                        KeyCode::Up => {
+                            if !suggestions.is_empty() {
+                                suggestion_idx = if suggestion_idx == 0 { suggestions.len() - 1 } else { suggestion_idx - 1 };
+                            }
+                        }
+                        KeyCode::Down => {
+                            if !suggestions.is_empty() {
+                                suggestion_idx = (suggestion_idx + 1) % suggestions.len();
+                            }
+                        }
+                        KeyCode::Right | KeyCode::Tab => {
+                            if let Some(folder) = current_suggestion {
+                                input = folder.clone();
+                                suggestion_idx = 0; // Reset index after completing
+                            }
+                        }
+                        _ => {}
+                    }
+                }
+            }
+        }
+    }
 }
 
-pub fn prompt_cancel(stdout: &mut std::io::Stdout, colors: &UiColors) -> bool {
+pub fn prompt_cancel(stdout: &mut io::Stdout, colors: &UiColors) -> bool {
     let (cols, rows) = term_size().unwrap_or((80, 24));
 
     execute!(
@@ -731,36 +720,3 @@ pub fn find_folder_suggestions(input: &str, folders: &[String]) -> Vec<String> {
     matches
 }
 
-// pub fn find_folder_suggestion(input: &str, folders: &[String]) -> Option<String> {
-//     if input.is_empty() { return None; }
-//
-//     for folder in folders {
-//         if folder.to_lowercase().starts_with(&input.to_lowercase()) {
-//             let remainder = &folder[input.len()..];
-//             if !remainder.is_empty() { return Some(remainder.to_string()); }
-//         }
-//     }
-//     None
-// }
-
-// pub fn find_folder_suggestion(input: &str, folders: &[String]) -> Option<String> {
-//     if input.is_empty() { return None; }
-//
-//     let input_lower = input.to_lowercase();
-//
-//     // 1. Try exact prefix match first
-//     for folder in folders {
-//         if folder.to_lowercase().starts_with(&input_lower) {
-//             return Some(folder.clone()); // Return the FULL folder name now
-//         }
-//     }
-//
-//     // 2. Fallback to substring match
-//     for folder in folders {
-//         if folder.to_lowercase().contains(&input_lower) {
-//             return Some(folder.clone()); // Return the FULL folder name
-//         }
-//     }
-//
-//     None
-// }

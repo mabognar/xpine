@@ -71,9 +71,12 @@ pub fn parse_email_body(body_data: &[u8]) -> (String, Option<String>, Vec<(Strin
     (text_body, html_body, attachments)
 }
 
-pub fn format_reply_text(original_text: &str) -> String {
+pub fn format_reply_text(original_text: &str, date: &str, sender: &str) -> String {
     // Start with 3 blank lines using CRLF to match the terminal editor's expected line endings
     let mut reply = String::from("\r\n\r\n\r\n");
+
+    // NEW: Insert the Alpine-style attribution header
+    reply.push_str(&format!("On {}, {} wrote:\r\n", date, sender));
 
     // Iterate through the original email and prefix each line
     for line in original_text.lines() {

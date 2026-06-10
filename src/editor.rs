@@ -31,7 +31,7 @@ pub enum MenuState {
 
 pub enum EditorResult {
     Continue,
-    Send(String),
+    Send,
     Cancel,
 }
 
@@ -67,6 +67,7 @@ pub struct Editor {
     pub(crate) sort_newest_first: bool,
     pub(crate) previous_action_was_cut: bool,
     pub menu_page: u8,
+    pub(crate) spellcheck_before_send: bool,
 }
 
 impl Editor {
@@ -85,7 +86,7 @@ impl Editor {
         let (theme_set, themes_found, error_occurred) = Self::load_theme_set();
         let initial_status = if themes_found > 0 { String::new() } else if let Some(err) = error_occurred { err } else { String::new() };
 
-        let (mut starting_theme, line_numbers, soft_wrap, sort_newest_first) = Self::load_settings();
+        let (mut starting_theme, line_numbers, soft_wrap, sort_newest_first, spellcheck_before_send) = Self::load_settings();
         if !theme_set.themes.contains_key(&starting_theme) {
             starting_theme = String::from("base16-ocean.dark");
         }
@@ -107,13 +108,13 @@ impl Editor {
             highlight_match: None, highlight_cache: HashMap::new(),
             current_theme: starting_theme,
             is_justified: false, pre_justify_snapshot: None,
-            show_line_numbers: line_numbers, soft_wrap, sort_newest_first,
+            show_line_numbers: line_numbers, soft_wrap, sort_newest_first, spellcheck_before_send,
             previous_action_was_cut: false,
             menu_page: 1,
         }
     }
 
-    pub fn handle_keypress(&mut self, key: crossterm::event::KeyEvent) -> io::Result<EditorResult> {
+    pub fn handle_keypress(&mut self, key: event::KeyEvent) -> io::Result<EditorResult> {
         if key.kind != event::KeyEventKind::Press { return Ok(EditorResult::Continue); }
         self.highlight_match = None;
 
@@ -121,15 +122,15 @@ impl Editor {
         let is_alt = key.modifiers.contains(KeyModifiers::ALT);
 
         if self.menu_state == MenuState::EmailComposer {
-            if is_ctrl && key.code == KeyCode::Char('x') { return Ok(EditorResult::Send(self.buffer.to_string())); }
+            if is_ctrl && key.code == KeyCode::Char('x') { return Ok(EditorResult::Send); }
             if is_ctrl && key.code == KeyCode::Char('c') { return Ok(EditorResult::Cancel); }
         }
 
         if self.menu_state == MenuState::EmailReader {
             match key.code {
                 KeyCode::Esc | KeyCode::Left | KeyCode::Char('<') => return Ok(EditorResult::Cancel),
-                KeyCode::Char('r') | KeyCode::Char('R') => return Ok(EditorResult::Send("REPLY".to_string())),
-                KeyCode::Char('f') | KeyCode::Char('F') => return Ok(EditorResult::Send("FORWARD".to_string())),
+                KeyCode::Char('r') | KeyCode::Char('R') => return Ok(EditorResult::Send),
+                KeyCode::Char('f') | KeyCode::Char('F') => return Ok(EditorResult::Send),
 
                 KeyCode::Char('v') | KeyCode::Char('V') | KeyCode::PageDown | KeyCode::Char(' ') => self.page_down()?,
                 KeyCode::Char('y') | KeyCode::Char('Y') | KeyCode::PageUp | KeyCode::Char('-') => self.page_up()?,
@@ -206,7 +207,6 @@ impl Editor {
             KeyCode::Char('j') if is_ctrl => { self.justify(); self.is_justified = true; keep_justified = true; }
             KeyCode::F(4) => { self.justify(); self.is_justified = true; keep_justified = true; }
 
-            // KeyCode::Char('t') if is_ctrl => self.spell_check()?,
             KeyCode::Char('t') if is_ctrl => {
                 let _ = self.spell_check();
                 return Ok(EditorResult::Continue);
@@ -215,7 +215,7 @@ impl Editor {
                 let _ = self.spell_check();
                 return Ok(EditorResult::Continue);
             }
-            KeyCode::F(12) => self.spell_check()?,
+            KeyCode::F(12) => { let _ = self.spell_check()?; }
 
             KeyCode::Char('c') if is_ctrl => self.cur_pos(),
             KeyCode::F(11) => self.cur_pos(),
@@ -331,13 +331,13 @@ impl Editor {
         let (cols, _) = terminal::size()?;
         // let visible_rows = rows.saturating_sub(4 + self.top_margin) as usize;
 
-        let (_, rows) = crossterm::terminal::size().unwrap_or((80, 24));
+        let (_, rows) = terminal::size().unwrap_or((80, 24));
 
         let has_status = !self.status_message.trim().is_empty();
         let status_overhead = if has_status { 1 } else { 0 };
         let runtime_overhead = 2 + status_overhead;
 
-        let visible_rows = rows.saturating_sub((runtime_overhead + self.top_margin) as u16) as usize;
+        let visible_rows = rows.saturating_sub(runtime_overhead + self.top_margin) as usize;
 
         let cols_u = cols as usize;
         let max_line_num_len = self.buffer.len_lines().to_string().len();
@@ -523,72 +523,6 @@ impl Editor {
         }
         Ok(())
     }
-
-    // pub(crate) fn justify(&mut self) {
-    //     self.pre_justify_snapshot = Some((self.buffer.clone(), self.cursor_x, self.cursor_y));
-    //     let max_y = self.buffer.len_lines().saturating_sub(1);
-    //     if max_y == 0 && self.buffer.len_chars() == 0 { return; }
-    //
-    //     let mut start_line = self.cursor_y;
-    //     while start_line > 0 && self.buffer.line(start_line - 1).chars().any(|c| !c.is_whitespace()) { start_line -= 1; }
-    //     let mut end_line = self.cursor_y;
-    //     while end_line < max_y && self.buffer.line(end_line).chars().any(|c| !c.is_whitespace()) { end_line += 1; }
-    //     if start_line == end_line && !self.buffer.line(start_line).chars().any(|c| !c.is_whitespace()) { return; }
-    //
-    //     let start_char = self.buffer.line_to_char(start_line);
-    //     let end_char = if end_line + 1 < self.buffer.len_lines() { self.buffer.line_to_char(end_line + 1) } else { self.buffer.len_chars() };
-    //     let text = self.buffer.slice(start_char..end_char).to_string();
-    //     let words: Vec<&str> = text.split_whitespace().collect();
-    //     if words.is_empty() { return; }
-    //
-    //     // let mut new_text = String::new();
-    //     // let mut current_line_len = 0;
-    //     //
-    //     // for word in words {
-    //     //     if current_line_len + word.len() + 1 > 72 {
-    //     //         new_text.push('\n'); new_text.push_str(word); current_line_len = word.len();
-    //     //     } else {
-    //     //         if current_line_len > 0 { new_text.push(' '); current_line_len += 1; }
-    //     //         new_text.push_str(word); current_line_len += word.len();
-    //     //     }
-    //     // }
-    //     // new_text.push('\n');
-    //
-    //     // Inside pub(crate) fn justify(&mut self)
-    //     let mut new_text = String::new();
-    //     let mut current_line_len = 0;
-    //
-    //     for word in words {
-    //         let word_len = word.chars().count();
-    //         let space_needed = if current_line_len > 0 { 1 } else { 0 };
-    //
-    //         if current_line_len + word_len + space_needed > 72 {
-    //             if current_line_len > 0 {
-    //                 new_text.push('\n');
-    //                 new_text.push_str(word);
-    //                 current_line_len = word_len;
-    //             } else {
-    //                 new_text.push_str(word);
-    //                 current_line_len = word_len;
-    //             }
-    //         } else {
-    //             if current_line_len > 0 { new_text.push(' '); }
-    //             new_text.push_str(word);
-    //             current_line_len += word_len + space_needed;
-    //         }
-    //     }
-    //     new_text.push('\n');
-    //
-    //     self.buffer.remove(start_char..end_char);
-    //     self.buffer.insert(start_char, &new_text);
-    //
-    //     let safe_pos = (start_char + new_text.chars().count()).min(self.buffer.len_chars());
-    //     self.cursor_y = self.buffer.char_to_line(safe_pos).min(self.buffer.len_lines().saturating_sub(1));
-    //     self.cursor_x = safe_pos - self.buffer.line_to_char(self.cursor_y);
-    //     self.desired_cursor_x = self.cursor_x;
-    //
-    //     self.is_justified = true; self.mark_modified(); self.set_status(String::from("Justified --- Ctrl+U to undo"));
-    // }
 
     pub(crate) fn justify(&mut self) {
         self.pre_justify_snapshot = Some((self.buffer.clone(), self.cursor_x, self.cursor_y));
@@ -815,134 +749,4 @@ impl Editor {
         reflowed.push('\n');
         reflowed
     }
-
-    // pub fn justify_all_text(input: &str) -> String {
-    //     let mut result = String::new();
-    //     let mut current_paragraph = Vec::new();
-    //
-    //     for line in input.lines() {
-    //         let trimmed = line.trim();
-    //
-    //         // Check if the line is a numbered list (e.g., "1.", "23.") or bullet ("-", "*", "+")
-    //         let is_numbered_list = trimmed.split_whitespace().next()
-    //             .map(|first_word| {
-    //                 // Check if it ends with a dot and all characters before the dot are digits
-    //                 first_word.ends_with('.') && first_word[..first_word.len()-1].chars().all(|c| c.is_ascii_digit())
-    //             })
-    //             .unwrap_or(false);
-    //
-    //         let is_bullet_list = trimmed.starts_with('-') || trimmed.starts_with('*') || trimmed.starts_with('+');
-    //
-    //         // Structural layout constraints: empty rows, quotes, manual offsets, or lists
-    //         if trimmed.is_empty()
-    //             || line.starts_with('>')
-    //             || line.starts_with(' ')
-    //             || line.starts_with('\t')
-    //             || is_numbered_list
-    //             || is_bullet_list
-    //         {
-    //             // First, drain and flush any queued standard paragraph lines up to this point
-    //             if !current_paragraph.is_empty() {
-    //                 result.push_str(&Self::flow_paragraph_words(&current_paragraph, 72));
-    //                 current_paragraph.clear();
-    //             }
-    //
-    //             // Append the list item or structural line as its own standalone row
-    //             result.push_str(line);
-    //             result.push_str("\n");
-    //         } else {
-    //             // Collect standard text rows to form a paragraph
-    //             current_paragraph.push(line);
-    //         }
-    //     }
-    //
-    //     // Flush any remaining trailing paragraphs left in the buffer
-    //     if !current_paragraph.is_empty() {
-    //         result.push_str(&Self::flow_paragraph_words(&current_paragraph, 72));
-    //     }
-    //
-    //     result
-    // }
-
-//     pub fn justify_all_text(input: &str) -> String {
-//         let mut result = String::new();
-//         let mut current_paragraph = Vec::new();
-//
-//         for line in input.lines() {
-//             let trimmed = line.trim();
-//
-//             // Check if the line is a numbered list (e.g., "1.", "23.", "1)", "23)")
-//             let is_numbered_list = trimmed.split_whitespace().next()
-//                 .map(|first_word| {
-//                     let ends_with_punct = first_word.ends_with('.') || first_word.ends_with(')');
-//                     // Ensure length is > 1 so a stray "." or ")" doesn't trigger the list logic
-//                     ends_with_punct && first_word.len() > 1 && first_word[..first_word.len()-1].chars().all(|c| c.is_ascii_digit())
-//                 })
-//                 .unwrap_or(false);
-//
-//             // Require a space after the bullet to avoid matching things like "---" or "*bold*"
-//             let is_bullet_list = trimmed.starts_with("- ")
-//                 || trimmed.starts_with("* ")
-//                 || trimmed.starts_with("+ ");
-//
-//             // Structural layout constraints: empty rows, quotes, manual offsets, or lists
-//             if trimmed.is_empty()
-//                 || line.starts_with('>')
-//                 || line.starts_with(' ')
-//                 || line.starts_with('\t')
-//                 || is_numbered_list
-//                 || is_bullet_list
-//             {
-//                 // First, drain and flush any queued standard paragraph lines up to this point
-//                 if !current_paragraph.is_empty() {
-//                     result.push_str(&Self::flow_paragraph_words(&current_paragraph, 72));
-//                     current_paragraph.clear();
-//                 }
-//
-//                 // Append the list item or structural line as its own standalone row
-//                 result.push_str(line);
-//                 result.push_str("\n");
-//             } else {
-//                 // Collect standard text rows to form a paragraph
-//                 current_paragraph.push(line);
-//             }
-//         }
-//
-//         // Flush any remaining trailing paragraphs left in the buffer
-//         if !current_paragraph.is_empty() {
-//             result.push_str(&Self::flow_paragraph_words(&current_paragraph, 72));
-//         }
-//
-//         result
-//     }
-//
-//     fn flow_paragraph_words(lines: &[&str], max_width: usize) -> String {
-//         let joined_text = lines.join(" ");
-//         let words: Vec<&str> = joined_text.split_whitespace().collect();
-//         if words.is_empty() {
-//             return String::new();
-//         }
-//
-//         let mut reflowed = String::new();
-//         let mut current_line_len = 0;
-//
-//         for word in words {
-//             if current_line_len + word.len() + 1 > max_width {
-//                 reflowed.push('\n');
-//                 reflowed.push_str(word);
-//                 current_line_len = word.len();
-//             } else {
-//                 if current_line_len > 0 {
-//                     reflowed.push(' ');
-//                     current_line_len += 1;
-//                 }
-//                 reflowed.push_str(word);
-//                 current_line_len += word.len();
-//             }
-//         }
-//         reflowed.push('\n');
-//         // reflowed.push_str("\n"); // Add a trailing empty space gap between paragraphs
-//         reflowed
-//     }
-//
 }

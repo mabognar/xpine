@@ -225,7 +225,7 @@ pub fn run_microsoft_auth_flow(client_id: &str, client_secret: &str) -> Result<T
         ResetColor
     );
 
-    std::thread::sleep(std::time::Duration::from_millis(1500));
+    thread::sleep(Duration::from_millis(1500));
 
     Ok(token)
 }
@@ -589,7 +589,7 @@ pub fn fetch_emails(session: &mut MailSession, app: &mut App, items_per_page: u3
                 Ok(response) if response.status().is_success() => {
                     if let Ok(graph_data) = response.json::<GraphMessageResponse>() {
 
-                        let messages_iter: Box<dyn Iterator<Item = crate::net::GraphMessage>> = if is_text_search {
+                        let messages_iter: Box<dyn Iterator<Item = GraphMessage>> = if is_text_search {
                             app.total_messages = graph_data.value.len() as u32;
                             let mut all_msgs = graph_data.value;
 

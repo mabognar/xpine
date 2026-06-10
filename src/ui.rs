@@ -313,10 +313,6 @@ impl UiExt for Editor {
             queue!(stdout, cursor::Show, cursor::MoveTo(final_cursor_x, final_cursor_y))?;
         }
 
-        // FIX: Conditional flush.
-        // If we are in the EmailComposer, we let the parent loop handle the final
-        // hardware flush so the cursor doesn't visually jump between the editor
-        // body and the headers during rendering.
         if self.menu_state != MenuState::EmailComposer {
             stdout.flush()?;
         }
@@ -769,52 +765,6 @@ pub fn draw_app(stdout: &mut std::io::Stdout, app: &App, theme_provider: &Editor
             }
         }
 
-        // AppMode::FolderList { step, selected_idx, folders } => {
-        //     let header_title = if *step == 0 { "xpine - Select Account".to_string() } else { format!("xpine - Folders ({})", app.active_account.email) };
-        //     queue!(stdout, cursor::MoveTo(0, 0), SetBackgroundColor(colors.menu_bg), terminal::Clear(ClearType::UntilNewLine), SetForegroundColor(colors.accent), Print(header_title), ResetColor)?;
-        //
-        //     let items_count = if *step == 0 { app.accounts.len() } else { folders.len() };
-        //     let visible_items = (rows.saturating_sub(5)) as usize;
-        //     let start_idx = if *selected_idx >= visible_items { *selected_idx - visible_items + 1 } else { 0 };
-        //
-        //     for i in 0..visible_items {
-        //         let actual_idx = start_idx + i;
-        //         if actual_idx < items_count {
-        //             let text = if *step == 0 { app.accounts[actual_idx].email.clone() } else { folders[actual_idx].clone() };
-        //             let y = 1 + i as u16;
-        //             let x = 2;
-        //             let is_selected = actual_idx == *selected_idx;
-        //             let row_bg = if is_selected { colors.selected_bg } else { colors.bg };
-        //
-        //             // 1. Identify if this is a custom folder (not a default system folder)
-        //             // let default_folders = ["all mail", "conversation history", "important", "starred", "inbox", "sent", "trash", "archive", "drafts", "spam", "junk", "deleted", "outbox"];
-        //             // let is_custom_folder = *step != 0 && !default_folders.iter().any(|def| text.to_lowercase().contains(def));
-        //
-        //             let default_folders = [
-        //                 "inbox", "sent", "trash", "archive", "drafts",
-        //                 "spam", "junk", "deleted", "outbox", "[gmail]"
-        //             ];
-        //
-        //             let is_custom_folder = *step != 0 && !default_folders.iter().any(|def| text.to_lowercase().contains(def));
-        //
-        //             let fg = if is_custom_folder {
-        //                 colors.accent
-        //             } else {
-        //                 colors.fg
-        //             };
-        //
-        //             // 3. Set the background for the whole line
-        //             queue!(stdout, cursor::MoveTo(0, y), SetBackgroundColor(row_bg), terminal::Clear(ClearType::CurrentLine))?;
-        //
-        //             // 4. Print the text with the calculated color
-        //             queue!(stdout, cursor::MoveTo(x, y), SetForegroundColor(fg), Print(&text), ResetColor)?;
-        //         }
-        //         let m_col = (cols as usize / 6).max(1);
-        //         Editor::draw_menu_line(stdout, rows - 2, cols, m_col, &[("M", " Main Menu"), ("P", " Prev"), ("Y", " Prev Pg"), (">", " Select"),   ("R", " Rename"), ("", "")], colors.menu_bg, colors.accent, colors.fg)?;
-        //         Editor::draw_menu_line(stdout, rows - 1, cols, m_col, &[("<", " Back"),      ("N", " Next"), ("V", " Next Pg"), ("A", " Add Fldr"), ("D", " Del Fldr"), ("", "")], colors.menu_bg, colors.accent, colors.fg)?;
-        //     }
-        // }
-
         AppMode::FolderList { step, selected_idx, folders } => {
             let header_title = if *step == 0 {
                 "xpine - Select Account".to_string()
@@ -934,6 +884,7 @@ pub fn draw_app(stdout: &mut std::io::Stdout, app: &App, theme_provider: &Editor
                 ("    Soft Wrap", theme_provider.soft_wrap),
                 ("    Show Line Numbers", theme_provider.show_line_numbers),
                 ("    Sort Newest First", theme_provider.sort_newest_first),
+                ("    Spellcheck Before Sending", theme_provider.spellcheck_before_send), // <-- NEW OPTION
             ];
 
             for (i, (title, is_enabled)) in options.iter().enumerate() {

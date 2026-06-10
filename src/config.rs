@@ -15,8 +15,6 @@ pub struct ProviderDefaults {
 pub fn get_provider_defaults(email: &str) -> Option<ProviderDefaults> {
     if email.ends_with("@gmail.com") {
         Some(ProviderDefaults { imap: "imap.gmail.com", smtp: "smtp.gmail.com", port: 993 })
-    // } else if email.ends_with("@outlook.com") || email.ends_with("@hotmail.com") {
-    //     Some(ProviderDefaults { imap: "outlook.office365.com", smtp: "smtp.office365.com", port: 993 })
     } else if email.ends_with("@yahoo.com") {
         Some(ProviderDefaults { imap: "imap.mail.yahoo.com", smtp: "smtp.mail.yahoo.com", port: 993 })
     } else {
@@ -68,6 +66,8 @@ pub struct EditorSettings {
     pub soft_wrap: bool,
     #[serde(default)]
     pub sort_newest_first: bool,
+    #[serde(default)]
+    pub spellcheck_before_send: bool,
 }
 
 fn default_theme() -> String { "Default-Dark".to_string() }
@@ -79,6 +79,7 @@ impl Default for EditorSettings {
             line_numbers: false,
             soft_wrap: false,
             sort_newest_first: false,
+            spellcheck_before_send: false,
         }
     }
 }
@@ -123,7 +124,7 @@ pub trait ConfigExt {
     fn get_base_dir() -> Option<PathBuf>;
     fn get_settings_path() -> Option<PathBuf>;
     fn get_theme_dir() -> Option<PathBuf>;
-    fn load_settings() -> (String, bool, bool, bool);
+    fn load_settings() -> (String, bool, bool, bool, bool);
     fn save_settings(&self);
     fn cycle_theme(&mut self);
     fn update_cursor_color(&self);
@@ -153,7 +154,7 @@ impl ConfigExt for Editor {
         })
     }
 
-    fn load_settings() -> (String, bool, bool, bool) {
+    fn load_settings() -> (String, bool, bool, bool, bool) {
         let default_settings = EditorSettings::default();
 
         if let Some(path) = Self::get_settings_path() {
@@ -164,7 +165,8 @@ impl ConfigExt for Editor {
                         settings.theme,
                         settings.line_numbers,
                         settings.soft_wrap,
-                        settings.sort_newest_first
+                        settings.sort_newest_first,
+                        settings.spellcheck_before_send,
                     );
                 }
             }
@@ -175,7 +177,8 @@ impl ConfigExt for Editor {
             default_settings.theme,
             default_settings.line_numbers,
             default_settings.soft_wrap,
-            default_settings.sort_newest_first
+            default_settings.sort_newest_first,
+            default_settings.spellcheck_before_send,
         )
     }
 
@@ -186,6 +189,7 @@ impl ConfigExt for Editor {
                 line_numbers: self.show_line_numbers,
                 soft_wrap: self.soft_wrap,
                 sort_newest_first: self.sort_newest_first,
+                spellcheck_before_send: self.spellcheck_before_send,
             };
 
             if let Ok(toml_string) = toml::to_string_pretty(&settings) {
@@ -224,6 +228,6 @@ pub fn save_config(accounts: &[Account]) {
 
     let config = AppConfig { accounts: accounts.to_vec() };
     if let Ok(toml_string) = toml::to_string_pretty(&config) {
-        std::fs::write(config_path, toml_string).expect("Failed to write config file.");
+        fs::write(config_path, toml_string).expect("Failed to write config file.");
     }
 }
