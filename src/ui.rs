@@ -14,7 +14,8 @@ pub trait UiExt {
     fn draw_menu_line(writer: &mut io::Stdout, row: u16, cols: u16, col_width: usize,
                       items: &[(&str, &str)], ui_bg: Color, key_fg: Color, text_fg: Color) -> io::Result<()>;
     fn draw_screen(&mut self) -> io::Result<()>;
-    fn run_file_browser(&mut self, is_saving: bool) -> io::Result<Option<String>>;
+    fn run_file_browser(&mut self, is_saving: bool, default_filename: Option<&str>) -> io::Result<Option<String>>;
+    // fn run_file_browser(&mut self, is_saving: bool) -> io::Result<Option<String>>;
     fn show_help(&mut self) -> io::Result<()>;
     fn set_status(&mut self, message: String);
     fn clear_status(&mut self);
@@ -42,286 +43,6 @@ impl UiExt for Editor {
         queue!(writer, Print(" ".repeat((cols as usize).saturating_sub(printed))), SetBackgroundColor(Color::Reset))?;
         Ok(())
     }
-
-//     fn draw_screen(&mut self) -> io::Result<()> {
-//         let mut stdout = stdout();
-//         let (cols, rows) = terminal::size()?;
-//
-//         // let visible_rows = rows.saturating_sub((4 + self.top_margin) as u16) as usize;
-//         let has_status = !self.status_message.is_empty();
-//         // If there's a status message, it takes 1 row. If empty, it takes 0 rows.
-//         let status_overhead = if has_status { 1 } else { 0 };
-//
-//         // 2 rows for menu keys + dynamic status row overhead.
-//         // Removing the extra old fixed padding entirely.
-//         let runtime_overhead = 2 + status_overhead;
-//         let visible_rows = rows.saturating_sub((runtime_overhead + self.top_margin) as u16) as usize;
-//
-//         let theme = &self.theme_set.themes[&self.current_theme];
-//         let is_dark = crate::theme::is_dark_theme(theme);
-//         let raw_theme_bg = theme.settings.background.unwrap_or(syntect::highlighting::Color { r: 0, g: 0, b: 0, a: 255 });
-//
-//         let default_cross_bg = Color::Rgb { r: raw_theme_bg.r, g: raw_theme_bg.g, b: raw_theme_bg.b };
-//         let ui_colors = derive_ui_colors(theme);
-//         let ui_bg = ui_colors.menu_bg;
-//         let title_fg = if is_dark { Color::Reset } else { Color::Black };
-//         let menu_key_fg = ui_colors.accent;
-//         let menu_text_fg = ui_colors.fg;
-//         let dollar_bg = if is_dark { Color::Rgb { r: 180, g: 180, b: 180 } } else { Color::Rgb { r: 80, g: 80, b: 80 } };
-//         let dollar_fg = if is_dark { Color::Black } else { Color::White };
-//
-//         if self.menu_state == MenuState::EmailComposer || self.menu_state == MenuState::EmailReader || self.top_margin > 0 {
-//             queue!(stdout, cursor::MoveTo(0, self.top_margin), SetBackgroundColor(default_cross_bg), terminal::Clear(ClearType::CurrentLine))?;
-//         } else {
-//             queue!(stdout, cursor::MoveTo(0, self.top_margin), SetBackgroundColor(ui_bg))?;
-//         }
-//
-//         let syntax = if let Some(ref name) = self.filename {
-//             let path = std::path::Path::new(name);
-//             if let Some(ext) = path.extension().and_then(|s| s.to_str()) { self.syntax_set.find_syntax_by_extension(ext).unwrap_or_else(|| self.syntax_set.find_syntax_plain_text()) } else { self.syntax_set.find_syntax_plain_text() }
-//         } else { self.syntax_set.find_syntax_plain_text() };
-//
-//         let max_line_num_len = self.buffer.len_lines().to_string().len();
-//         let gutter_width = if self.show_line_numbers { max_line_num_len + 1 } else { 0 };
-//         let available_width = std::cmp::max(1, (cols as usize).saturating_sub(gutter_width));
-//         let cursor_absolute = self.get_cursor_char_idx();
-//         let mark_range = self.mark.map(|m| { if m < cursor_absolute { (m, cursor_absolute) } else { (cursor_absolute, m) } });
-//
-//         let mut last_fg: Option<Color> = None;
-//         let mut last_bg: Option<Color> = None;
-//         let mut fallback_highlighter = None;
-//
-//         let mut terminal_y = 0;
-//         let mut file_y = self.row_offset;
-//
-//         while terminal_y < visible_rows {
-//             if file_y < self.buffer.len_lines() {
-//                 if !self.highlight_cache.contains_key(&file_y) {
-//                     if fallback_highlighter.is_none() { fallback_highlighter = Some(HighlightLines::new(syntax, theme)); }
-//                     let line_str = self.buffer.line(file_y).to_string();
-//                     let ranges = fallback_highlighter.as_mut().unwrap().highlight_line(&line_str, &self.syntax_set).unwrap();
-//                     self.highlight_cache.insert(file_y, ranges.into_iter().map(|(s, t)| (s, t.to_string())).collect());
-//                 }
-//
-//                 let ranges = self.highlight_cache.get(&file_y).unwrap();
-//                 let mut visual_x = 0;
-//                 let mut line_char_idx = 0;
-//                 let line_has_search_highlight = self.highlight_match.map_or(false, |(h_y, _, _)| h_y == file_y);
-//
-// //                queue!(stdout, cursor::MoveTo(0, terminal_y as u16 + self.top_margin + 1))?;
-//                 queue!(stdout, cursor::MoveTo(0, terminal_y as u16 + self.top_margin))?;
-//                 if self.show_line_numbers {
-//                     if last_bg != Some(default_cross_bg) { queue!(stdout, SetBackgroundColor(default_cross_bg))?; last_bg = Some(default_cross_bg); }
-//                     if last_fg != Some(menu_key_fg) { queue!(stdout, SetForegroundColor(menu_key_fg))?; last_fg = Some(menu_key_fg); }
-//                     queue!(stdout, Print(format!("{:>width$} ", file_y + 1, width = max_line_num_len)))?;
-//                 }
-//
-//                 let mut printed_on_current_line = 0;
-//
-//                 'char_loop: for (style, text) in ranges {
-//                     let syn_color = style.foreground; let cross_color = Color::Rgb { r: syn_color.r, g: syn_color.g, b: syn_color.b };
-//                     let syn_bg = style.background; let cross_bg = Color::Rgb { r: syn_bg.r, g: syn_bg.g, b: syn_bg.b };
-//
-//                     if last_fg != Some(cross_color) { queue!(stdout, SetForegroundColor(cross_color))?; last_fg = Some(cross_color); }
-//                     if last_bg != Some(cross_bg) { queue!(stdout, SetBackgroundColor(cross_bg))?; last_bg = Some(cross_bg); }
-//
-//                     for ch in text.chars() {
-//                         if ch == '\n' || ch == '\r' { line_char_idx += 1; continue; }
-//                         let absolute_char_idx = self.buffer.line_to_char(file_y) + line_char_idx;
-//
-//                         let is_highlighted = if line_has_search_highlight {
-//                             if let Some((_, h_start, h_end)) = self.highlight_match { line_char_idx >= h_start && line_char_idx < h_end } else { false }
-//                         } else if let Some((m_start, m_end)) = mark_range { absolute_char_idx >= m_start && absolute_char_idx < m_end } else { false };
-//
-//                         let display_chars = if ch == '\t' { vec![' '; 4 - (visual_x % 4)] } else { vec![ch] };
-//
-//                         for display_ch in display_chars {
-//                             if self.soft_wrap {
-//                                 if printed_on_current_line >= available_width {
-//                                     if last_bg != Some(default_cross_bg) { queue!(stdout, SetBackgroundColor(default_cross_bg))?; last_bg = Some(default_cross_bg); }
-//                                     queue!(stdout, terminal::Clear(ClearType::UntilNewLine))?;
-//                                     terminal_y += 1;
-//                                     if terminal_y >= visible_rows { break 'char_loop; }
-//
-//                                     queue!(stdout, cursor::MoveTo(0, terminal_y as u16 + self.top_margin + 1))?;
-//                                     if self.show_line_numbers { queue!(stdout, Print(" ".repeat(gutter_width)))?; }
-//                                     if last_fg != Some(cross_color) { queue!(stdout, SetForegroundColor(cross_color))?; last_fg = Some(cross_color); }
-//                                     if last_bg != Some(cross_bg) { queue!(stdout, SetBackgroundColor(cross_bg))?; last_bg = Some(cross_bg); }
-//                                     printed_on_current_line = 0;
-//                                 }
-//
-//                                 if is_highlighted {
-//                                     if last_bg != Some(Color::Red) { queue!(stdout, SetBackgroundColor(Color::Red))?; last_bg = Some(Color::Red); }
-//                                     if last_fg != Some(Color::White) { queue!(stdout, SetForegroundColor(Color::White))?; last_fg = Some(Color::White); }
-//                                 }
-//                                 queue!(stdout, Print(display_ch))?;
-//                                 if is_highlighted {
-//                                     if last_bg != Some(cross_bg) { queue!(stdout, SetBackgroundColor(cross_bg))?; last_bg = Some(cross_bg); }
-//                                     if last_fg != Some(cross_color) { queue!(stdout, SetForegroundColor(cross_color))?; last_fg = Some(cross_color); }
-//                                 }
-//                                 printed_on_current_line += 1; visual_x += 1;
-//                             } else {
-//                                 if visual_x >= self.col_offset && printed_on_current_line < available_width {
-//                                     if is_highlighted {
-//                                         if last_bg != Some(Color::Red) { queue!(stdout, SetBackgroundColor(Color::Red))?; last_bg = Some(Color::Red); }
-//                                         if last_fg != Some(Color::White) { queue!(stdout, SetForegroundColor(Color::White))?; last_fg = Some(Color::White); }
-//                                     }
-//                                     queue!(stdout, Print(display_ch))?;
-//                                     if is_highlighted {
-//                                         if last_bg != Some(cross_bg) { queue!(stdout, SetBackgroundColor(cross_bg))?; last_bg = Some(cross_bg); }
-//                                         if last_fg != Some(cross_color) { queue!(stdout, SetForegroundColor(cross_color))?; last_fg = Some(cross_color); }
-//                                     }
-//                                     printed_on_current_line += 1;
-//                                 }
-//                                 visual_x += 1;
-//                             }
-//                         }
-//                         line_char_idx += 1;
-//                     }
-//                 }
-//
-//                 if last_bg != Some(default_cross_bg) { queue!(stdout, SetBackgroundColor(default_cross_bg))?; last_bg = Some(default_cross_bg); }
-//                 queue!(stdout, terminal::Clear(ClearType::UntilNewLine))?;
-//
-//                 if !self.soft_wrap {
-//                     if self.col_offset > 0 {
-//                         if last_bg != Some(dollar_bg) { queue!(stdout, SetBackgroundColor(dollar_bg))?; last_bg = Some(dollar_bg); }
-//                         if last_fg != Some(dollar_fg) { queue!(stdout, SetForegroundColor(dollar_fg))?; last_fg = Some(dollar_fg); }
-//                         queue!(stdout, cursor::MoveTo(gutter_width as u16, terminal_y as u16 + self.top_margin + 1), Print('$'))?;
-//                     }
-//                     if visual_x > self.col_offset + available_width {
-//                         if last_bg != Some(dollar_bg) { queue!(stdout, SetBackgroundColor(dollar_bg))?; last_bg = Some(dollar_bg); }
-//                         if last_fg != Some(dollar_fg) { queue!(stdout, SetForegroundColor(dollar_fg))?; last_fg = Some(dollar_fg); }
-//                         queue!(stdout, cursor::MoveTo(cols - 1, terminal_y as u16 + self.top_margin + 1), Print('$'))?;
-//                     }
-//                 }
-//                 if last_bg != Some(default_cross_bg) { queue!(stdout, SetBackgroundColor(default_cross_bg))?; last_bg = Some(default_cross_bg); }
-//                 if last_fg != Some(Color::Reset) { queue!(stdout, SetForegroundColor(Color::Reset))?; last_fg = Some(Color::Reset); }
-//
-//             } else {
-//                 // This clears all remaining terminal lines assigned to the editor viewport,
-//                 // obliterating any ghosts left over from the email list index view.
-//                 queue!(stdout, cursor::MoveTo(0, terminal_y as u16 + self.top_margin))?;
-//                 if self.show_line_numbers {
-//                     if last_bg != Some(default_cross_bg) { queue!(stdout, SetBackgroundColor(default_cross_bg))?; last_bg = Some(default_cross_bg); }
-//                     queue!(stdout, Print(" ".repeat(gutter_width)))?;
-//                 }
-//                 if last_bg != Some(default_cross_bg) { queue!(stdout, SetBackgroundColor(default_cross_bg))?; last_bg = Some(default_cross_bg); }
-//                 queue!(stdout, terminal::Clear(ClearType::UntilNewLine))?;
-//             }
-//             terminal_y += 1; file_y += 1;
-//         }
-//
-//         if has_status {
-//             queue!(stdout, cursor::MoveTo(0, rows - 3))?;
-//             queue!(stdout, SetBackgroundColor(ui_bg), SetForegroundColor(menu_key_fg))?;
-//             let mut printed_len = 0;
-//
-//             if self.menu_state == MenuState::SpellCheck {
-//                 if !self.current_suggestions.is_empty() {
-//                     for (i, sug) in self.current_suggestions.iter().enumerate() {
-//                         let num_str = format!("{}", i + 1);
-//                         queue!(stdout, SetForegroundColor(menu_key_fg), Print(&num_str), SetForegroundColor(title_fg), Print(format!(" {}   ", sug)))?;
-//                         printed_len += num_str.len() + 1 + sug.len() + 3;
-//                     }
-//                 } else {
-//                     queue!(stdout, Print("No suggestions   "))?; printed_len += "No suggestions   ".len();
-//                 }
-//             }
-//
-//             queue!(stdout, Print(&self.status_message))?; printed_len += self.status_message.len();
-//             queue!(stdout, Print(" ".repeat((cols as usize).saturating_sub(printed_len))), SetBackgroundColor(Color::Reset), SetForegroundColor(Color::Reset))?;
-//         }
-//
-//         let col_width = ((cols as usize) / 6).max(1);
-//
-//         match self.menu_state {
-//             MenuState::EmailComposer => {
-//                 if self.menu_page == 1 {
-//                     Self::draw_menu_line(&mut stdout, rows - 2, cols, col_width, &[("^X", " Send"),   ("^P", " Prev"), ("^Y", " Prev Pg"), ("^K", " Cut"),   ("^J", " Justify"), ("^O", " Other 1/2")], ui_bg, menu_key_fg, menu_text_fg)?;
-//
-//                     Self::draw_menu_line(&mut stdout, rows - 1, cols, col_width, &[("^C", " Cancel"), ("^N", " Next"), ("^V", " Next Pg"), ("^U", " UnCut"), ("^A", " Attach"),   ("^G", " Get Help")], ui_bg, menu_key_fg, menu_text_fg)?;
-//                 } else {
-//                     Self::draw_menu_line(&mut stdout, rows - 2, cols, col_width, &[("^R", " Read File"), ("^T", " To Spell"), ("", ""), ("", ""),  ("",""), ("^O", " Other 2/2")], ui_bg, menu_key_fg, menu_text_fg)?;
-//                     Self::draw_menu_line(&mut stdout, rows - 1, cols, col_width, &[("^W", " Where is"), ("Alt-A", " Mark"), ("", ""), ("", ""), ("", ""), ("", "")], ui_bg, menu_key_fg, menu_text_fg)?;
-//                 }
-//             }
-//             MenuState::EmailReader => {
-//                 let menu1 = [("<", " Back"),  ("R", " Reply"),    ("P", " Prev"),    ("Y", " Prev Pg"),  ("A", " Add Addr"), ("S"," Save")];
-//                 let menu2 = [("", ""),  ("F", " Forward"), ("N", " Next"), ("V", " Next Pg"), ("1-9", " Open Att"), ("B"," Browser")];
-//                 Self::draw_menu_line(&mut stdout, rows - 2, cols, col_width, &menu1, ui_bg, menu_key_fg, menu_text_fg)?;
-//                 Self::draw_menu_line(&mut stdout, rows - 1, cols, col_width, &menu2, ui_bg, menu_key_fg, menu_text_fg)?;
-//             }
-//             MenuState::YesNoCancel => {
-//                 Self::draw_menu_line(&mut stdout, rows - 2, cols, col_width, &[("Y", " Yes"), ("", ""), ("", ""), ("", ""), ("", ""), ("", "")], ui_bg, menu_key_fg, menu_text_fg)?;
-//                 Self::draw_menu_line(&mut stdout, rows - 1, cols, col_width, &[("N", " No"), ("^C", " Cancel"), ("", ""), ("", ""), ("", ""), ("", "")], ui_bg, menu_key_fg, menu_text_fg)?;
-//             }
-//             MenuState::ReplaceAction => {
-//                 Self::draw_menu_line(&mut stdout, rows - 2, cols, col_width, &[("Y", " Yes"), ("A", " All"), ("", ""), ("", ""), ("", ""), ("", "")], ui_bg, menu_key_fg, menu_text_fg)?;
-//                 Self::draw_menu_line(&mut stdout, rows - 1, cols, col_width, &[("N", " No"), ("^C", " Cancel"), ("", ""), ("", ""), ("", ""), ("", "")], ui_bg, menu_key_fg, menu_text_fg)?;
-//             }
-//             MenuState::PromptWithBrowser => {
-//                 Self::draw_menu_line(&mut stdout, rows - 2, cols, col_width, &[("^T", " To Files"), ("", ""), ("", ""), ("", ""), ("", ""), ("", "")], ui_bg, menu_key_fg, menu_text_fg)?;
-//                 Self::draw_menu_line(&mut stdout, rows - 1, cols, col_width, &[("^C", " Cancel"), ("", ""), ("", ""), ("", ""), ("", ""), ("", "")], ui_bg, menu_key_fg, menu_text_fg)?;
-//             }
-//             MenuState::CancelOnly => {
-//                 Self::draw_menu_line(&mut stdout, rows - 2, cols, col_width, &[("", ""), ("", ""), ("", ""), ("", ""), ("", ""), ("", "")], ui_bg, menu_key_fg, menu_text_fg)?;
-//                 Self::draw_menu_line(&mut stdout, rows - 1, cols, col_width, &[("^C", " Cancel"), ("", ""), ("", ""), ("", ""), ("", ""), ("", "")], ui_bg, menu_key_fg, menu_text_fg)?;
-//             }
-//             // MenuState::SpellCheck => {
-//             //     Self::draw_menu_line(&mut stdout, rows - 2, cols, col_width, &[("I", " Ignore"), ("", ""), ("", ""), ("", ""), ("", ""), ("", "")], ui_bg, menu_key_fg, menu_text_fg)?;
-//             //     Self::draw_menu_line(&mut stdout, rows - 1, cols, col_width, &[("A", " Add Word"), ("^C", " Cancel"), ("", ""), ("", ""), ("", ""), ("", "")], ui_bg, menu_key_fg, menu_text_fg)?;
-//             // }
-//             MenuState::SpellCheck => {
-//                 // Extract up to 4 suggestions safely from the editor state
-//                 let s1 = self.current_suggestions.get(0).cloned().unwrap_or_default();
-//                 let s2 = self.current_suggestions.get(1).cloned().unwrap_or_default();
-//                 let s3 = self.current_suggestions.get(2).cloned().unwrap_or_default();
-//                 let s4 = self.current_suggestions.get(3).cloned().unwrap_or_default();
-//
-//                 let menu1 = vec![
-//                     ("1", if s1.is_empty() { "" } else { s1.as_str() }),
-//                     ("3", if s3.is_empty() { "" } else { s3.as_str() }),
-//                     ("I", "Ignore"),
-//                     ("^C", "Cancel"),
-//                 ];
-//                 let menu2 = vec![
-//                     ("2", if s2.is_empty() { "" } else { s2.as_str() }),
-//                     ("4", if s4.is_empty() { "" } else { s4.as_str() }),
-//                     ("A", "Add to Dict"),
-//                     ("", ""), // Blank to balance the menu columns
-//                 ];
-//
-//                 Self::draw_menu_line(&mut stdout, rows - 2, cols, col_width, &menu1, ui_bg, menu_key_fg, menu_text_fg)?;
-//                 Self::draw_menu_line(&mut stdout, rows - 1, cols, col_width, &menu2, ui_bg, menu_key_fg, menu_text_fg)?;
-//             }
-//         }
-//
-//         let visual_x = self.get_visual_cursor_x();
-//         let display_x = visual_x.saturating_sub(self.col_offset);
-//         let final_cursor_x = if self.soft_wrap { gutter_width as u16 + display_x as u16 % available_width as u16 } else { gutter_width as u16 + display_x as u16 };
-//
-//         let final_cursor_y = if self.soft_wrap {
-//             let mut virtual_y = 0;
-//             for i in self.row_offset..self.cursor_y {
-//                 let w = self.get_visual_line_width(i);
-//                 virtual_y += if w == 0 { 1 } else { (w - 1) / available_width + 1 };
-//             }
-//             virtual_y += visual_x / available_width;
-//             virtual_y as u16 + self.top_margin // Removed + 1
-//         } else {
-//             self.cursor_y.saturating_sub(self.row_offset) as u16 + self.top_margin // Removed + 1
-//         };
-//
-//         if self.menu_state == MenuState::EmailReader {
-//             queue!(stdout, cursor::Hide)?;
-//         } else {
-//             queue!(stdout, cursor::Show, cursor::MoveTo(final_cursor_x, final_cursor_y))?;
-//         }
-//
-//         stdout.flush()?;
-//         Ok(())
-//     }
 
     fn draw_screen(&mut self) -> io::Result<()> {
         let mut stdout = stdout();
@@ -524,8 +245,8 @@ impl UiExt for Editor {
                 }
             }
             MenuState::EmailReader => {
-                let menu1 = [("<", " Back"),  ("R", " Reply"),    ("P", " Prev"),    ("Y", " Prev Pg"),  ("A", " Add Addr"), ("S"," Save")];
-                let menu2 = [("", ""),  ("F", " Forward"), ("N", " Next"), ("V", " Next Pg"), ("1-9", " Open Att"), ("B"," Browser")];
+                let menu1 = [("<", " Back"), ("R", " Reply"),   ("P", " Prev"), ("Y", " Prev Pg"), ("A", " Add Addr"), ("B"," Browser")];
+                let menu2 = [("", ""),       ("F", " Forward"), ("N", " Next"), ("V", " Next Pg"), ("S", " Save"), ("", "") ];
                 Self::draw_menu_line(&mut stdout, rows - 2, cols, col_width, &menu1, ui_bg, menu_key_fg, menu_text_fg)?;
                 Self::draw_menu_line(&mut stdout, rows - 1, cols, col_width, &menu2, ui_bg, menu_key_fg, menu_text_fg)?;
             }
@@ -603,7 +324,7 @@ impl UiExt for Editor {
         Ok(())
     }
 
-    fn run_file_browser(&mut self, is_saving: bool) -> io::Result<Option<String>> {
+    fn run_file_browser(&mut self, is_saving: bool, default_filename: Option<&str>) -> io::Result<Option<String>> {
         let mut current_dir = env::current_dir().unwrap_or_else(|_| PathBuf::from("/"));
         let mut selected_idx = 0;
         let mut scroll_offset = 0;
@@ -653,7 +374,11 @@ impl UiExt for Editor {
 
             queue!(stdout, SetBackgroundColor(ui_colors.bg), terminal::Clear(ClearType::All))?;
 
-            let title_text = format!("xpine - File Browser: {}", current_dir.display());
+            let title_text = if default_filename == Some("<DIR_ONLY>") {
+                format!("xpine - Select Directory: {}", current_dir.display())
+            } else {
+                format!("xpine - File Browser: {}", current_dir.display())
+            };
             let title_len = title_text.chars().count();
 
             queue!(stdout, cursor::MoveTo(0, 0), SetBackgroundColor(ui_bg), SetForegroundColor(menu_key_fg), Print(&title_text))?;
@@ -731,8 +456,19 @@ impl UiExt for Editor {
                         if !entries.is_empty() {
                             let selected = &entries[selected_idx];
                             if selected.0 == "." {
+
+                                if default_filename == Some("<DIR_ONLY>") {
+                                    return Ok(Some(current_dir.to_string_lossy().into_owned()));
+                                }
+
                                 let prompt_str = if is_saving { "Save as: " } else { "Attach file: " };
-                                if let Ok(Some(filename)) = self.prompt(prompt_str, false) {
+
+                                let prompt_result = match default_filename {
+                                    Some(name) => self.prompt_edit(prompt_str, name),
+                                    None => self.prompt(prompt_str, false),
+                                };
+
+                                if let Ok(Some(filename)) = prompt_result {
                                     if !filename.trim().is_empty() {
                                         let target_path = current_dir.join(filename.trim());
                                         if !is_saving && !target_path.exists() {

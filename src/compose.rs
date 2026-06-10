@@ -370,7 +370,7 @@ pub fn compose_email(account: &Account, default_to: Option<&str>, default_subjec
                             if crate::prompt::prompt_cancel(&mut stdout, &colors) { cancelled = true; break; } else { continue; }
                         }
                         if key_event.code == KeyCode::Char('a') {
-                            if let Ok(Some(path)) = editor.run_file_browser(false) { state.attachments.push(path); }
+                            if let Ok(Some(path)) = editor.run_file_browser(false, None) { state.attachments.push(path); }
                             continue;
                         }
                     }

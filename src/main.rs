@@ -13,6 +13,8 @@ pub mod syntax;
 pub mod search;
 mod prompt;
 
+use crate::prompt::PromptExt;
+
 use app::{App, AppMode};
 use config::load_config;
 use editor::{Editor, MenuState, EditorResult};
@@ -117,7 +119,10 @@ fn main() {
             let mut reader = Editor::new(None);
             reader.menu_state = MenuState::EmailReader;
 
-            let attach_lines = if attachments.is_empty() { 1 } else { attachments.len() };
+            // let attach_lines = if attachments.is_empty() { 1 } else { attachments.len() };
+            // reader.top_margin = (5 + attach_lines) as u16;
+
+            let attach_lines = if attachments.is_empty() { 1 } else { 1 + attachments.len() };
             reader.top_margin = (5 + attach_lines) as u16;
 
             let (cols, _) = term_size().unwrap_or((80, 24));
@@ -183,10 +188,48 @@ fn main() {
                     Clear(ClearType::UntilNewLine)
                 ).unwrap();
 
+                // if attachments.is_empty() {
+                //     let dim_c = if r_colors.is_dark { Color::DarkGrey } else { Color::Grey };
+                //     queue!(stdout, SetForegroundColor(dim_c), Print("None")).unwrap();
+                // } else {
+                //     let att_color = if r_colors.is_dark {
+                //         Color::Rgb { r: 255, g: 80, b: 80 }
+                //     } else {
+                //         Color::Rgb { r: 220, g: 0, b: 0 }
+                //     };
+                //
+                //     for (i, (n, data)) in attachments.iter().enumerate() {
+                //         let size_kb = (data.len() as f32 / 1024.0).max(1.0);
+                //         let size_str = if size_kb < 1024.0 { format!("{:.0}K", size_kb) } else { format!("{:.1}M", size_kb / 1024.0) };
+                //         let att_str = format!("{}. {} ({})", i + 1, n, size_str);
+                //
+                //         queue!(stdout, cursor::MoveTo(9, (5 + i) as u16), SetBackgroundColor(r_colors.menu_bg), SetForegroundColor(att_color), Print(att_str)).unwrap();
+                //     }
+                // }
+
                 if attachments.is_empty() {
-                    let dim_c = if r_colors.is_dark { Color::DarkGrey } else { Color::Grey };
-                    queue!(stdout, SetForegroundColor(dim_c), Print("None")).unwrap();
+                    queue!(
+                        stdout,
+                        cursor::MoveTo(0, 5),
+                        SetBackgroundColor(r_colors.menu_bg),
+                        SetForegroundColor(r_colors.accent),
+                        Print(" Attach: "),
+                        SetForegroundColor(if r_colors.is_dark { Color::DarkGrey } else { Color::Grey }),
+                        Print("None"),
+                        Clear(ClearType::UntilNewLine)
+                    ).unwrap();
                 } else {
+                    queue!(
+                        stdout,
+                        cursor::MoveTo(0, 5),
+                        SetBackgroundColor(r_colors.menu_bg),
+                        SetForegroundColor(r_colors.accent),
+                        Print(" Attach: "),
+                        SetForegroundColor(if r_colors.is_dark { Color::DarkGrey } else { Color::Grey }),
+                        Print("'1' to open, 'Meta+1' (ALT+1) to save, 'Meta+0' to save all"),
+                        Clear(ClearType::UntilNewLine)
+                    ).unwrap();
+
                     let att_color = if r_colors.is_dark {
                         Color::Rgb { r: 255, g: 80, b: 80 }
                     } else {
@@ -196,11 +239,20 @@ fn main() {
                     for (i, (n, data)) in attachments.iter().enumerate() {
                         let size_kb = (data.len() as f32 / 1024.0).max(1.0);
                         let size_str = if size_kb < 1024.0 { format!("{:.0}K", size_kb) } else { format!("{:.1}M", size_kb / 1024.0) };
-                        let att_str = format!("{}. {} ({})", i + 1, n, size_str);
+                        // Indent the list so it aligns nicely under the header
+                        let att_str = format!("         {}. {} ({})", i + 1, n, size_str);
 
-                        queue!(stdout, cursor::MoveTo(9, (5 + i) as u16), SetBackgroundColor(r_colors.menu_bg), SetForegroundColor(att_color), Print(att_str)).unwrap();
+                        queue!(
+                            stdout,
+                            cursor::MoveTo(0, (6 + i) as u16),
+                            SetBackgroundColor(r_colors.menu_bg),
+                            SetForegroundColor(att_color),
+                            Print(att_str),
+                            Clear(ClearType::UntilNewLine)
+                        ).unwrap();
                     }
                 }
+
                 queue!(stdout, ResetColor).unwrap();
 
                 reader.draw_screen().unwrap();
@@ -223,6 +275,65 @@ fn main() {
                         if key.modifiers.contains(event::KeyModifiers::CONTROL) && key.code == event::KeyCode::Char('y') {
                             reader.set_status("Text copied to clipboard".to_string());
                             continue;
+                        }
+
+                        // --- Handle Alt+Number to save attachments ---
+                        if key.modifiers.contains(event::KeyModifiers::ALT) {
+                            if let event::KeyCode::Char(c) = key.code {
+                                // NEW: Catch Alt+0 to save all attachments
+                                if c == '0' {
+                                    if !attachments.is_empty() {
+                                        // Pass the special flag to trigger directory-only selection
+                                        if let Ok(Some(save_dir)) = reader.run_file_browser(true, Some("<DIR_ONLY>")) {
+
+                                            // --- NEW: Add the Confirmation Prompt ---
+                                            let prompt_msg = format!("Save all attachments to '{}'?", save_dir);
+
+                                            if let Ok(Some(true)) = reader.prompt_yn(&prompt_msg) {
+                                                let mut success_count = 0;
+                                                let target_dir = std::path::Path::new(&save_dir);
+
+                                                // Save each attachment into the chosen directory
+                                                for (filename, data) in attachments {
+                                                    let file_path = target_dir.join(filename);
+                                                    if std::fs::write(&file_path, data).is_ok() {
+                                                        success_count += 1;
+                                                    }
+                                                }
+
+                                                if success_count == attachments.len() {
+                                                    reader.set_status(format!("Saved {} attachments to {}", success_count, save_dir));
+                                                } else {
+                                                    reader.set_status(format!("Saved {}/{} attachments to {}", success_count, attachments.len(), save_dir));
+                                                }
+                                            } else {
+                                                reader.set_status("Save all cancelled.".to_string());
+                                            }
+                                            // ----------------------------------------
+
+                                        } else {
+                                            reader.set_status("Save all cancelled.".to_string());
+                                        }
+                                        continue;
+                                    }
+                                } else if c.is_ascii_digit() && c != '0' {
+                                    let idx = (c.to_digit(10).unwrap() as usize).saturating_sub(1);
+                                    if idx < attachments.len() {
+                                        let (filename, data) = &attachments[idx];
+
+                                        if let Ok(Some(save_path)) = reader.run_file_browser(true, Some(filename.as_str())) {
+                                            if std::fs::write(&save_path, data).is_ok() {
+                                                reader.set_status(format!("Saved {} to {}", filename, save_path));
+                                            } else {
+                                                reader.set_status(format!("Failed to save {}", filename));
+                                            }
+                                        } else {
+                                            reader.set_status("Save cancelled.".to_string());
+                                        }
+                                        continue;
+                                    }
+                                }
+                            }
                         }
 
                         if !key.modifiers.contains(event::KeyModifiers::CONTROL) && !key.modifiers.contains(event::KeyModifiers::ALT) {
@@ -326,9 +437,8 @@ fn main() {
                             }
 
                             if key.code == event::KeyCode::Char('s') || key.code == event::KeyCode::Char('S') {
-                                if let Ok(Some(path)) = reader.run_file_browser(true) {
-                                    if std::fs::write(&path, text_body.as_bytes()).is_ok() {
-                                        reader.set_status(format!("Saved to {}", path));
+                                if let Ok(Some(path)) = reader.run_file_browser(true, None) {
+                                    if std::fs::write(&path, text_body.as_bytes()).is_ok() {                                        reader.set_status(format!("Saved to {}", path));
                                     } else {
                                         reader.set_status(format!("Failed to save to {}", path));
                                     }

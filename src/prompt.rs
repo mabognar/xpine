@@ -130,7 +130,7 @@ impl PromptExt for Editor {
                     KeyCode::Char('t') if allow_browser && is_ctrl => {
                         queue!(stdout_handle, cursor::Hide)?;
                         stdout_handle.flush()?;
-                        if let Ok(Some(selected_file)) = self.run_file_browser(false) {
+                        if let Ok(Some(selected_file)) = self.run_file_browser(false, None) {
                             self.clear_status();
                             self.menu_state = previous_state;
                             return Ok(Some(selected_file));
