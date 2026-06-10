@@ -56,17 +56,23 @@ pub fn compose_email(account: &Account, default_to: Option<&str>, default_subjec
     let mut suggestion_idx = 0;
     let mut cursor_pos = state.to.len(); // Starts at the end of the To: field
 
+    // NEW: Wipe the email list away completely before starting the composer
+    execute!(stdout, Clear(ClearType::All)).unwrap();
+
     loop {
         let (cols, rows) = term_size().unwrap_or((80, 24));
         let theme = &editor.theme_set.themes[&editor.current_theme];
         let colors = derive_ui_colors(theme);
-
-        for i in 0..18 {
-            queue!(stdout, cursor::MoveTo(0, i as u16), SetBackgroundColor(colors.menu_bg), Clear(ClearType::UntilNewLine)).unwrap();
-        }
-
+        
         let header_title = format!("Compose Email ({})", account.email);
-        queue!(stdout, cursor::MoveTo(0, 0), SetForegroundColor(colors.accent), Print(header_title)).unwrap();
+        queue!(
+            stdout,
+            cursor::MoveTo(0, 0),
+            SetBackgroundColor(colors.menu_bg),
+            Clear(ClearType::UntilNewLine),
+            SetForegroundColor(colors.accent),
+            Print(header_title)
+        ).unwrap();
 
         let fields = ["To:", "Cc:", "Bcc:", "Subject:"];
         let vals = [&state.to, &state.cc, &state.bcc, &state.subject];
@@ -86,7 +92,7 @@ pub fn compose_email(account: &Account, default_to: Option<&str>, default_subjec
             // Draw the label
             queue!(
                 stdout, cursor::MoveTo(0, current_y),
-                SetBackgroundColor(colors.menu_bg), SetForegroundColor(colors.accent),
+                SetBackgroundColor(colors.menu_bg), Clear(ClearType::UntilNewLine), SetForegroundColor(colors.accent),
                 Print(format!("{:>8}", fields[i])),
                 SetForegroundColor(colors.fg), Print(" ")
             ).unwrap();
@@ -108,7 +114,44 @@ pub fn compose_email(account: &Account, default_to: Option<&str>, default_subjec
                 let end_idx = (state.scroll_offset + viewport_height).min(wrapped_lines.len());
                 let visible_lines = &wrapped_lines[state.scroll_offset..end_idx];
 
+                // for (line_idx, line) in visible_lines.iter().enumerate() {
+                //     queue!(
+                //         stdout,
+                //         cursor::MoveTo(label_width as u16, current_y + line_idx as u16),
+                //         SetBackgroundColor(colors.menu_bg), SetForegroundColor(colors.fg),
+                //         Print(line)
+                //     ).unwrap();
+                // }
+                // for (line_idx, line) in visible_lines.iter().enumerate() {
+                //     // NEW: Explicitly clear the line from the left edge on wrapped lines
+                //     if line_idx > 0 {
+                //         queue!(
+                //             stdout,
+                //             cursor::MoveTo(0, current_y + line_idx as u16),
+                //             SetBackgroundColor(colors.menu_bg),
+                //             Clear(ClearType::UntilNewLine)
+                //         ).unwrap();
+                //     }
+                //
+                //     queue!(
+                //         stdout,
+                //         cursor::MoveTo(label_width as u16, current_y + line_idx as u16),
+                //         SetBackgroundColor(colors.menu_bg), SetForegroundColor(colors.fg),
+                //         Print(line)
+                //     ).unwrap();
+                // }
+
                 for (line_idx, line) in visible_lines.iter().enumerate() {
+                    // NEW: Explicitly clear the wrapped line from the left edge
+                    if line_idx > 0 {
+                        queue!(
+                            stdout,
+                            cursor::MoveTo(0, current_y + line_idx as u16),
+                            SetBackgroundColor(colors.menu_bg),
+                            Clear(ClearType::UntilNewLine)
+                        ).unwrap();
+                    }
+
                     queue!(
                         stdout,
                         cursor::MoveTo(label_width as u16, current_y + line_idx as u16),
@@ -151,6 +194,10 @@ pub fn compose_email(account: &Account, default_to: Option<&str>, default_subjec
                                     // Drop to next line
                                     queue!(
                                         stdout,
+                                        // NEW: Move to 0, clear, then move to label_width
+                                        cursor::MoveTo(0, (current_y + relative_row as u16 + 1)),
+                                        SetBackgroundColor(colors.menu_bg),
+                                        Clear(ClearType::UntilNewLine),
                                         cursor::MoveTo(label_width as u16, (current_y + relative_row as u16 + 1)),
                                         SetForegroundColor(if colors.is_dark { Color::DarkGrey } else { Color::Grey }),
                                         Print(hint)
@@ -190,7 +237,7 @@ pub fn compose_email(account: &Account, default_to: Option<&str>, default_subjec
         }
 
         // queue!(stdout, cursor::MoveTo(0, 5), SetBackgroundColor(colors.menu_bg), SetForegroundColor(colors.accent), Print(" Attach: "), SetForegroundColor(colors.fg)).unwrap();
-        queue!(stdout, cursor::MoveTo(0, current_y), SetBackgroundColor(colors.menu_bg), SetForegroundColor(colors.accent), Print(" Attach: "), SetForegroundColor(colors.fg)).unwrap();
+        queue!(stdout, cursor::MoveTo(0, current_y), Clear(ClearType::UntilNewLine), SetBackgroundColor(colors.menu_bg), SetForegroundColor(colors.accent), Print(" Attach: "), SetForegroundColor(colors.fg)).unwrap();
         // ... print attachment names ...
         current_y += 1;
 
@@ -222,7 +269,8 @@ pub fn compose_email(account: &Account, default_to: Option<&str>, default_subjec
             let cursor_y = (state.active_idx as u16) + 1;
             let cursor_x = (label_width + cursor_pos) as u16;
 
-            execute!(stdout, cursor::MoveTo(active_cursor_x, active_cursor_y), cursor::Show).unwrap();
+            queue!(stdout, cursor::MoveTo(active_cursor_x, active_cursor_y), cursor::Show).unwrap();
+            // execute!(stdout, cursor::MoveTo(active_cursor_x, active_cursor_y), cursor::Show).unwrap();
         } else {
             queue!(stdout, cursor::Show).unwrap();
         }

@@ -541,18 +541,44 @@ impl Editor {
         let words: Vec<&str> = text.split_whitespace().collect();
         if words.is_empty() { return; }
 
+        // let mut new_text = String::new();
+        // let mut current_line_len = 0;
+        //
+        // for word in words {
+        //     if current_line_len + word.len() + 1 > 72 {
+        //         new_text.push('\n'); new_text.push_str(word); current_line_len = word.len();
+        //     } else {
+        //         if current_line_len > 0 { new_text.push(' '); current_line_len += 1; }
+        //         new_text.push_str(word); current_line_len += word.len();
+        //     }
+        // }
+        // new_text.push('\n');
+
+        // Inside pub(crate) fn justify(&mut self)
         let mut new_text = String::new();
         let mut current_line_len = 0;
 
         for word in words {
-            if current_line_len + word.len() + 1 > 72 {
-                new_text.push('\n'); new_text.push_str(word); current_line_len = word.len();
+            let word_len = word.chars().count();
+            let space_needed = if current_line_len > 0 { 1 } else { 0 };
+
+            if current_line_len + word_len + space_needed > 72 {
+                if current_line_len > 0 {
+                    new_text.push('\n');
+                    new_text.push_str(word);
+                    current_line_len = word_len;
+                } else {
+                    new_text.push_str(word);
+                    current_line_len = word_len;
+                }
             } else {
-                if current_line_len > 0 { new_text.push(' '); current_line_len += 1; }
-                new_text.push_str(word); current_line_len += word.len();
+                if current_line_len > 0 { new_text.push(' '); }
+                new_text.push_str(word);
+                current_line_len += word_len + space_needed;
             }
         }
         new_text.push('\n');
+
         self.buffer.remove(start_char..end_char);
         self.buffer.insert(start_char, &new_text);
 
@@ -667,40 +693,31 @@ impl Editor {
         for line in input.lines() {
             let trimmed = line.trim();
 
-            // Check if the line is a numbered list (e.g., "1.", "23.") or bullet ("-", "*", "+")
             let is_numbered_list = trimmed.split_whitespace().next()
                 .map(|first_word| {
-                    // Check if it ends with a dot and all characters before the dot are digits
-                    first_word.ends_with('.') && first_word[..first_word.len()-1].chars().all(|c| c.is_ascii_digit())
+                    let ends_with_punct = first_word.ends_with('.') || first_word.ends_with(')');
+                    ends_with_punct && first_word.len() > 1 && first_word[..first_word.len()-1].chars().all(|c| c.is_ascii_digit())
                 })
                 .unwrap_or(false);
 
-            let is_bullet_list = trimmed.starts_with('-') || trimmed.starts_with('*') || trimmed.starts_with('+');
+            let is_bullet_list = trimmed.starts_with("- ")
+                || trimmed.starts_with("* ")
+                || trimmed.starts_with("+ ");
 
-            // Structural layout constraints: empty rows, quotes, manual offsets, or lists
-            if trimmed.is_empty()
-                || line.starts_with('>')
-                || line.starts_with(' ')
-                || line.starts_with('\t')
-                || is_numbered_list
-                || is_bullet_list
-            {
-                // First, drain and flush any queued standard paragraph lines up to this point
+            // Removed line.starts_with(' ') and '\t' so paragraphs pack fully together
+            if trimmed.is_empty() || line.starts_with('>') || is_numbered_list || is_bullet_list {
                 if !current_paragraph.is_empty() {
                     result.push_str(&Self::flow_paragraph_words(&current_paragraph, 72));
                     current_paragraph.clear();
                 }
 
-                // Append the list item or structural line as its own standalone row
                 result.push_str(line);
                 result.push_str("\n");
             } else {
-                // Collect standard text rows to form a paragraph
                 current_paragraph.push(line);
             }
         }
 
-        // Flush any remaining trailing paragraphs left in the buffer
         if !current_paragraph.is_empty() {
             result.push_str(&Self::flow_paragraph_words(&current_paragraph, 72));
         }
@@ -711,30 +728,161 @@ impl Editor {
     fn flow_paragraph_words(lines: &[&str], max_width: usize) -> String {
         let joined_text = lines.join(" ");
         let words: Vec<&str> = joined_text.split_whitespace().collect();
-        if words.is_empty() {
-            return String::new();
-        }
+        if words.is_empty() { return String::new(); }
 
         let mut reflowed = String::new();
         let mut current_line_len = 0;
 
         for word in words {
-            if current_line_len + word.len() + 1 > max_width {
-                reflowed.push('\n');
-                reflowed.push_str(word);
-                current_line_len = word.len();
-            } else {
+            let word_len = word.chars().count(); // Count visual characters, not bytes
+            let space_needed = if current_line_len > 0 { 1 } else { 0 };
+
+            if current_line_len + word_len + space_needed > max_width {
                 if current_line_len > 0 {
-                    reflowed.push(' ');
-                    current_line_len += 1;
+                    reflowed.push('\n');
+                    reflowed.push_str(word);
+                    current_line_len = word_len;
+                } else {
+                    reflowed.push_str(word);
+                    current_line_len = word_len;
                 }
+            } else {
+                if current_line_len > 0 { reflowed.push(' '); }
                 reflowed.push_str(word);
-                current_line_len += word.len();
+                current_line_len += word_len + space_needed;
             }
         }
         reflowed.push('\n');
-        // reflowed.push_str("\n"); // Add a trailing empty space gap between paragraphs
         reflowed
     }
 
+    // pub fn justify_all_text(input: &str) -> String {
+    //     let mut result = String::new();
+    //     let mut current_paragraph = Vec::new();
+    //
+    //     for line in input.lines() {
+    //         let trimmed = line.trim();
+    //
+    //         // Check if the line is a numbered list (e.g., "1.", "23.") or bullet ("-", "*", "+")
+    //         let is_numbered_list = trimmed.split_whitespace().next()
+    //             .map(|first_word| {
+    //                 // Check if it ends with a dot and all characters before the dot are digits
+    //                 first_word.ends_with('.') && first_word[..first_word.len()-1].chars().all(|c| c.is_ascii_digit())
+    //             })
+    //             .unwrap_or(false);
+    //
+    //         let is_bullet_list = trimmed.starts_with('-') || trimmed.starts_with('*') || trimmed.starts_with('+');
+    //
+    //         // Structural layout constraints: empty rows, quotes, manual offsets, or lists
+    //         if trimmed.is_empty()
+    //             || line.starts_with('>')
+    //             || line.starts_with(' ')
+    //             || line.starts_with('\t')
+    //             || is_numbered_list
+    //             || is_bullet_list
+    //         {
+    //             // First, drain and flush any queued standard paragraph lines up to this point
+    //             if !current_paragraph.is_empty() {
+    //                 result.push_str(&Self::flow_paragraph_words(&current_paragraph, 72));
+    //                 current_paragraph.clear();
+    //             }
+    //
+    //             // Append the list item or structural line as its own standalone row
+    //             result.push_str(line);
+    //             result.push_str("\n");
+    //         } else {
+    //             // Collect standard text rows to form a paragraph
+    //             current_paragraph.push(line);
+    //         }
+    //     }
+    //
+    //     // Flush any remaining trailing paragraphs left in the buffer
+    //     if !current_paragraph.is_empty() {
+    //         result.push_str(&Self::flow_paragraph_words(&current_paragraph, 72));
+    //     }
+    //
+    //     result
+    // }
+
+//     pub fn justify_all_text(input: &str) -> String {
+//         let mut result = String::new();
+//         let mut current_paragraph = Vec::new();
+//
+//         for line in input.lines() {
+//             let trimmed = line.trim();
+//
+//             // Check if the line is a numbered list (e.g., "1.", "23.", "1)", "23)")
+//             let is_numbered_list = trimmed.split_whitespace().next()
+//                 .map(|first_word| {
+//                     let ends_with_punct = first_word.ends_with('.') || first_word.ends_with(')');
+//                     // Ensure length is > 1 so a stray "." or ")" doesn't trigger the list logic
+//                     ends_with_punct && first_word.len() > 1 && first_word[..first_word.len()-1].chars().all(|c| c.is_ascii_digit())
+//                 })
+//                 .unwrap_or(false);
+//
+//             // Require a space after the bullet to avoid matching things like "---" or "*bold*"
+//             let is_bullet_list = trimmed.starts_with("- ")
+//                 || trimmed.starts_with("* ")
+//                 || trimmed.starts_with("+ ");
+//
+//             // Structural layout constraints: empty rows, quotes, manual offsets, or lists
+//             if trimmed.is_empty()
+//                 || line.starts_with('>')
+//                 || line.starts_with(' ')
+//                 || line.starts_with('\t')
+//                 || is_numbered_list
+//                 || is_bullet_list
+//             {
+//                 // First, drain and flush any queued standard paragraph lines up to this point
+//                 if !current_paragraph.is_empty() {
+//                     result.push_str(&Self::flow_paragraph_words(&current_paragraph, 72));
+//                     current_paragraph.clear();
+//                 }
+//
+//                 // Append the list item or structural line as its own standalone row
+//                 result.push_str(line);
+//                 result.push_str("\n");
+//             } else {
+//                 // Collect standard text rows to form a paragraph
+//                 current_paragraph.push(line);
+//             }
+//         }
+//
+//         // Flush any remaining trailing paragraphs left in the buffer
+//         if !current_paragraph.is_empty() {
+//             result.push_str(&Self::flow_paragraph_words(&current_paragraph, 72));
+//         }
+//
+//         result
+//     }
+//
+//     fn flow_paragraph_words(lines: &[&str], max_width: usize) -> String {
+//         let joined_text = lines.join(" ");
+//         let words: Vec<&str> = joined_text.split_whitespace().collect();
+//         if words.is_empty() {
+//             return String::new();
+//         }
+//
+//         let mut reflowed = String::new();
+//         let mut current_line_len = 0;
+//
+//         for word in words {
+//             if current_line_len + word.len() + 1 > max_width {
+//                 reflowed.push('\n');
+//                 reflowed.push_str(word);
+//                 current_line_len = word.len();
+//             } else {
+//                 if current_line_len > 0 {
+//                     reflowed.push(' ');
+//                     current_line_len += 1;
+//                 }
+//                 reflowed.push_str(word);
+//                 current_line_len += word.len();
+//             }
+//         }
+//         reflowed.push('\n');
+//         // reflowed.push_str("\n"); // Add a trailing empty space gap between paragraphs
+//         reflowed
+//     }
+//
 }
