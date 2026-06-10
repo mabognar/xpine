@@ -40,7 +40,7 @@ pub enum AppMode {
 }
 
 #[derive(Clone)]
-pub enum BrowserAction {
+pub enum _BrowserAction {
     SaveEmail(String), // Holds the text_body to save
 }
 
