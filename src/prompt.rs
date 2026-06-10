@@ -279,7 +279,7 @@ impl PromptExt for Editor {
                         KeyCode::Char('c') | KeyCode::Char('C') if key.modifiers.contains(KeyModifiers::CONTROL) => {
                             queue!(stdout, cursor::Hide, ResetColor)?;
                             stdout.flush()?;
-                            suggestion_idx = 0;
+                            // suggestion_idx = 0;
                             return Ok(None);
                         }
                         // KeyCode::Backspace => {

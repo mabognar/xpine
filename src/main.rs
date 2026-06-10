@@ -25,7 +25,7 @@ use crossterm::{
 };
 use std::io::stdout;
 use std::time::{Duration, Instant};
-use mailparse::{parse_header};
+// use mailparse::{parse_header};
 
 fn main() {
     let config = load_config();
@@ -62,7 +62,7 @@ fn main() {
         if app.needs_reconnect {
             if !app.accounts.is_empty() {
                 app.active_account = app.accounts[app.current_account_idx].clone();
-                if let Some(mut s) = session.take() {
+                if let Some(s) = session.take() {
                     // FIX: Wrapped logout
                     match s {
                         net::MailSession::Imap(mut imap_sess) => { let _ = imap_sess.logout(); }
@@ -219,7 +219,7 @@ fn main() {
 
                 if event::poll(timeout).unwrap() {
                     let ev = event::read().unwrap();
-                    if let event::Event::Key(mut key) = ev {
+                    if let event::Event::Key(key) = ev {
                         if key.modifiers.contains(event::KeyModifiers::CONTROL) && key.code == event::KeyCode::Char('y') {
                             reader.set_status("Text copied to clipboard".to_string());
                             continue;
@@ -371,6 +371,9 @@ fn main() {
             if matches!(app.mode, AppMode::EmailRead { .. }) {
                 app.mode = AppMode::EmailList;
             }
+            // FIX: Prevent immediate auto-fetch after spending time reading an email
+            app.last_fetch_time = Instant::now();
+
             continue;
         }
 
@@ -389,9 +392,25 @@ fn main() {
             }
         }
 
+        // if event::poll(timeout).unwrap() {
+        //     if events::handle_event(event::read().unwrap(), &mut app, &mut session, &mut settings_provider, &mut stdout) {
+        //         break;
+        //     }
+        // }
+        // In src/main.rs (around line 335)
+
         if event::poll(timeout).unwrap() {
-            if events::handle_event(event::read().unwrap(), &mut app, &mut session, &mut settings_provider, &mut stdout) {
+            let ev = event::read().unwrap();
+            let handle_start = Instant::now();
+
+            if events::handle_event(ev, &mut app, &mut session, &mut settings_provider, &mut stdout) {
                 break;
+            }
+
+            // FIX: If the event handler blocked for a while (e.g., in the composer),
+            // reset the timer so we don't immediately fetch on a stale connection.
+            if handle_start.elapsed() > Duration::from_secs(2) {
+                app.last_fetch_time = Instant::now();
             }
         }
     }
@@ -399,7 +418,7 @@ fn main() {
     execute!(stdout, cursor::Show, LeaveAlternateScreen).unwrap();
     disable_raw_mode().expect("Failed to disable raw mode");
 
-    if let Some(mut s) = session {
+    if let Some(s) = session {
         match s {
             net::MailSession::Imap(mut imap_sess) => { let _ = imap_sess.logout(); }
             net::MailSession::Graph { .. } => {}

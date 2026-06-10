@@ -33,7 +33,7 @@ pub struct DeviceCodeResponse {
     pub user_code: String,
     #[serde(alias = "verification_uri")]
     pub verification_url: String,
-    pub expires_in: u64,
+    // pub expires_in: u64,
     pub interval: u64,
 }
 
@@ -41,15 +41,15 @@ pub struct DeviceCodeResponse {
 pub struct TokenResponse {
     pub access_token: String,
     pub refresh_token: Option<String>,
-    pub expires_in: u64,
-    pub token_type: String,
+    // pub expires_in: u64,
+    // pub token_type: String,
 }
 
 #[derive(Deserialize, Debug)]
 struct PollingError {
     error: String,
-    #[serde(default)]
-    error_description: String,
+    // #[serde(default)]
+    // error_description: String,
 }
 
 #[derive(Deserialize, Debug)]
@@ -153,7 +153,7 @@ pub fn request_microsoft_device_code(client_id: &str) -> Result<DeviceCodeRespon
 
 pub fn poll_microsoft_token(
     client_id: &str,
-    client_secret: &str,
+    _client_secret: &str,
     device_code: &str,
     base_interval: u64,
 ) -> Result<TokenResponse, String> {
@@ -163,7 +163,7 @@ pub fn poll_microsoft_token(
     let mut current_interval = base_interval;
 
     loop {
-        let mut params = vec![
+        let params = vec![
             ("client_id", client_id),
             ("device_code", device_code),
             ("grant_type", "urn:ietf:params:oauth:grant-type:device_code"),
@@ -309,7 +309,7 @@ pub fn connect(account: &mut Account) -> Result<MailSession, String> {
                     let tls = TlsConnector::builder().build().map_err(|e| e.to_string())?;
                     let tls_stream = tls.connect(domain, tcp_stream).map_err(|e| e.to_string())?;
 
-                    let mut client = imap::Client::new(tls_stream);
+                    let client = imap::Client::new(tls_stream);
                     // -----------------------------
 
                     let auth = OAuth2 {
@@ -347,7 +347,7 @@ pub fn connect(account: &mut Account) -> Result<MailSession, String> {
     let tls = TlsConnector::builder().build().map_err(|e| e.to_string())?;
     let tls_stream = tls.connect(domain, tcp_stream).map_err(|e| e.to_string())?;
 
-    let mut client = imap::Client::new(tls_stream);
+    let client = imap::Client::new(tls_stream);
     // -----------------------------
 
     if let Some(password) = &account.password {
@@ -357,62 +357,6 @@ pub fn connect(account: &mut Account) -> Result<MailSession, String> {
         Err("No password or valid OAuth credentials provided".to_string())
     }
 }
-
-// pub fn connect(account: &mut Account) -> Result<MailSession, String> {
-//     let is_microsoft = account.email.ends_with("@outlook.com") || account.email.ends_with("@hotmail.com");
-//
-//     // 1. Try OAuth Flow First
-//     if let (Some(client_id), Some(client_secret), Some(refresh_token)) =
-//         (&account.client_id, &account.client_secret, &account.refresh_token) {
-//
-//         // Use Graph scopes for Microsoft, None for Gmail
-//         // let scope = if is_microsoft { Some("https://graph.microsoft.com/Mail.ReadWrite offline_access") } else { None };
-//         let scope = if is_microsoft { Some("https://graph.microsoft.com/Mail.ReadWrite https://graph.microsoft.com/Mail.Send offline_access") } else { None };
-//
-//         match get_oauth_access_token(client_id, client_secret, refresh_token, is_microsoft, scope) {
-//             Ok(access_token) => {
-//                 if is_microsoft {
-//                     // THE FLIP: Bypass IMAP entirely and return a stateless Graph session!
-//                     return Ok(MailSession::Graph { access_token });
-//                 } else {
-//                     // Standard IMAP XOAUTH2 for Gmail/Yahoo
-//                     let domain = account.imap_server.as_str();
-//                     let port = account.imap_port;
-//                     let tls = TlsConnector::builder().build().map_err(|e| e.to_string())?;
-//                     let mut client = imap::connect((domain, port), domain, &tls).map_err(|e| e.to_string())?;
-//
-//                     let auth = OAuth2 {
-//                         user: account.email.clone(),
-//                         access_token,
-//                     };
-//
-//                     match client.authenticate("XOAUTH2", &auth) {
-//                         Ok(session) => return Ok(MailSession::Imap(session)),
-//                         Err((e, returned_client)) => {
-//                             std::fs::write("oauth_debug.txt", format!("IMAP REJECTED TOKEN: {:?}", e)).ok();
-//                             client = returned_client;
-//                         }
-//                     }
-//                 }
-//             }
-//             Err(_) => {}
-//         }
-//     }
-//
-//     // 2. Fallback to Password-based IMAP if OAuth isn't configured
-//     let domain = account.imap_server.as_str();
-//     let port = account.imap_port;
-//     let tls = TlsConnector::builder().build().map_err(|e| e.to_string())?;
-//
-//     let mut client = imap::connect((domain, port), domain, &tls).map_err(|e| e.to_string())?;
-//
-//     if let Some(password) = &account.password {
-//         let session = client.login(&account.email, password).map_err(|(e, _)| e.to_string())?;
-//         Ok(MailSession::Imap(session))
-//     } else {
-//         Err("No password or valid OAuth credentials provided".to_string())
-//     }
-// }
 
 pub fn fetch_emails(session: &mut MailSession, app: &mut App, items_per_page: u32, sort_newest_first: bool) {
     match session {
@@ -542,7 +486,7 @@ pub fn fetch_emails(session: &mut MailSession, app: &mut App, items_per_page: u3
                             subject,
                             from,
                             reply_to,
-                            reply_to_display: String::new(),
+                            // reply_to_display: String::new(),
                             to_addr,
                             cc,
                             date,
@@ -579,7 +523,7 @@ pub fn fetch_emails(session: &mut MailSession, app: &mut App, items_per_page: u3
 
             // let folder = if app.current_folder == "INBOX" { "inbox" } else { &app.current_folder };
 
-            let mut folder_id = match app.current_folder.as_str() {
+            let folder_id = match app.current_folder.as_str() {
                 "INBOX" => "inbox".to_string(),
                 "Sent Items" => "sentitems".to_string(),
                 "Deleted Items" => "deleteditems".to_string(),
@@ -732,7 +676,7 @@ pub fn fetch_emails(session: &mut MailSession, app: &mut App, items_per_page: u3
                                 subject: msg.subject.unwrap_or_else(|| "No Subject".to_string()),
                                 from,
                                 reply_to,
-                                reply_to_display: String::new(),
+                                // reply_to_display: String::new(),
                                 to_addr,
                                 cc,
                                 date: date_str,
@@ -911,43 +855,6 @@ pub fn fetch_email_body(session: &mut MailSession, fetch_seq: &str) -> (String, 
             }
 
             (text_body, html_body, attachments)
-        }
-    }
-}
-
-pub fn move_to_folder(session: &mut MailSession, seq_id: &str, folder: &str) -> Result<(), String> {
-    match session {
-        MailSession::Imap(imap_sess) => {
-            imap_sess.copy(seq_id, folder)
-                .map_err(|e| format!("Copy failed: {}", e))?;
-
-            imap_sess.store(seq_id, "+FLAGS.SILENT (\\Deleted)")
-                .map_err(|e| format!("Flagging failed: {}", e))?;
-
-            Ok(())
-        },
-        MailSession::Graph { access_token } => {
-            let destination_id = match folder {
-                "INBOX" => "inbox",
-                "Junk" | "Junk Email" | "[Gmail]/Spam" => "junkemail",
-                "Sent Items" => "sentitems",
-                "Deleted Items" => "deleteditems",
-                "Archive" => "archive",
-                _ => folder,
-            };
-
-            let url = format!("https://graph.microsoft.com/v1.0/me/messages/{}/move", seq_id);
-            let body_str = format!(r#"{{"destinationId": "{}"}}"#, destination_id);
-
-            let client = reqwest::blocking::Client::new();
-            client.post(&url)
-                .header("Authorization", format!("Bearer {}", access_token))
-                .header("Content-Type", "application/json")
-                .body(body_str)
-                .send()
-                .map_err(|e| format!("Move failed: {}", e))?;
-
-            Ok(())
         }
     }
 }

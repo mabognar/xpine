@@ -524,6 +524,72 @@ impl Editor {
         Ok(())
     }
 
+    // pub(crate) fn justify(&mut self) {
+    //     self.pre_justify_snapshot = Some((self.buffer.clone(), self.cursor_x, self.cursor_y));
+    //     let max_y = self.buffer.len_lines().saturating_sub(1);
+    //     if max_y == 0 && self.buffer.len_chars() == 0 { return; }
+    //
+    //     let mut start_line = self.cursor_y;
+    //     while start_line > 0 && self.buffer.line(start_line - 1).chars().any(|c| !c.is_whitespace()) { start_line -= 1; }
+    //     let mut end_line = self.cursor_y;
+    //     while end_line < max_y && self.buffer.line(end_line).chars().any(|c| !c.is_whitespace()) { end_line += 1; }
+    //     if start_line == end_line && !self.buffer.line(start_line).chars().any(|c| !c.is_whitespace()) { return; }
+    //
+    //     let start_char = self.buffer.line_to_char(start_line);
+    //     let end_char = if end_line + 1 < self.buffer.len_lines() { self.buffer.line_to_char(end_line + 1) } else { self.buffer.len_chars() };
+    //     let text = self.buffer.slice(start_char..end_char).to_string();
+    //     let words: Vec<&str> = text.split_whitespace().collect();
+    //     if words.is_empty() { return; }
+    //
+    //     // let mut new_text = String::new();
+    //     // let mut current_line_len = 0;
+    //     //
+    //     // for word in words {
+    //     //     if current_line_len + word.len() + 1 > 72 {
+    //     //         new_text.push('\n'); new_text.push_str(word); current_line_len = word.len();
+    //     //     } else {
+    //     //         if current_line_len > 0 { new_text.push(' '); current_line_len += 1; }
+    //     //         new_text.push_str(word); current_line_len += word.len();
+    //     //     }
+    //     // }
+    //     // new_text.push('\n');
+    //
+    //     // Inside pub(crate) fn justify(&mut self)
+    //     let mut new_text = String::new();
+    //     let mut current_line_len = 0;
+    //
+    //     for word in words {
+    //         let word_len = word.chars().count();
+    //         let space_needed = if current_line_len > 0 { 1 } else { 0 };
+    //
+    //         if current_line_len + word_len + space_needed > 72 {
+    //             if current_line_len > 0 {
+    //                 new_text.push('\n');
+    //                 new_text.push_str(word);
+    //                 current_line_len = word_len;
+    //             } else {
+    //                 new_text.push_str(word);
+    //                 current_line_len = word_len;
+    //             }
+    //         } else {
+    //             if current_line_len > 0 { new_text.push(' '); }
+    //             new_text.push_str(word);
+    //             current_line_len += word_len + space_needed;
+    //         }
+    //     }
+    //     new_text.push('\n');
+    //
+    //     self.buffer.remove(start_char..end_char);
+    //     self.buffer.insert(start_char, &new_text);
+    //
+    //     let safe_pos = (start_char + new_text.chars().count()).min(self.buffer.len_chars());
+    //     self.cursor_y = self.buffer.char_to_line(safe_pos).min(self.buffer.len_lines().saturating_sub(1));
+    //     self.cursor_x = safe_pos - self.buffer.line_to_char(self.cursor_y);
+    //     self.desired_cursor_x = self.cursor_x;
+    //
+    //     self.is_justified = true; self.mark_modified(); self.set_status(String::from("Justified --- Ctrl+U to undo"));
+    // }
+
     pub(crate) fn justify(&mut self) {
         self.pre_justify_snapshot = Some((self.buffer.clone(), self.cursor_x, self.cursor_y));
         let max_y = self.buffer.len_lines().saturating_sub(1);
@@ -531,8 +597,15 @@ impl Editor {
 
         let mut start_line = self.cursor_y;
         while start_line > 0 && self.buffer.line(start_line - 1).chars().any(|c| !c.is_whitespace()) { start_line -= 1; }
+
         let mut end_line = self.cursor_y;
         while end_line < max_y && self.buffer.line(end_line).chars().any(|c| !c.is_whitespace()) { end_line += 1; }
+
+        // FIX: If end_line advanced onto an empty line, step it back so it stops exactly on the paragraph's last text line.
+        if end_line > start_line && !self.buffer.line(end_line).chars().any(|c| !c.is_whitespace()) {
+            end_line -= 1;
+        }
+
         if start_line == end_line && !self.buffer.line(start_line).chars().any(|c| !c.is_whitespace()) { return; }
 
         let start_char = self.buffer.line_to_char(start_line);
@@ -541,25 +614,12 @@ impl Editor {
         let words: Vec<&str> = text.split_whitespace().collect();
         if words.is_empty() { return; }
 
-        // let mut new_text = String::new();
-        // let mut current_line_len = 0;
-        //
-        // for word in words {
-        //     if current_line_len + word.len() + 1 > 72 {
-        //         new_text.push('\n'); new_text.push_str(word); current_line_len = word.len();
-        //     } else {
-        //         if current_line_len > 0 { new_text.push(' '); current_line_len += 1; }
-        //         new_text.push_str(word); current_line_len += word.len();
-        //     }
-        // }
-        // new_text.push('\n');
-
-        // Inside pub(crate) fn justify(&mut self)
         let mut new_text = String::new();
         let mut current_line_len = 0;
 
+        // Upgraded loop to fix the byte-count / early wrap issue
         for word in words {
-            let word_len = word.chars().count();
+            let word_len = word.chars().count(); // Use character count instead of byte length
             let space_needed = if current_line_len > 0 { 1 } else { 0 };
 
             if current_line_len + word_len + space_needed > 72 {

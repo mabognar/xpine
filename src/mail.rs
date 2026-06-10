@@ -5,7 +5,7 @@ pub struct EmailMeta {
     pub subject: String,
     pub from: String,
     pub reply_to: String,
-    pub reply_to_display: String,
+    // pub reply_to_display: String,
     pub to_addr: String,
     pub cc: String,
     pub date: String,

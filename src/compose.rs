@@ -63,7 +63,7 @@ pub fn compose_email(account: &Account, default_to: Option<&str>, default_subjec
         let (cols, rows) = term_size().unwrap_or((80, 24));
         let theme = &editor.theme_set.themes[&editor.current_theme];
         let colors = derive_ui_colors(theme);
-        
+
         let header_title = format!("Compose Email ({})", account.email);
         queue!(
             stdout,
@@ -78,7 +78,7 @@ pub fn compose_email(account: &Account, default_to: Option<&str>, default_subjec
         let vals = [&state.to, &state.cc, &state.bcc, &state.subject];
 
         let label_width = 9;
-        let available_width = (cols.saturating_sub(label_width + 2)) as usize;
+        let available_width = cols.saturating_sub(label_width + 2) as usize;
         let mut current_y = 1; // Start at row 1
 
         // Add these two variables:
@@ -186,7 +186,7 @@ pub fn compose_email(account: &Account, default_to: Option<&str>, default_subjec
                                     // Print on same line
                                     queue!(
                                         stdout,
-                                        cursor::MoveTo((label_width + last_line_len as u16), (current_y + relative_row as u16)),
+                                        cursor::MoveTo(label_width + last_line_len as u16, current_y + relative_row as u16),
                                         SetForegroundColor(if colors.is_dark { Color::DarkGrey } else { Color::Grey }),
                                         Print(hint)
                                     ).unwrap();
@@ -195,10 +195,10 @@ pub fn compose_email(account: &Account, default_to: Option<&str>, default_subjec
                                     queue!(
                                         stdout,
                                         // NEW: Move to 0, clear, then move to label_width
-                                        cursor::MoveTo(0, (current_y + relative_row as u16 + 1)),
+                                        cursor::MoveTo(0, current_y + relative_row as u16 + 1),
                                         SetBackgroundColor(colors.menu_bg),
                                         Clear(ClearType::UntilNewLine),
-                                        cursor::MoveTo(label_width as u16, (current_y + relative_row as u16 + 1)),
+                                        cursor::MoveTo(label_width as u16, current_y + relative_row as u16 + 1),
                                         SetForegroundColor(if colors.is_dark { Color::DarkGrey } else { Color::Grey }),
                                         Print(hint)
                                     ).unwrap();
@@ -265,9 +265,9 @@ pub fn compose_email(account: &Account, default_to: Option<&str>, default_subjec
             Editor::draw_menu_line(&mut stdout, rows - 1, cols, m_col, &[("^C", " Cancel"), ("Tab", " Next"), ("", ""), ("", ""), ("", ""), ("", "")], colors.menu_bg, colors.accent, colors.fg).unwrap();
             queue!(stdout, cursor::Show).unwrap();
 
-            let label_width = 9; // Width of "      To: "
-            let cursor_y = (state.active_idx as u16) + 1;
-            let cursor_x = (label_width + cursor_pos) as u16;
+            // let label_width = 9; // Width of "      To: "
+            // let cursor_y = (state.active_idx as u16) + 1;
+            // let cursor_x = (label_width + cursor_pos) as u16;
 
             queue!(stdout, cursor::MoveTo(active_cursor_x, active_cursor_y), cursor::Show).unwrap();
             // execute!(stdout, cursor::MoveTo(active_cursor_x, active_cursor_y), cursor::Show).unwrap();
@@ -336,7 +336,7 @@ pub fn compose_email(account: &Account, default_to: Option<&str>, default_subjec
                                 if cursor_pos >= available_width {
                                     cursor_pos -= available_width;
                                 } else {
-                                    let mut scrolled_suggestion = false;
+                                    let scrolled_suggestion = false;
 
                                     if !scrolled_suggestion {
                                         if state.active_idx > 0 {
@@ -412,24 +412,24 @@ pub fn compose_email(account: &Account, default_to: Option<&str>, default_subjec
                                 }
                                 suggestion_idx = 0;
                             }
-                            KeyCode::Left => {
-                                if cursor_pos > 0 {
-                                    let target = match state.active_idx { 0 => &state.to, 1 => &state.cc, 2 => &state.bcc, 3 => &state.subject, _ => unreachable!() };
-                                    if let Some(c) = target[..cursor_pos].chars().next_back() {
-                                        cursor_pos -= c.len_utf8();
-                                    }
-                                }
-                                suggestion_idx = 0;
-                            }
-                            KeyCode::Right => {
-                                let target = match state.active_idx { 0 => &state.to, 1 => &state.cc, 2 => &state.bcc, 3 => &state.subject, _ => unreachable!() };
-                                if cursor_pos < target.len() {
-                                    if let Some(c) = target[cursor_pos..].chars().next() {
-                                        cursor_pos += c.len_utf8();
-                                    }
-                                }
-                                suggestion_idx = 0;
-                            }
+                            // KeyCode::Left => {
+                            //     if cursor_pos > 0 {
+                            //         let target = match state.active_idx { 0 => &state.to, 1 => &state.cc, 2 => &state.bcc, 3 => &state.subject, _ => unreachable!() };
+                            //         if let Some(c) = target[..cursor_pos].chars().next_back() {
+                            //             cursor_pos -= c.len_utf8();
+                            //         }
+                            //     }
+                            //     suggestion_idx = 0;
+                            // }
+                            // KeyCode::Right => {
+                            //     let target = match state.active_idx { 0 => &state.to, 1 => &state.cc, 2 => &state.bcc, 3 => &state.subject, _ => unreachable!() };
+                            //     if cursor_pos < target.len() {
+                            //         if let Some(c) = target[cursor_pos..].chars().next() {
+                            //             cursor_pos += c.len_utf8();
+                            //         }
+                            //     }
+                            //     suggestion_idx = 0;
+                            // }
                             KeyCode::Char(c) => {
                                 let target = match state.active_idx { 0 => &mut state.to, 1 => &mut state.cc, 2 => &mut state.bcc, 3 => &mut state.subject, _ => unreachable!() };
                                 if cursor_pos >= target.len() {
