@@ -358,6 +358,19 @@ pub fn connect(account: &mut Account) -> Result<MailSession, String> {
     }
 }
 
+fn decode_mime_string(raw: &[u8]) -> String {
+    let mut header_bytes = b"X-Dummy: ".to_vec();
+    header_bytes.extend_from_slice(raw);
+    header_bytes.extend_from_slice(b"\r\n");
+
+    // FIX: The tuple order is (MailHeader, usize)
+    if let Ok((header, _)) = mailparse::parse_header(&header_bytes) {
+        header.get_value()
+    } else {
+        String::from_utf8_lossy(raw).into_owned()
+    }
+}
+
 pub fn fetch_emails(session: &mut MailSession, app: &mut App, items_per_page: u32, sort_newest_first: bool) {
     match session {
         MailSession::Imap(imap_sess) => {
@@ -433,7 +446,11 @@ pub fn fetch_emails(session: &mut MailSession, app: &mut App, items_per_page: u3
                         let mut date = "Unknown Date".to_string();
 
                         if let Some(env) = message.envelope() {
-                            if let Some(s) = env.subject.as_ref() { subject = String::from_utf8_lossy(s).into_owned(); }
+                            // Update the Subject to use our decoder
+                            if let Some(s) = env.subject.as_ref() {
+                                subject = decode_mime_string(s);
+                            }
+
                             if let Some(d) = env.date.as_ref() {
                                 let raw_date = String::from_utf8_lossy(d).into_owned();
                                 if let Ok(dt) = DateTime::parse_from_rfc2822(&raw_date) {
@@ -451,7 +468,8 @@ pub fn fetch_emails(session: &mut MailSession, app: &mut App, items_per_page: u3
                                     let mut result = Vec::new();
                                     if let Some(a_vec) = $addrs {
                                         for addr in a_vec {
-                                            let name = addr.name.as_ref().map(|n| String::from_utf8_lossy(n.as_ref()).into_owned()).unwrap_or_default();
+                                            // Update the name to use our decoder
+                                            let name = addr.name.as_ref().map(|n| decode_mime_string(n.as_ref())).unwrap_or_default();
                                             let mailbox = addr.mailbox.as_ref().map(|m| String::from_utf8_lossy(m.as_ref()).into_owned()).unwrap_or_default();
                                             let host = addr.host.as_ref().map(|h| String::from_utf8_lossy(h.as_ref()).into_owned()).unwrap_or_default();
 
