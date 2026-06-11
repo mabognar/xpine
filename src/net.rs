@@ -1113,3 +1113,33 @@ pub fn move_email(session: &mut MailSession, message_seq: &str, dest_folder: &st
     }
 }
 
+pub fn reconnect(app: &mut App, session: &mut Option<MailSession>) {
+    if !app.accounts.is_empty() {
+        app.active_account = app.accounts[app.current_account_idx].clone();
+
+        if let Some(s) = session.take() {
+            match s {
+                MailSession::Imap(mut imap_sess) => { let _ = imap_sess.logout(); }
+                MailSession::Graph { .. } => {}
+            }
+        }
+
+        match connect(&mut app.active_account) {
+            Ok(sess) => {
+                *session = Some(sess);
+                app.needs_fetch = true;
+            }
+            Err(e) => {
+                *session = None;
+                let err_str = e.to_lowercase();
+                if err_str.contains("timeout") || err_str.contains("timed out") || err_str.contains("would block") {
+                    app.update_status("Attempted connection timed out".to_string());
+                } else {
+                    app.update_status("Connection failed".to_string());
+                }
+            }
+        }
+    }
+    app.needs_reconnect = false;
+    app.last_fetch_time = std::time::Instant::now();
+}

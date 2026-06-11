@@ -135,3 +135,73 @@ pub fn wrap_email_body(text: &str, width: usize) -> String {
 
     result
 }
+
+pub fn justify_all_text(input: &str) -> String {
+    let mut result = String::new();
+    let mut current_paragraph = Vec::new();
+
+    for line in input.lines() {
+        let trimmed = line.trim();
+
+        let is_numbered_list = trimmed.split_whitespace().next()
+            .map(|first_word| {
+                let ends_with_punct = first_word.ends_with('.') || first_word.ends_with(')');
+                ends_with_punct && first_word.len() > 1 && first_word[..first_word.len()-1].chars().all(|c| c.is_ascii_digit())
+            })
+            .unwrap_or(false);
+
+        let is_bullet_list = trimmed.starts_with("- ")
+            || trimmed.starts_with("* ")
+            || trimmed.starts_with("+ ");
+
+        // Removed line.starts_with(' ') and '\t' so paragraphs pack fully together
+        if trimmed.is_empty() || line.starts_with('>') || is_numbered_list || is_bullet_list {
+            if !current_paragraph.is_empty() {
+                result.push_str(&flow_paragraph_words(&current_paragraph, 72));
+                current_paragraph.clear();
+            }
+
+            result.push_str(line);
+            result.push_str("\n");
+        } else {
+            current_paragraph.push(line);
+        }
+    }
+
+    if !current_paragraph.is_empty() {
+        result.push_str(&flow_paragraph_words(&current_paragraph, 72));
+    }
+
+    result
+}
+
+fn flow_paragraph_words(lines: &[&str], max_width: usize) -> String {
+    let joined_text = lines.join(" ");
+    let words: Vec<&str> = joined_text.split_whitespace().collect();
+    if words.is_empty() { return String::new(); }
+
+    let mut reflowed = String::new();
+    let mut current_line_len = 0;
+
+    for word in words {
+        let word_len = word.chars().count(); // Count visual characters, not bytes
+        let space_needed = if current_line_len > 0 { 1 } else { 0 };
+
+        if current_line_len + word_len + space_needed > max_width {
+            if current_line_len > 0 {
+                reflowed.push('\n');
+                reflowed.push_str(word);
+                current_line_len = word_len;
+            } else {
+                reflowed.push_str(word);
+                current_line_len = word_len;
+            }
+        } else {
+            if current_line_len > 0 { reflowed.push(' '); }
+            reflowed.push_str(word);
+            current_line_len += word_len + space_needed;
+        }
+    }
+    reflowed.push('\n');
+    reflowed
+}

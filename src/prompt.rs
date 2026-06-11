@@ -7,6 +7,7 @@ use crossterm::{cursor, event::{self, Event, KeyCode, KeyModifiers, KeyEventKind
 use std::io::{self, stdout, Write};
 use crossterm::terminal::Clear;
 use crate::config::UiColors;
+use crate::browser::BrowserExt;
 
 pub trait PromptExt {
     fn prompt(&mut self, prompt_text: &str, allow_browser: bool) -> io::Result<Option<String>>;

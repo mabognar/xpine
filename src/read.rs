@@ -12,6 +12,7 @@ use crossterm::{
 use std::time::{Duration, Instant};
 use crate::{address, compose, mail, net, ui};
 use crate::prompt::PromptExt;
+use crate::browser::BrowserExt;
 
 pub fn view_email(
     app: &mut App,
@@ -366,13 +367,8 @@ pub fn view_email(
     if matches!(app.mode, AppMode::EmailRead { .. }) {
         app.mode = AppMode::EmailList;
     }
-    // FIX: Prevent immediate auto-fetch after spending time reading an email
+
     app.last_fetch_time = Instant::now();
 
-    // continue;
-
-    // ... [Your existing reader initialization and loop] ...
-
-    // At the end of the loop, transition the state back
     app.mode = AppMode::EmailList;
 }

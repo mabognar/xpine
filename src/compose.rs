@@ -9,6 +9,7 @@ use lettre::{Message, SmtpTransport, Transport};
 use std;
 
 use crate::spell::SpellExt;
+use crate::browser::BrowserExt;
 
 use ropey::Rope;
 use std::fs;
@@ -461,7 +462,7 @@ pub fn compose_email(account: &Account, default_to: Option<&str>, default_subjec
     builder = parse_and_add(builder, &final_cc, "cc");
     builder = parse_and_add(builder, &final_bcc, "bcc");
 
-    let formatted_body = Editor::justify_all_text(&final_body);
+    let formatted_body = crate::mail::justify_all_text(&final_body);
     let mut multipart = lettre::message::MultiPart::mixed().singlepart(lettre::message::SinglePart::plain(formatted_body));
 
     for att in &state.attachments {

@@ -13,6 +13,7 @@ pub mod syntax;
 pub mod search;
 mod prompt;
 mod read;
+mod browser;
 
 use crate::prompt::PromptExt;
 
@@ -34,59 +35,32 @@ fn main() {
     let mut stdout = stdout();
     execute!(stdout, EnterAlternateScreen).unwrap();
 
+    // Set a panic hook to safely restore the terminal if the app crashes
+    let original_hook = std::panic::take_hook();
+    std::panic::set_hook(Box::new(move |panic_info| {
+        // Suppress errors here since we are already panicking
+        let _ = disable_raw_mode();
+        let _ = execute!(std::io::stdout(), LeaveAlternateScreen, cursor::Show);
+
+        // Run the default panic hook to print the error
+        original_hook(panic_info);
+    }));
+
     if let Err(e) = theme::ensure_themes_unpacked() {
         eprintln!("Warning: Failed to unpack default asset themes to disk: {}", e);
     }
 
     let mut settings_provider = Editor::new(None);
 
-    let mut session = if app.accounts.is_empty() {
-        None
-    } else {
-        match net::connect(&mut app.active_account) {
-            Ok(sess) => Some(sess),
-            Err(e) => {
-                let err_str = e.to_lowercase();
-                if err_str.contains("timeout") || err_str.contains("timed out") || err_str.contains("would block") {
-                    app.update_status("Attempted connection timed out".to_string());
-                } else {
-                    app.update_status("Connection failed".to_string());
-                }
-                None
-            }
-        }
-    };
+    let mut session = None;
+    if !app.accounts.is_empty() {
+        net::reconnect(&mut app, &mut session);
+    }
 
     loop {
+        // 2. The Reconnect Block shrinks to this:
         if app.needs_reconnect {
-            if !app.accounts.is_empty() {
-                app.active_account = app.accounts[app.current_account_idx].clone();
-                if let Some(s) = session.take() {
-                    // FIX: Wrapped logout
-                    match s {
-                        net::MailSession::Imap(mut imap_sess) => { let _ = imap_sess.logout(); }
-                        net::MailSession::Graph { .. } => {}
-                    }
-                }
-                match net::connect(&mut app.active_account) {
-                    Ok(sess) => {
-                        session = Some(sess);
-                        app.needs_fetch = true;
-                    }
-                    Err(e) => {
-                        session = None;
-                        let err_str = e.to_lowercase();
-                        if err_str.contains("timeout") || err_str.contains("timed out") || err_str.contains("would block") {
-                            app.update_status("Attempted connection timed out".to_string());
-                        } else {
-                            // Optionally display other connection errors!
-                            app.update_status("Connection failed".to_string());
-                        }
-                    }
-                }
-            }
-            app.needs_reconnect = false;
-            app.last_fetch_time = Instant::now();
+            net::reconnect(&mut app, &mut session);
         }
 
         if app.last_fetch_time.elapsed() >= app.auto_refresh_interval {
