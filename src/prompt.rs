@@ -26,7 +26,6 @@ impl PromptExt for Editor {
         if self.menu_state != MenuState::SpellCheck {
             self.menu_state = if allow_browser { MenuState::PromptWithBrowser } else { MenuState::CancelOnly };
         }
-        // self.menu_state = if allow_browser { MenuState::PromptWithBrowser } else { MenuState::CancelOnly };
 
         loop {
             self.set_status(format!("{}{}", prompt_text, input));
@@ -48,22 +47,27 @@ impl PromptExt for Editor {
                 SetForegroundColor(Color::Reset)
             )?;
 
-            let col_width = (cols as usize / 6).max(1);
+            let col_width = (cols as usize / 5).max(1);
 
             if self.menu_state == MenuState::SpellCheck {
                 let s1 = self.current_suggestions.get(0).cloned().unwrap_or_default();
                 let s2 = self.current_suggestions.get(1).cloned().unwrap_or_default();
                 let s3 = self.current_suggestions.get(2).cloned().unwrap_or_default();
                 let s4 = self.current_suggestions.get(3).cloned().unwrap_or_default();
+                let s5 = self.current_suggestions.get(4).cloned().unwrap_or_default();
 
                 Self::draw_menu_line(
                     &mut stdout_handle, rows.saturating_sub(2), cols, col_width,
-                    &[("1 ", if s1.is_empty() { "" } else { s1.as_str() }), ("3 ", if s3.is_empty() { "" } else { s3.as_str() }), ("I", " Ignore"), ("^C", " Cancel")],
+                    &[("1 ", if s1.is_empty() { "" } else { s1.as_str() }),
+                        ("2 ", if s2.is_empty() { "" } else { s2.as_str() }),
+                        ("3 ", if s3.is_empty() { "" } else { s3.as_str() }),
+                        ("4 ", if s4.is_empty() { "" } else { s4.as_str() }),
+                        ("5 ", if s5.is_empty() { "" } else { s5.as_str() })],
                     ui_colors.menu_bg, ui_colors.accent, ui_colors.fg,
                 )?;
                 Self::draw_menu_line(
                     &mut stdout_handle, rows.saturating_sub(1), cols, col_width,
-                    &[("2 ", if s2.is_empty() { "" } else { s2.as_str() }), ("4 ", if s4.is_empty() { "" } else { s4.as_str() }), ("A", " Add Dict"), ("", "")],
+                    &[("^C", " Cancel"), ("I", " Ignore"), ("A", " Add Dict")],
                     ui_colors.menu_bg, ui_colors.accent, ui_colors.fg,
                 )?;
             } else {

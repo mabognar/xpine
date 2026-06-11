@@ -119,9 +119,6 @@ fn main() {
             let mut reader = Editor::new(None);
             reader.menu_state = MenuState::EmailReader;
 
-            // let attach_lines = if attachments.is_empty() { 1 } else { attachments.len() };
-            // reader.top_margin = (5 + attach_lines) as u16;
-
             let attach_lines = if attachments.is_empty() { 1 } else { 1 + attachments.len() };
             reader.top_margin = (5 + attach_lines) as u16;
 
@@ -482,13 +479,6 @@ fn main() {
             }
         }
 
-        // if event::poll(timeout).unwrap() {
-        //     if events::handle_event(event::read().unwrap(), &mut app, &mut session, &mut settings_provider, &mut stdout) {
-        //         break;
-        //     }
-        // }
-        // In src/main.rs (around line 335)
-
         if event::poll(timeout).unwrap() {
             let ev = event::read().unwrap();
             let handle_start = Instant::now();
@@ -497,8 +487,6 @@ fn main() {
                 break;
             }
 
-            // FIX: If the event handler blocked for a while (e.g., in the composer),
-            // reset the timer so we don't immediately fetch on a stale connection.
             if handle_start.elapsed() > Duration::from_secs(2) {
                 app.last_fetch_time = Instant::now();
             }

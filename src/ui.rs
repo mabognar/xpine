@@ -274,15 +274,15 @@ impl UiExt for Editor {
 
                 let menu1 = vec![
                     ("1", if s1.is_empty() { "" } else { s1.as_str() }),
+                    ("2", if s2.is_empty() { "" } else { s2.as_str() }),
                     ("3", if s3.is_empty() { "" } else { s3.as_str() }),
-                    ("I", "Ignore"),
-                    ("^C", "Cancel"),
+                    ("4", if s4.is_empty() { "" } else { s4.as_str() })
                 ];
                 let menu2 = vec![
-                    ("2", if s2.is_empty() { "" } else { s2.as_str() }),
-                    ("4", if s4.is_empty() { "" } else { s4.as_str() }),
+                    ("^C", "Cancel"),
                     ("A", "Add to Dict"),
-                    ("", ""),
+                    ("I", "Ignore"),
+                    ("", "")
                 ];
 
                 Self::draw_menu_line(&mut stdout, rows - 2, cols, col_width, &menu1, ui_bg, menu_key_fg, menu_text_fg)?;
@@ -434,8 +434,14 @@ impl UiExt for Editor {
 
 
             let m_col = (cols as usize / 6).max(1);
-            Self::draw_menu_line(&mut stdout, rows - 2, cols, m_col, &[ ("", ""),        ("P", " Prev"), ("Y", " Prev Pg"), ("Enter", " Select"), ("", ""), ("", ""), ("", "")], ui_bg, menu_key_fg, title_fg)?;
-            Self::draw_menu_line(&mut stdout, rows - 1, cols, m_col, &[("^C", " Cancel"),("N", " Next"), ("V", " Next Pg"), ("", ""), ("", "")], ui_bg, menu_key_fg, title_fg)?;
+            Self::draw_menu_line(
+                &mut stdout, rows - 2, cols, m_col,
+                &[ ("", ""), ("P", " Prev"), ("Y", " Prev Pg"), ("Enter", " Select"), ("", ""), ("", ""), ("", "")],
+                ui_bg, menu_key_fg, title_fg)?;
+            Self::draw_menu_line(
+                &mut stdout, rows - 1, cols, m_col,
+                &[("^C", " Cancel"),("N", " Next"), ("V", " Next Pg"), ("", ""), ("", "")],
+                ui_bg, menu_key_fg, title_fg)?;
 
             stdout.flush()?;
 
@@ -582,18 +588,12 @@ pub fn draw_app(stdout: &mut std::io::Stdout, app: &App, theme_provider: &Editor
 
             let m_col = (cols as usize / 6).max(1);
             Editor::draw_menu_line(
-                stdout,
-                rows - 2,
-                cols,
-                m_col,
+                stdout, rows - 2, cols, m_col,
                 &[("<", " Back"), ("P", " Prev"), ("Y", " Prev Pg"), ("A", " Add"), ("E", " Edit"), ("", "")],
                 colors.menu_bg, colors.accent, colors.fg
             )?;
             Editor::draw_menu_line(
-                stdout,
-                rows - 1,
-                cols,
-                m_col,
+                stdout, rows - 1, cols, m_col,
                 &[("", ""), ("N", " Next"), ("V", " Next Pg"), ("T", " Team"), ("D", " Delete"), ("", "")],
                 colors.menu_bg, colors.accent, colors.fg
             )?;
@@ -655,13 +655,11 @@ pub fn draw_app(stdout: &mut std::io::Stdout, app: &App, theme_provider: &Editor
             let m_col = (cols as usize / 6).max(1);
             Editor::draw_menu_line(
                 stdout, rows - 2, cols, m_col,
-                // Changed "N New Account" to "A Add Account"
                 &[("", ""), ("A", " Add Acct"), ("D", " Del Acct"), ("P", " Prev"), ("M", " MS Auth"), ("", "")],
                 colors.menu_bg, colors.accent, colors.fg
             )?;
             Editor::draw_menu_line(
                 stdout, rows - 1, cols, m_col,
-                // Added ("N", " Next") here to match the navigation
                 &[(" <", " Back"), ("E", " Edit Acct"), ("", ""), ("N", " Next"), ("", ""), ("", "")],
                 colors.menu_bg, colors.accent, colors.fg
             )?;
@@ -749,8 +747,14 @@ pub fn draw_app(stdout: &mut std::io::Stdout, app: &App, theme_provider: &Editor
 
             let r_col = (cols as usize / 6).max(1);
             if app.menu_page == 1 {
-                Editor::draw_menu_line(stdout, rows - 2, cols, r_col, &[("<", " Back"), (">", " View"), ("C", " Compose"), ("R", " Reply"),   ("D", " Delete"), ("O", " Other (1/2)")], colors.menu_bg, colors.accent, colors.fg)?;
-                Editor::draw_menu_line(stdout, rows - 1, cols, r_col, &[("Q", " Quit"), ("M", " Menu"), ("*", " Flag"),    ("F", " Forward"), ("X", " Expunge"), ("Tab", " Acct")], colors.menu_bg, colors.accent, colors.fg)?;
+                Editor::draw_menu_line(
+                    stdout, rows - 2, cols, r_col,
+                    &[("<", " Back"), (">", " View"), ("C", " Compose"), ("R", " Reply"),   ("D", " Delete"), ("O", " Other (1/2)")],
+                    colors.menu_bg, colors.accent, colors.fg)?;
+                Editor::draw_menu_line(
+                    stdout, rows - 1, cols, r_col,
+                    &[("Q", " Quit"), ("M", " Menu"), ("*", " Flag"),    ("F", " Forward"), ("X", " Expunge"), ("Tab", " Acct")],
+                    colors.menu_bg, colors.accent, colors.fg)?;
             } else {
                 Editor::draw_menu_line(stdout, rows - 2, cols, r_col, &[("U", " (Un)Read"), ("P", " Prev"), ("Y", " Prev Pg"),  ("M+T", " Theme"),   ("", ""), ("O", " Other (2/2)")], colors.menu_bg, colors.accent, colors.fg)?;
                 Editor::draw_menu_line(stdout, rows - 1, cols, r_col, &[("S", " Search"), ("N", " Next"), ("V", " Next Pg"),    ("M+M", " Move To"), ("", ""), ("", "")], colors.menu_bg, colors.accent, colors.fg)?;
@@ -824,8 +828,14 @@ pub fn draw_app(stdout: &mut std::io::Stdout, app: &App, theme_provider: &Editor
             let rename_opt = if is_selected_folder_custom { ("R", " Rename") } else { ("", "") };
             let del_opt = if is_selected_folder_custom { ("D", " Del Fldr") } else { ("", "") };
 
-            Editor::draw_menu_line(stdout, rows - 2, cols, m_col, &[("M", " Main Menu"), ("P", " Prev"), ("Y", " Prev Pg"), (">", " Select"), rename_opt], colors.menu_bg, colors.accent, colors.fg)?;
-            Editor::draw_menu_line(stdout, rows - 1, cols, m_col, &[("<", " Back"), ("N", " Next"), ("V", " Next Pg"), ("A", " Add Fldr"), del_opt], colors.menu_bg, colors.accent, colors.fg)?;
+            Editor::draw_menu_line(
+                stdout, rows - 2, cols, m_col,
+                &[("M", " Main Menu"), ("P", " Prev"), ("Y", " Prev Pg"), (">", " Select"), rename_opt],
+                colors.menu_bg, colors.accent, colors.fg)?;
+            Editor::draw_menu_line(
+                stdout, rows - 1, cols, m_col,
+                &[("<", " Back"), ("N", " Next"), ("V", " Next Pg"), ("A", " Add Fldr"), del_opt],
+                colors.menu_bg, colors.accent, colors.fg)?;
         }
 
         AppMode::MainMenu { selected_idx } => {
@@ -851,8 +861,14 @@ pub fn draw_app(stdout: &mut std::io::Stdout, app: &App, theme_provider: &Editor
             }
 
             let m_col = (cols as usize / 6).max(1);
-            Editor::draw_menu_line(stdout, rows - 2, cols, m_col, &[("", ""),       ("P", " Prev"), (">", " Select"), ("", ""), ("", ""), ("", "")], colors.menu_bg, colors.accent, colors.fg)?;
-            Editor::draw_menu_line(stdout, rows - 1, cols, m_col, &[("Q", " Quit"), ("N", " Next"), ("", ""), ("", ""), ("", ""), ("", "")], colors.menu_bg, colors.accent, colors.fg)?;
+            Editor::draw_menu_line(
+                stdout, rows - 2, cols, m_col,
+                &[("", ""),       ("P", " Prev"), (">", " Select"), ("", ""), ("", ""), ("", "")],
+                colors.menu_bg, colors.accent, colors.fg)?;
+            Editor::draw_menu_line(
+                stdout, rows - 1, cols, m_col,
+                &[("Q", " Quit"), ("N", " Next"), ("", ""), ("", ""), ("", ""), ("", "")],
+                colors.menu_bg, colors.accent, colors.fg)?;
 
             if app.accounts.is_empty() {
                 let msg = "No email account. Please type 'E' and Add an email account.";
@@ -931,8 +947,14 @@ pub fn draw_app(stdout: &mut std::io::Stdout, app: &App, theme_provider: &Editor
 
             let m_col = (cols as usize / 6).max(1);
 
-            Editor::draw_menu_line(stdout, rows - 2, cols, m_col, &[("", ""),       ("P", " Prev"), ("X", " Select"), ("", ""), ("", ""), ("", "")], colors.menu_bg, colors.accent, colors.fg)?;
-            Editor::draw_menu_line(stdout, rows - 1, cols, m_col, &[("<", " Back"), ("N", " Next"), ("Meta+T", " Theme"), ("", ""), ("", ""), ("", "")], colors.menu_bg, colors.accent, colors.fg)?;
+            Editor::draw_menu_line(
+                stdout, rows - 2, cols, m_col,
+                &[("<", " Back"), ("P", " Prev"), ("X", " Select"), ("", ""), ("", ""), ("", "")],
+                colors.menu_bg, colors.accent, colors.fg)?;
+            Editor::draw_menu_line(
+                stdout, rows - 1, cols, m_col,
+                &[("", ""),       ("N", " Next"), ("Meta+T", " Theme"), ("", ""), ("", ""), ("", "")],
+                colors.menu_bg, colors.accent, colors.fg)?;
         }
         _ => {}
     }
