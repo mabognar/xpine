@@ -99,3 +99,39 @@ pub(crate) fn extract_email(formatted: &str) -> String {
     formatted.trim().to_string()
 }
 
+pub fn wrap_email_body(text: &str, width: usize) -> String {
+    let mut result = String::with_capacity(text.len());
+
+    for line in text.lines() {
+        if line.chars().count() <= width {
+            result.push_str(line);
+            result.push('\n');
+        } else {
+            let mut current_width = 0;
+            let mut is_first_word = true;
+
+            for word in line.split(' ') {
+                let word_len = word.chars().count();
+
+                if current_width + word_len + 1 > width && !is_first_word {
+                    result.push('\n');
+                    current_width = 0;
+                } else if !is_first_word {
+                    result.push(' ');
+                    current_width += 1;
+                }
+
+                result.push_str(word);
+                current_width += word_len;
+                is_first_word = false;
+            }
+            result.push('\n');
+        }
+    }
+
+    if !text.ends_with('\n') && result.ends_with('\n') {
+        result.pop();
+    }
+
+    result
+}

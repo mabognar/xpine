@@ -207,24 +207,14 @@ impl PromptExt for Editor {
         // Draw the menu items on the bottom two lines
         let col_width = (cols as usize / 6).max(1);
         Self::draw_menu_line(
-            &mut stdout_handle,
-            rows.saturating_sub(2),
-            cols,
-            col_width,
+            &mut stdout_handle, rows.saturating_sub(2), cols, col_width,
             &[("Y", " Yes"), ("", ""), ("", ""), ("", ""), ("", ""), ("", "")],
-            ui_colors.menu_bg,
-            ui_colors.accent,
-            ui_colors.fg,
+            ui_colors.menu_bg, ui_colors.accent, ui_colors.fg,
         )?;
         Self::draw_menu_line(
-            &mut stdout_handle,
-            rows.saturating_sub(1),
-            cols,
-            col_width,
+            &mut stdout_handle, rows.saturating_sub(1), cols, col_width,
             &[("N", " No"), ("", ""), ("", ""), ("", ""), ("", ""), ("", "")],
-            ui_colors.menu_bg,
-            ui_colors.accent,
-            ui_colors.fg,
+            ui_colors.menu_bg, ui_colors.accent, ui_colors.fg,
         )?;
 
         stdout_handle.flush()?;
@@ -579,15 +569,6 @@ impl PromptExt for Editor {
                             // suggestion_idx = 0;
                             return Ok(None);
                         }
-                        // KeyCode::Backspace => {
-                        //     input.pop();
-                        //     suggestion_idx = 0;
-                        // },
-                        // KeyCode::Char(c) => {
-                        //     if !key.modifiers.intersects(KeyModifiers::CONTROL | KeyModifiers::ALT | KeyModifiers::META) {
-                        //         input.push(c);
-                        //     }
-                        // },
                         KeyCode::Char(c) => {
                             input.push(c);
                             suggestion_idx = 0; // Reset back to first match on typing
@@ -635,24 +616,14 @@ pub fn prompt_cancel(stdout: &mut io::Stdout, colors: &UiColors) -> bool {
 
     let col_width = (cols as usize / 6).max(1);
     Editor::draw_menu_line(
-        stdout,
-        rows.saturating_sub(2),
-        cols,
-        col_width,
+        stdout, rows.saturating_sub(2), cols, col_width,
         &[("Y", " Yes"), ("", ""), ("", ""), ("", ""), ("", ""), ("", "")],
-        colors.menu_bg,
-        colors.accent,
-        colors.fg,
+        colors.menu_bg, colors.accent, colors.fg,
     ).unwrap();
     Editor::draw_menu_line(
-        stdout,
-        rows.saturating_sub(1),
-        cols,
-        col_width,
+        stdout, rows.saturating_sub(1), cols, col_width,
         &[("N", " No"), ("", ""), ("", ""), ("", ""), ("", ""), ("", "")],
-        colors.menu_bg,
-        colors.accent,
-        colors.fg,
+        colors.menu_bg, colors.accent, colors.fg,
     ).unwrap();
 
     stdout.flush().unwrap();

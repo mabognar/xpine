@@ -82,7 +82,6 @@ pub fn save_address_book(addresses: &[String]) -> std::io::Result<()> {
 }
 
 pub fn clean_and_save_address_book(addresses: &mut Vec<String>) {
-    // Remove any existing empty spacers so they don't duplicate
     addresses.retain(|a| !a.trim().is_empty());
 
     // Sort: Individuals first, Teams (containing ':') at the bottom
