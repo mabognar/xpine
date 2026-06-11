@@ -236,52 +236,95 @@ impl UiExt for Editor {
         match self.menu_state {
             MenuState::EmailComposer => {
                 if self.menu_page == 1 {
-                    Self::draw_menu_line(&mut stdout, rows - 2, cols, col_width, &[("^X", " Send"),   ("^P", " Prev"), ("^Y", " Prev Pg"), ("^K", " Cut"),   ("^J", " Justify"), ("^O", " Other 1/2")], ui_bg, menu_key_fg, menu_text_fg)?;
+                    Self::draw_menu_line(
+                        &mut stdout, rows - 2, cols, col_width,
+                        &[("^X", " Send"), ("^P", " Prev"), ("^Y", " Prev Pg"), ("^K", " Cut"), ("^J", " Justify"), ("^O", " Other 1/2")],
+                        ui_bg, menu_key_fg, menu_text_fg)?;
 
-                    Self::draw_menu_line(&mut stdout, rows - 1, cols, col_width, &[("^C", " Cancel"), ("^N", " Next"), ("^V", " Next Pg"), ("^U", " UnCut"), ("^A", " Attach"),   ("^G", " Get Help")], ui_bg, menu_key_fg, menu_text_fg)?;
+                    Self::draw_menu_line(
+                        &mut stdout, rows - 1, cols, col_width,
+                        &[("^C", " Cancel"), ("^N", " Next"), ("^V", " Next Pg"), ("^U", " UnCut"), ("^A", " Attach"), ("^G", " Get Help")],
+                        ui_bg, menu_key_fg, menu_text_fg)?;
                 } else {
-                    Self::draw_menu_line(&mut stdout, rows - 2, cols, col_width, &[("^R", " Read File"), ("^T", " To Spell"), ("", ""), ("", ""),  ("",""), ("^O", " Other 2/2")], ui_bg, menu_key_fg, menu_text_fg)?;
-                    Self::draw_menu_line(&mut stdout, rows - 1, cols, col_width, &[("^W", " Where is"), ("Alt-A", " Mark"), ("", ""), ("", ""), ("", ""), ("", "")], ui_bg, menu_key_fg, menu_text_fg)?;
+                    Self::draw_menu_line(
+                        &mut stdout, rows - 2, cols, col_width,
+                        &[("^R", " Read File"), ("^T", " To Spell"), ("", ""), ("", ""),  ("",""), ("^O", " Other 2/2")],
+                        ui_bg, menu_key_fg, menu_text_fg)?;
+                    Self::draw_menu_line(
+                        &mut stdout, rows - 1, cols, col_width,
+                        &[("^W", " Where is"), ("Alt-A", " Mark"), ("", ""), ("", ""), ("", ""), ("", "")],
+                        ui_bg, menu_key_fg, menu_text_fg)?;
                 }
             }
             MenuState::EmailReader => {
-                let menu1 = [("<", " Back"), ("R", " Reply"),   ("P", " Prev"), ("Y", " Prev Pg"), ("A", " Add Addr"), ("B"," Browser")];
-                let menu2 = [("", ""),       ("F", " Forward"), ("N", " Next"), ("V", " Next Pg"), ("S", " Save"), ("", "") ];
-                Self::draw_menu_line(&mut stdout, rows - 2, cols, col_width, &menu1, ui_bg, menu_key_fg, menu_text_fg)?;
-                Self::draw_menu_line(&mut stdout, rows - 1, cols, col_width, &menu2, ui_bg, menu_key_fg, menu_text_fg)?;
+                Self::draw_menu_line(
+                    &mut stdout, rows - 2, cols, col_width,
+                    &[("<", " Back"), ("R", " Reply"), ("P", " Prev"), ("Y", " Prev Pg"), ("A", " Add Addr"), ("B"," Browser")],
+                    ui_bg, menu_key_fg, menu_text_fg)?;
+                Self::draw_menu_line(
+                    &mut stdout, rows - 1, cols, col_width,
+                    &[("", ""), ("F", " Forward"), ("N", " Next"), ("V", " Next Pg"), ("S", " Save"), ("", "") ],
+                    ui_bg, menu_key_fg, menu_text_fg)?;
             }
             MenuState::YesNoCancel => {
-                Self::draw_menu_line(&mut stdout, rows - 2, cols, col_width, &[("Y", " Yes"), ("", ""), ("", ""), ("", ""), ("", ""), ("", "")], ui_bg, menu_key_fg, menu_text_fg)?;
-                Self::draw_menu_line(&mut stdout, rows - 1, cols, col_width, &[("N", " No"), ("^C", " Cancel"), ("", ""), ("", ""), ("", ""), ("", "")], ui_bg, menu_key_fg, menu_text_fg)?;
+                Self::draw_menu_line(
+                    &mut stdout, rows - 2, cols, col_width,
+                    &[("Y", " Yes"), ("", ""), ("", ""), ("", ""), ("", ""), ("", "")],
+                    ui_bg, menu_key_fg, menu_text_fg)?;
+                Self::draw_menu_line(
+                    &mut stdout, rows - 1, cols, col_width,
+                    &[("N", " No"), ("^C", " Cancel"), ("", ""), ("", ""), ("", ""), ("", "")],
+                    ui_bg, menu_key_fg, menu_text_fg)?;
             }
             MenuState::ReplaceAction => {
-                Self::draw_menu_line(&mut stdout, rows - 2, cols, col_width, &[("Y", " Yes"), ("A", " All"), ("", ""), ("", ""), ("", ""), ("", "")], ui_bg, menu_key_fg, menu_text_fg)?;
-                Self::draw_menu_line(&mut stdout, rows - 1, cols, col_width, &[("N", " No"), ("^C", " Cancel"), ("", ""), ("", ""), ("", ""), ("", "")], ui_bg, menu_key_fg, menu_text_fg)?;
+                Self::draw_menu_line(
+                    &mut stdout, rows - 2, cols, col_width,
+                    &[("Y", " Yes"), ("A", " All"), ("", ""), ("", ""), ("", ""), ("", "")],
+                    ui_bg, menu_key_fg, menu_text_fg)?;
+                Self::draw_menu_line(
+                    &mut stdout, rows - 1, cols, col_width,
+                    &[("N", " No"), ("^C", " Cancel"), ("", ""), ("", ""), ("", ""), ("", "")],
+                    ui_bg, menu_key_fg, menu_text_fg)?;
             }
             MenuState::PromptWithBrowser => {
-                Self::draw_menu_line(&mut stdout, rows - 2, cols, col_width, &[("^T", " To Files"), ("", ""), ("", ""), ("", ""), ("", ""), ("", "")], ui_bg, menu_key_fg, menu_text_fg)?;
-                Self::draw_menu_line(&mut stdout, rows - 1, cols, col_width, &[("^C", " Cancel"), ("", ""), ("", ""), ("", ""), ("", ""), ("", "")], ui_bg, menu_key_fg, menu_text_fg)?;
+                Self::draw_menu_line(
+                    &mut stdout, rows - 2, cols, col_width,
+                    &[("^T", " To Files"), ("", ""), ("", ""), ("", ""), ("", ""), ("", "")],
+                    ui_bg, menu_key_fg, menu_text_fg)?;
+                Self::draw_menu_line(
+                    &mut stdout, rows - 1, cols, col_width,
+                    &[("^C", " Cancel"), ("", ""), ("", ""), ("", ""), ("", ""), ("", "")],
+                    ui_bg, menu_key_fg, menu_text_fg)?;
             }
             MenuState::CancelOnly => {
-                Self::draw_menu_line(&mut stdout, rows - 2, cols, col_width, &[("", ""), ("", ""), ("", ""), ("", ""), ("", ""), ("", "")], ui_bg, menu_key_fg, menu_text_fg)?;
-                Self::draw_menu_line(&mut stdout, rows - 1, cols, col_width, &[("^C", " Cancel"), ("", ""), ("", ""), ("", ""), ("", ""), ("", "")], ui_bg, menu_key_fg, menu_text_fg)?;
+                Self::draw_menu_line(
+                    &mut stdout, rows - 2, cols, col_width,
+                    &[("", ""), ("", ""), ("", ""), ("", ""), ("", ""), ("", "")],
+                    ui_bg, menu_key_fg, menu_text_fg)?;
+                Self::draw_menu_line(
+                    &mut stdout, rows - 1, cols, col_width,
+                    &[("^C", " Cancel"), ("", ""), ("", ""), ("", ""), ("", ""), ("", "")],
+                    ui_bg, menu_key_fg, menu_text_fg)?;
             }
             MenuState::SpellCheck => {
                 let s1 = self.current_suggestions.get(0).cloned().unwrap_or_default();
                 let s2 = self.current_suggestions.get(1).cloned().unwrap_or_default();
                 let s3 = self.current_suggestions.get(2).cloned().unwrap_or_default();
                 let s4 = self.current_suggestions.get(3).cloned().unwrap_or_default();
+                let s5 = self.current_suggestions.get(4).cloned().unwrap_or_default();
 
                 let menu1 = vec![
                     ("1", if s1.is_empty() { "" } else { s1.as_str() }),
                     ("2", if s2.is_empty() { "" } else { s2.as_str() }),
                     ("3", if s3.is_empty() { "" } else { s3.as_str() }),
-                    ("4", if s4.is_empty() { "" } else { s4.as_str() })
+                    ("4", if s4.is_empty() { "" } else { s4.as_str() }),
+                    ("5", if s5.is_empty() { "" } else { s5.as_str() })
                 ];
                 let menu2 = vec![
                     ("^C", "Cancel"),
                     ("A", "Add to Dict"),
                     ("I", "Ignore"),
+                    ("", ""),
                     ("", "")
                 ];
 

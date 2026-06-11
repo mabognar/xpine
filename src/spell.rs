@@ -138,7 +138,7 @@ impl SpellExt for Editor {
             let suggestions = Self::get_suggestions(&lower_word, dict);
 
             // Populate current suggestions and transition state context
-            self.current_suggestions = suggestions.into_iter().take(4).collect();
+            self.current_suggestions = suggestions.into_iter().take(5).collect();
             self.menu_state = MenuState::SpellCheck;
 
             // Draw screen ONLY after suggestions and layout states are fully prepared
