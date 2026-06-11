@@ -76,7 +76,10 @@ pub struct GraphMessage {
     pub is_read: bool,
     pub flag: Option<GraphFlag>,
     #[serde(rename = "singleValueExtendedProperties")]
-    pub single_value_extended_properties: Option<Vec<GraphExtendedProperty>>,}
+    pub single_value_extended_properties: Option<Vec<GraphExtendedProperty>>,
+    #[serde(default)]
+    pub size: Option<u32>,
+}
 
 #[derive(Deserialize, Debug)]
 pub struct GraphExtendedProperty {
@@ -596,7 +599,7 @@ pub fn fetch_emails(session: &mut MailSession, app: &mut App, items_per_page: u3
                     folder, items_per_page, skip, order
                 )
             };
-
+            
             let client = reqwest::blocking::Client::new();
             let res = client.get(&url)
                 .header("Authorization", format!("Bearer {}", access_token))
