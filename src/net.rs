@@ -77,8 +77,6 @@ pub struct GraphMessage {
     pub flag: Option<GraphFlag>,
     #[serde(rename = "singleValueExtendedProperties")]
     pub single_value_extended_properties: Option<Vec<GraphExtendedProperty>>,
-    
-    pub size: Option<u32>,
 }
 
 #[derive(Deserialize, Debug)]
@@ -605,8 +603,7 @@ pub fn fetch_emails(session: &mut MailSession, app: &mut App, items_per_page: u3
                 if q.trim() == "*" {
                     let order = if sort_newest_first { "receivedDateTime%20DESC" } else { "receivedDateTime%20ASC" };
                     format!(
-                        // Removed $select completely
-                        "https://graph.microsoft.com/v1.0/me/mailFolders/{}/messages?$count=true&$top={}&$skip={}&$orderby={}&$filter=flag/flagStatus%20eq%20'flagged'&$expand=singleValueExtendedProperties($filter=id eq 'Integer 0x1081')",
+                        "https://graph.microsoft.com/v1.0/me/mailFolders/{}/messages?$count=true&$top={}&$skip={}&$orderby={}&$filter=flag/flagStatus%20eq%20'flagged'&$expand=singleValueExtendedProperties($filter=id%20eq%20'Integer%200x1081'%20or%20id%20eq%20'Long%200x0E08')",
                         folder, items_per_page, skip, order
                     )
                 } else {
@@ -615,16 +612,14 @@ pub fn fetch_emails(session: &mut MailSession, app: &mut App, items_per_page: u3
                     let encoded_q = urlencoding::encode(&search_str);
 
                     format!(
-                        // Removed $select completely
-                        "https://graph.microsoft.com/v1.0/me/mailFolders/{}/messages?$top={}&$skip={}&$search={}&$expand=singleValueExtendedProperties($filter=id eq 'Integer 0x1081')",
+                        "https://graph.microsoft.com/v1.0/me/mailFolders/{}/messages?$top={}&$skip={}&$search={}&$expand=singleValueExtendedProperties($filter=id%20eq%20'Integer%200x1081'%20or%20id%20eq%20'Long%200x0E08')",
                         folder, items_per_page, skip, encoded_q
                     )
                 }
             } else {
                 let order = if sort_newest_first { "receivedDateTime%20DESC" } else { "receivedDateTime%20ASC" };
                 format!(
-                    // Removed $select completely
-                    "https://graph.microsoft.com/v1.0/me/mailFolders/{}/messages?$count=true&$top={}&$skip={}&$orderby={}&$expand=singleValueExtendedProperties($filter=id eq 'Integer 0x1081')",
+                    "https://graph.microsoft.com/v1.0/me/mailFolders/{}/messages?$count=true&$top={}&$skip={}&$orderby={}&$expand=singleValueExtendedProperties($filter=id%20eq%20'Integer%200x1081'%20or%20id%20eq%20'Long%200x0E08')",
                     folder, items_per_page, skip, order
                 )
             };
@@ -681,17 +676,16 @@ pub fn fetch_emails(session: &mut MailSession, app: &mut App, items_per_page: u3
                                     // 102 is the MAPI code for "Replied"
                                     if prop.id == "Integer 0x1081" && prop.value == "102" {
                                         is_answered = true;
-                                        // CRITICAL: DO NOT PUT `break;` HERE!
-                                        // It will skip parsing the size if the email was replied to!
-                                    } else if prop.id.eq_ignore_ascii_case("Integer 0x0e08") {
-                                        // 0x0e08 is the MAPI code for PR_MESSAGE_SIZE
+                                    }
+                                    // Make the check robust against 'Long' or 'Integer' and missing leading zeros
+                                    else if prop.id.to_lowercase().contains("0x0e08") || prop.id.to_lowercase().contains("0xe08") {
                                         if let Ok(parsed_size) = prop.value.parse::<u32>() {
                                             msg_size = parsed_size;
                                         }
                                     }
                                 }
                             }
-
+                            
                             let internal_date = DateTime::parse_from_rfc3339(&msg.received_date_time)
                                 .map(|dt| dt.timestamp())
                                 .unwrap_or(0);
@@ -768,7 +762,7 @@ pub fn fetch_emails(session: &mut MailSession, app: &mut App, items_per_page: u3
                                 to_addr,
                                 cc,
                                 date: date_str,
-                                size: msg.size.unwrap_or(0), // Grab the native size!
+                                size: msg_size, // Successfully parsed MAPI property!
                                 is_read: msg.is_read,
                                 is_deleted: false,
                                 is_flagged,
