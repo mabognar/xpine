@@ -7,6 +7,7 @@ use crossterm::event::{Event, KeyCode, KeyEventKind, KeyModifiers, KeyEvent};
 use crossterm::execute;
 use crossterm::terminal::size as term_size;
 use crate::prompt::PromptExt;
+use crate::ui::UiExt;
 
 fn check_and_expunge_outlook(app: &mut App, session: &mut Option<MailSession>, theme_provider: &mut Editor) {
     let is_outlook = app.active_account.imap_server.to_lowercase().contains("outlook") ||
@@ -76,7 +77,7 @@ fn handle_address_book_events(k: KeyEvent, app: &mut App, theme_provider: &mut E
     match k.code {
         KeyCode::Up | KeyCode::Char('p') | KeyCode::Char('P') => selected_idx = selected_idx.saturating_sub(1),
         KeyCode::Down  | KeyCode::Char('n') | KeyCode::Char('N') => if selected_idx + 1 < addresses.len() { selected_idx += 1; },
-        KeyCode::Char('<') | KeyCode::Left => next_mode = Some(AppMode::MainMenu { selected_idx: 1 }),
+        KeyCode::Char('<') | KeyCode::Left | KeyCode::Esc => next_mode = Some(AppMode::MainMenu { selected_idx: 1 }),
         KeyCode::Char('d') | KeyCode::Char('D') => {
             if !addresses.is_empty() {
                 let prompt_msg = format!("Delete '{}'?", addresses[selected_idx]);
@@ -147,6 +148,9 @@ fn handle_address_book_events(k: KeyEvent, app: &mut App, theme_provider: &mut E
                         crate::address::clean_and_save_address_book(&mut addresses);                    }
                 }
             }
+        }
+        KeyCode::Char('h') | KeyCode::Char('H') | KeyCode::Char('?') => {
+            let _ = theme_provider.show_help("address_book");
         }
         _ => {}
     }
@@ -384,6 +388,9 @@ fn handle_email_accounts_events(k: KeyEvent, app: &mut App, theme_provider: &mut
                 }
             }
         }
+        KeyCode::Char('h') | KeyCode::Char('H') | KeyCode::Char('?') => {
+            let _ = theme_provider.show_help("email_accounts");
+        }
         _ => {}
     }
 
@@ -408,7 +415,7 @@ fn handle_email_list_events(k: KeyEvent, app: &mut App, session: &mut Option<Mai
                 app.update_status(format!("Theme: {}", theme_provider.current_theme));
             }
         }
-        KeyCode::Char('<') | KeyCode::Left => {
+        KeyCode::Char('<') | KeyCode::Left | KeyCode::Esc => {
             if app.search_query.is_some() {
                 app.search_query = None;
                 app.current_page = 0;
@@ -785,6 +792,9 @@ fn handle_email_list_events(k: KeyEvent, app: &mut App, session: &mut Option<Mai
                 }
             }
         }
+        KeyCode::Char('h') | KeyCode::Char('H') | KeyCode::Char('?') => {
+            let _ = theme_provider.show_help("email_list");
+        }
         KeyCode::Char('q') | KeyCode::Esc => {
             check_and_expunge_outlook(app, session, theme_provider);
             *quit = true;
@@ -811,7 +821,7 @@ fn handle_folder_list_events(k: KeyEvent, app: &mut App, session: &mut Option<Ma
         KeyCode::PageUp | KeyCode::Char('y') | KeyCode::Char('Y') => { selected_idx = selected_idx.saturating_sub(items_per_page); }
         KeyCode::PageDown | KeyCode::Char('v') | KeyCode::Char('V') => { selected_idx = (selected_idx + items_per_page).min(items_count.saturating_sub(1)); }
         KeyCode::Char('m') | KeyCode::Char('M') => { next_mode = Some(AppMode::MainMenu { selected_idx: 2 }); }
-        KeyCode::Esc | KeyCode::Char('q') | KeyCode::Char('Q') | KeyCode::Char('<') | KeyCode::Left => {
+        KeyCode::Esc | KeyCode::Char('<') | KeyCode::Left => {
             if step == 1 { step = 0; selected_idx = app.current_account_idx; }
             else { next_mode = Some(AppMode::MainMenu { selected_idx: 2 }); }
         }
@@ -982,6 +992,9 @@ fn handle_folder_list_events(k: KeyEvent, app: &mut App, session: &mut Option<Ma
                 }
             }
         }
+        KeyCode::Char('h') | KeyCode::Char('H') | KeyCode::Char('?') => {
+            let _ = theme_provider.show_help("folders_list");
+        }
         _ => {}
     }
 
@@ -1018,7 +1031,8 @@ fn handle_main_menu_events(k: KeyEvent, app: &mut App, session: &mut Option<Mail
                     check_and_expunge_outlook(app, session, theme_provider);
                     next_mode = Some(AppMode::EmailAccounts { selected_idx: 0 });
                 },
-                5 => { app.update_status("Help not yet implemented.".to_string()); next_mode = Some(AppMode::EmailList); },
+                // 5 => { app.update_status("Help not yet implemented.".to_string()); next_mode = Some(AppMode::EmailList); },
+                5 => { let _ = theme_provider.show_help("main_menu"); },
                 6 => {
                     check_and_expunge_outlook(app, session, theme_provider);
                     *quit = true;
@@ -1036,7 +1050,7 @@ fn handle_main_menu_events(k: KeyEvent, app: &mut App, session: &mut Option<Mail
         KeyCode::Char('a') | KeyCode::Char('A') => next_mode = Some(AppMode::AddressBook { selected_idx: 0, addresses: crate::address::load_address_book() }),
         KeyCode::Char('f') | KeyCode::Char('F') => next_mode = Some(AppMode::FolderList { step: 0, selected_idx: app.current_account_idx, folders: Vec::new() }),
         KeyCode::Char('s') | KeyCode::Char('S') => next_mode = Some(AppMode::Settings { selected_idx: 0 }),
-        KeyCode::Char('h') | KeyCode::Char('H') => { app.update_status("Help not yet implemented.".to_string()); next_mode = Some(AppMode::EmailList); },
+        KeyCode::Char('h') | KeyCode::Char('H') | KeyCode::Char('?') => { let _ = theme_provider.show_help("main_menu"); }, // <-- UPDATED
         KeyCode::Char('q') | KeyCode::Char('Q') => {
             check_and_expunge_outlook(app, session, theme_provider);
             *quit = true;

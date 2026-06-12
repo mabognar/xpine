@@ -685,7 +685,7 @@ pub fn fetch_emails(session: &mut MailSession, app: &mut App, items_per_page: u3
                                     }
                                 }
                             }
-                            
+
                             let internal_date = DateTime::parse_from_rfc3339(&msg.received_date_time)
                                 .map(|dt| dt.timestamp())
                                 .unwrap_or(0);

@@ -5,37 +5,81 @@ use crossterm::{cursor, event::{self, Event}, queue,
                 terminal::{self, ClearType, size as term_size}};
 use syntect::easy::HighlightLines;
 use std::io::{self, stdout, Write};
+use crossterm::event::KeyCode;
 pub(crate) use crate::theme::{derive_ui_colors};
 
 pub trait UiExt {
     fn draw_menu_line(writer: &mut io::Stdout, row: u16, cols: u16, col_width: usize,
                       items: &[(&str, &str)], ui_bg: Color, key_fg: Color, text_fg: Color) -> io::Result<()>;
     fn draw_screen(&mut self) -> io::Result<()>;
-    fn show_help(&mut self) -> io::Result<()>;
+    fn show_help(&mut self, context: &str) -> io::Result<()>;
     fn set_status(&mut self, message: String);
     fn clear_status(&mut self);
 }
 
 impl UiExt for Editor {
-    fn draw_menu_line(writer: &mut io::Stdout, row: u16, cols: u16, col_width: usize,
+    // fn draw_menu_line(writer: &mut io::Stdout, row: u16, cols: u16, col_width: usize,
+    //                   items: &[(&str, &str)], ui_bg: Color, key_fg: Color, text_fg: Color) -> io::Result<()> {
+    //     queue!(writer, cursor::MoveTo(0, row), SetBackgroundColor(ui_bg))?;
+    //     let mut printed = 0;
+    //     for (cmd, desc) in items.iter() {
+    //         let cmd_chars = cmd.chars().count();
+    //         let desc_chars = desc.chars().count();
+    //         let total_chars = cmd_chars + desc_chars;
+    //
+    //         let safe_col_width = col_width.max(1);
+    //
+    //         if total_chars <= safe_col_width {
+    //             queue!(writer, SetForegroundColor(key_fg), Print(cmd), SetForegroundColor(text_fg), Print(format!("{}{}", desc, " ".repeat(safe_col_width - total_chars))))?;
+    //         } else {
+    //             queue!(writer, SetForegroundColor(key_fg), Print(cmd), SetForegroundColor(text_fg), Print(desc.chars().take(safe_col_width.saturating_sub(cmd_chars)).collect::<String>()))?;
+    //         }
+    //         printed += safe_col_width;
+    //     }
+    //     queue!(writer, Print(" ".repeat((cols as usize).saturating_sub(printed))), SetBackgroundColor(Color::Reset))?;
+    //     Ok(())
+    // }
+
+    fn draw_menu_line(writer: &mut io::Stdout, row: u16, _cols: u16, col_width: usize,
                       items: &[(&str, &str)], ui_bg: Color, key_fg: Color, text_fg: Color) -> io::Result<()> {
-        queue!(writer, cursor::MoveTo(0, row), SetBackgroundColor(ui_bg))?;
-        let mut printed = 0;
+
+        // 1. Clear the entire line with the background color first!
+        // This cleanly paints the edge without pushing the cursor into the scroll-wrap zone.
+        queue!(
+            writer,
+            cursor::MoveTo(0, row),
+            SetBackgroundColor(ui_bg),
+            terminal::Clear(ClearType::CurrentLine)
+        )?;
+
+        let safe_col_width = col_width.max(1) as u16;
+        let mut current_x = 0;
+
         for (cmd, desc) in items.iter() {
-            let cmd_chars = cmd.chars().count();
-            let desc_chars = desc.chars().count();
-            let total_chars = cmd_chars + desc_chars;
+            let cmd_chars = cmd.chars().count() as u16;
+            let desc_chars = desc.chars().count() as u16;
 
-            let safe_col_width = col_width.max(1);
+            // 2. Jump directly to the starting column for this item
+            queue!(
+                writer,
+                cursor::MoveTo(current_x, row),
+                SetForegroundColor(key_fg),
+                Print(cmd),
+                SetForegroundColor(text_fg)
+            )?;
 
-            if total_chars <= safe_col_width {
-                queue!(writer, SetForegroundColor(key_fg), Print(cmd), SetForegroundColor(text_fg), Print(format!("{}{}", desc, " ".repeat(safe_col_width - total_chars))))?;
+            // 3. Print the description (truncated if it exceeds the column width)
+            if cmd_chars + desc_chars <= safe_col_width {
+                queue!(writer, Print(desc))?;
             } else {
-                queue!(writer, SetForegroundColor(key_fg), Print(cmd), SetForegroundColor(text_fg), Print(desc.chars().take(safe_col_width.saturating_sub(cmd_chars)).collect::<String>()))?;
+                let safe_desc = desc.chars().take((safe_col_width.saturating_sub(cmd_chars)) as usize).collect::<String>();
+                queue!(writer, Print(safe_desc))?;
             }
-            printed += safe_col_width;
+
+            current_x += safe_col_width;
         }
-        queue!(writer, Print(" ".repeat((cols as usize).saturating_sub(printed))), SetBackgroundColor(Color::Reset))?;
+
+        queue!(writer, SetBackgroundColor(Color::Reset))?;
         Ok(())
     }
 
@@ -358,25 +402,258 @@ impl UiExt for Editor {
         Ok(())
     }
 
-    fn show_help(&mut self) -> io::Result<()> {
-        let help_text = vec![
-            "xnano help", "----------", "^G (F1) Get Help", "^X (F2) Exit", "^O (F3) Write Out",
-            "^J (F4) Justify", "^R (F5) Read File", "^W (F6) Search", "^Y (F7) Prev Pg", "^V (F8) Next Pg",
-            "Press any key to return..."
-        ];
-        let mut stdout = stdout();
-        let (_cols, rows) = terminal::size()?;
+    fn show_help(&mut self, context: &str) -> io::Result<()> {
+        let theme = &self.theme_set.themes[&self.current_theme];
+        let colors = derive_ui_colors(theme);
 
-        queue!(stdout, terminal::Clear(ClearType::All))?;
-        for (i, line) in help_text.iter().enumerate() {
-            if i >= (rows as usize).saturating_sub(1) { break; }
-            queue!(stdout, cursor::MoveTo(0, i as u16), Print(*line))?;
+        // A custom data structure to flawlessly map theme colors to help lines
+        enum HelpLine {
+            Title(&'static str),
+            Text(&'static str),
+            Header(&'static str),
+            Cmd1(&'static str, &'static str),
+            Cmd2(&'static str, &'static str, &'static str, &'static str),
+            Cmd3(&'static str, &'static str, &'static str, &'static str, &'static str, &'static str),
+            Blank,
         }
-        stdout.flush()?;
+        use HelpLine::*;
 
+        let help_content = match context {
+            "main_menu" => vec![
+                Title("xpine - Main Menu Help"),
+                Blank,
+                Text("The Main Menu is the starting point for xpine navigation"),
+                Blank,
+                Text("Note: You can obtain help in much of xpine by typing '?'"),
+                Blank,
+                Header("NAVIGATION:"),
+                Cmd1("P, Up", "Move selection up"),
+                Cmd1("N, Down", "Move selection down"),
+                Cmd1(">, Right, Enter", "Select the highlighted option"),
+                Blank,
+                Header("SHORTCUT KEYS:"),
+                Cmd1("I", "Jump directly to your Inbox"),
+                Cmd1("A", "Manage your Address Book"),
+                Cmd1("F", "View and manage your Folders"),
+                Cmd1("S", "Adjust Application Settings"),
+                Cmd1("E", "Configure Email Accounts"),
+                Cmd1("Q", "Quit the xpine application"),
+            ],
+            "email_list" => vec![
+                Title("xpine - Email List Help"),
+                Blank,
+                Text("This screen displays the emails in your currently selected folder"),
+                Blank,
+                Header("NAVIGATION"),
+                Cmd1("P, Up", "Move up"),
+                Cmd1("N, Down", "Move down"),
+                Cmd1("Y, -, PgUp", "Page Up"),
+                Cmd1("V, Space, PgDn", "Page Down"),
+                Cmd1(">, Enter, Right", "Read selected email"),
+                Cmd1("<, Left, Esc", "Go Back"),
+                Cmd1("Tab", "Cycle through your configured email accounts"),
+                Cmd1("1,2,...", "Go to email account"),
+                Blank,
+                Header("ACTIONS"),
+                Cmd1("C", "Compose new email"),
+                Cmd1("R", "Reply to email"),
+                Cmd1("F", "Forward email"),
+                Cmd1("D", "Mark email for deletion"),
+                Cmd1("X", "Expunge (completely remove) all emails marked"),
+                Cmd1("", "for deletion"),
+                Cmd1("O", "Toggle Menu Page"),
+                Cmd1("U", "Toggle Read/Unread status"),
+                Cmd1("*", "Toggle email as important"),
+                Cmd1("S", "Search current folder"),
+                Cmd1("Meta+M, Alt+M", "Move email to folder"),
+                Cmd1("Meta+T, Alt+T", "Cycle Theme"),
+            ],
+            "composer" => vec![
+                Title("xpine - Email Composer Help"),
+                Blank,
+                Text("A full-featured text editor for composing your messages."),
+                Blank,
+                Header("NAVIGATION:"),
+                Cmd1("Arrow Keys", "Move cursor"),
+                Cmd1("^Y / ^V", "Page Up / Page Down"),
+                Cmd1("Alt-A / ^6", "Set a selection mark"),
+                Blank,
+                Header("ACTIONS (PAGE 1):"),
+                Cmd3("^X", "Send Msg", "^C", "Cancel", "^O", "Save/Write Out"),
+                Cmd3("^K", "Cut Line", "^U", "Uncut/Paste", "^J", "Justify Paragraph"),
+                Cmd2("^A", "Attach File", "^O", "Toggle to Menu Page 2"),
+                Blank,
+                Header("ACTIONS (PAGE 2):"),
+                Cmd1("^R", "Read file into message"),
+                Cmd1("^T", "Run Spellchecker"),
+                Cmd1("^W", "Search/Where is..."),
+            ],
+            "address_book" => vec![
+                Title("xpine - Address Book Help"),
+                Blank,
+                Text("Manage your saved contacts and distribution teams (lists)"),
+                Blank,
+                Header("NAVIGATION"),
+                Cmd1("P, Up", "Move up"),
+                Cmd1("N, Down", "Move down"),
+                Cmd1("Y, -, PgUp", "Page Up"),
+                Cmd1("V, Space, PgDn", "Page Down"),
+                Cmd1("<, Left, Esc", "Return to the Main Menu"),
+                Blank,
+                Header("ACTIONS"),
+                Cmd1("A", "Add a new email address"),
+                Cmd1("T", "Create a new Team (group distribution list)"),
+                Cmd1("E", "Edit the currently selected entry"),
+                Cmd1("D", "Delete the currently selected entry"),
+            ],
+            "email_accounts" => vec![
+                Title("xpine - Email Accounts Help"),
+                Blank,
+                Text("Configure standard IMAP and Microsoft Graph API accounts."),
+                Blank,
+                Header("NAVIGATION:"),
+                Cmd1("Up/Down or P/N", "Move cursor up and down"),
+                Cmd1("<", "Return to the Main Menu"),
+                Blank,
+                Header("ACTIONS:"),
+                Cmd1("A", "Add a new email account"),
+                Cmd1("E", "Edit the currently selected account"),
+                Cmd1("D", "Delete the currently selected account"),
+                Cmd1("M", "Trigger Microsoft OAuth2 login flow"),
+            ],
+            "folders_list" => vec![
+                Title("xpine - Folders List Help"),
+                Blank,
+                Text("This screen displays the folders in your currently selected account"),
+                Blank,
+                Header("NAVIGATION"),
+                Cmd1("P, Up", "Move up"),
+                Cmd1("N, Down", "Move down"),
+                Cmd1("Y, -, PgUp", "Page Up"),
+                Cmd1("V, Space, PgDn", "Page Down"),
+                Cmd1(">, Enter, Right", "Read selected email"),
+                Cmd1("<, Left, Esc", "Go Back"),
+                Cmd1("Tab", "Cycle through your configured email accounts"),
+                Cmd1("1,2,...", "Go to email account"),
+                Blank,
+                Header("ACTIONS"),
+                Cmd1("C", "Compose new email"),
+                Cmd1("R", "Reply to email"),
+                Cmd1("F", "Forward email"),
+                Cmd1("D", "Mark email for deletion"),
+                Cmd1("X", "Expunge (completely remove) all emails marked"),
+                Cmd1("", "for deletion"),
+                Cmd1("O", "Toggle Menu Page"),
+                Cmd1("U", "Toggle Read/Unread status"),
+                Cmd1("*", "Toggle email as important"),
+                Cmd1("S", "Search current folder"),
+                Cmd1("Meta+M, Alt+M", "Move email to folder"),
+                Cmd1("Meta+T, Alt+T", "Cycle Theme"),
+            ],
+            _ => vec![
+                Title("xpine - Help"),
+                Text("No specific help documentation is available for this screen."),
+            ],
+        };
+
+        let mut stdout = stdout();
+        let mut scroll_offset = 0;
+
+        // Start the interactive help loop
         loop {
-            if let Event::Key(key) = event::read()? {
-                if key.kind == event::KeyEventKind::Press { break; }
+            let (cols, rows) = terminal::size()?;
+            let visible_lines = (rows as usize).saturating_sub(3);
+            let max_scroll = help_content.len().saturating_sub(visible_lines);
+
+            // Ensure bounds if the terminal is resized
+            scroll_offset = scroll_offset.min(max_scroll);
+
+            // Paint the entire background
+            queue!(stdout, SetBackgroundColor(colors.bg), terminal::Clear(ClearType::All))?;
+
+            // Only render the lines that fit in the current scrolled window
+            for (i, line) in help_content.iter().skip(scroll_offset).take(visible_lines).enumerate() {
+                queue!(stdout, cursor::MoveTo(0, i as u16))?;
+
+                match line {
+                    Title(t) => {
+                        queue!(stdout,
+                            SetBackgroundColor(colors.menu_bg), SetForegroundColor(colors.accent),
+                            Print(*t), Print(" ".repeat((cols as usize).saturating_sub(t.chars().count()))),
+                            ResetColor, SetBackgroundColor(colors.bg)
+                        )?;
+                    }
+                    Header(h) => {
+                        queue!(stdout, SetForegroundColor(colors.date_color), Print(*h))?;
+                    }
+                    Text(t) => {
+                        queue!(stdout, SetForegroundColor(colors.fg), Print(*t))?;
+                    }
+                    Blank => {}
+                    Cmd1(k, d) => {
+                        queue!(stdout, Print("  "),
+                            SetForegroundColor(colors.accent), Print(format!("{:<15}", k)),
+                            SetForegroundColor(colors.fg), Print(format!(" {}", d))
+                        )?;
+                    }
+                    Cmd2(k1, d1, k2, d2) => {
+                        queue!(stdout, Print("  "),
+                            SetForegroundColor(colors.accent), Print(format!("{:<4}", k1)), SetForegroundColor(colors.fg), Print(format!(" {:<15}", d1)),
+                            SetForegroundColor(colors.accent), Print(format!("{:<4}", k2)), SetForegroundColor(colors.fg), Print(format!(" {}", d2))
+                        )?;
+                    }
+                    Cmd3(k1, d1, k2, d2, k3, d3) => {
+                        queue!(stdout, Print("  "),
+                            SetForegroundColor(colors.accent), Print(format!("{:<4}", k1)), SetForegroundColor(colors.fg), Print(format!(" {:<13}", d1)),
+                            SetForegroundColor(colors.accent), Print(format!("{:<4}", k2)), SetForegroundColor(colors.fg), Print(format!(" {:<13}", d2)),
+                            SetForegroundColor(colors.accent), Print(format!("{:<4}", k3)), SetForegroundColor(colors.fg), Print(format!(" {}", d3))
+                        )?;
+                    }
+                }
+            }
+
+            // Draw the interactive menu at the bottom
+            let col_width = ((cols as usize) / 6).max(1);
+            Editor::draw_menu_line(
+                &mut stdout, rows - 2, cols, col_width,
+                &[("<", " Back"), ("P", " Prev"), ("Y", " Prev Pg"), ("", ""), ("", ""), ("", "")],
+                colors.menu_bg, colors.accent, colors.fg
+            )?;
+            Editor::draw_menu_line(
+                &mut stdout, rows - 1, cols, col_width,
+                &[("", ""), ("N", " Next"), ("V", " Next Pg"), ("", ""), ("", ""), ("", "")],
+                colors.menu_bg, colors.accent, colors.fg
+            )?;
+
+            stdout.flush()?;
+
+            // Wait for user input
+            let event = event::read()?;
+            if let Event::Key(key) = event {
+                if key.kind == event::KeyEventKind::Press {
+                    match key.code {
+                        // Exit keys
+                        KeyCode::Esc | KeyCode::Left | KeyCode::Char('<') => break,
+
+                        // Scroll up one line
+                        KeyCode::Up | KeyCode::Char('p') | KeyCode::Char('P') => {
+                            scroll_offset = scroll_offset.saturating_sub(1);
+                        }
+                        // Scroll down one line
+                        KeyCode::Down | KeyCode::Char('n') | KeyCode::Char('N') => {
+                            scroll_offset = (scroll_offset + 1).min(max_scroll);
+                        }
+                        // Scroll up one page
+                        KeyCode::PageUp | KeyCode::Char('y') | KeyCode::Char('Y') => {
+                            scroll_offset = scroll_offset.saturating_sub(visible_lines);
+                        }
+                        // Scroll down one page
+                        KeyCode::PageDown | KeyCode::Char('v') | KeyCode::Char('V') => {
+                            scroll_offset = (scroll_offset + visible_lines).min(max_scroll);
+                        }
+                        _ => {} // Ignore any other keys to trap the user here
+                    }
+                }
             }
         }
         Ok(())
@@ -470,8 +747,8 @@ fn draw_address_book(stdout: &mut std::io::Stdout, cols: u16, rows: u16, theme_p
     }
 
     let m_col = (cols as usize / 6).max(1);
-    Editor::draw_menu_line(stdout, rows - 2, cols, m_col, &[("<", " Back"), ("P", " Prev"), ("Y", " Prev Pg"), ("A", " Add"), ("E", " Edit"), ("", "")], colors.menu_bg, colors.accent, colors.fg)?;
-    Editor::draw_menu_line(stdout, rows - 1, cols, m_col, &[("", ""), ("N", " Next"), ("V", " Next Pg"), ("T", " Team"), ("D", " Delete"), ("", "")], colors.menu_bg, colors.accent, colors.fg)?;
+    Editor::draw_menu_line(stdout, rows - 2, cols, m_col, &[("<", " Back"), ("P", " Prev"), ("Y", " Prev Pg"), ("A", " Add Email"), ("E", " Edit"), ("", "")], colors.menu_bg, colors.accent, colors.fg)?;
+    Editor::draw_menu_line(stdout, rows - 1, cols, m_col, &[("", ""), ("N", " Next"), ("V", " Next Pg"), ("T", " Team"), ("D", " Delete"), ("?", " Help")], colors.menu_bg, colors.accent, colors.fg)?;
     Ok(())
 }
 
@@ -532,6 +809,43 @@ fn draw_email_list(stdout: &mut std::io::Stdout, app: &App, cols: u16, rows: u16
     if let Some(ref query) = app.search_query {
         queue!(stdout, SetForegroundColor(colors.flag_star), Print(format!("   Search Results: {}", query)))?;
     }
+
+    // --- NEW: Top Right Message Counter ---
+    let items_per_page = (rows.saturating_sub(3) as u32).max(1);
+
+    if app.total_messages == 0 || app.page_emails.is_empty() {
+        let no_msg = "No messages";
+        queue!(stdout,
+            cursor::MoveTo(cols.saturating_sub(no_msg.len() as u16), 0), // Removed the + 1
+            SetForegroundColor(colors.accent),
+            Print(no_msg)
+        )?;
+    } else {
+        // xpine paginates from the highest index (newest) downwards.
+        // So page 0 always contains the highest message numbers.
+        let end_idx = app.total_messages.saturating_sub(app.current_page * items_per_page);
+
+        let msg_x = if theme_provider.sort_newest_first {
+            end_idx.saturating_sub(app.selected_index as u32)
+        } else {
+            let start_idx = end_idx.saturating_sub(app.page_emails.len() as u32).saturating_add(1);
+            start_idx + (app.selected_index as u32)
+        };
+
+        let x_str = msg_x.to_string();
+        let y_str = app.total_messages.to_string();
+        let total_len = 8 + x_str.len() + 4 + y_str.len(); // Removed the + 1
+
+        queue!(stdout,
+            cursor::MoveTo(cols.saturating_sub(total_len as u16), 0),
+            SetForegroundColor(colors.accent), Print("Message "),
+            SetForegroundColor(colors.fg), Print(&x_str),
+            SetForegroundColor(colors.accent), Print(" of "),
+            SetForegroundColor(colors.fg), Print(&y_str) // Removed the trailing Print(" ")
+        )?;
+    }
+    // --------------------------------------
+
     queue!(stdout, ResetColor)?;
 
     let list_start_y = 1;
@@ -599,10 +913,10 @@ fn draw_email_list(stdout: &mut std::io::Stdout, app: &App, cols: u16, rows: u16
     let r_col = (cols as usize / 6).max(1);
     if app.menu_page == 1 {
         Editor::draw_menu_line(stdout, rows - 2, cols, r_col, &[("<", " Back"), (">", " View"), ("C", " Compose"), ("R", " Reply"),   ("D", " Delete"), ("O", " Other (1/2)")], colors.menu_bg, colors.accent, colors.fg)?;
-        Editor::draw_menu_line(stdout, rows - 1, cols, r_col, &[("Q", " Quit"), ("M", " Menu"), ("*", " Flag"),    ("F", " Forward"), ("X", " Expunge"), ("Tab", " Acct")], colors.menu_bg, colors.accent, colors.fg)?;
+        Editor::draw_menu_line(stdout, rows - 1, cols, r_col, &[("Q", " Quit"), ("M", " Main Menu"), ("S", " Search"), ("F", " Forward"), ("X", " Expunge"), ("Tab", " Acct")], colors.menu_bg, colors.accent, colors.fg)?;
     } else {
-        Editor::draw_menu_line(stdout, rows - 2, cols, r_col, &[("U", " (Un)Read"), ("P", " Prev"), ("Y", " Prev Pg"),  ("M+T", " Theme"),   ("", ""), ("O", " Other (2/2)")], colors.menu_bg, colors.accent, colors.fg)?;
-        Editor::draw_menu_line(stdout, rows - 1, cols, r_col, &[("S", " Search"), ("N", " Next"), ("V", " Next Pg"),    ("M+M", " Move To"), ("", ""), ("", "")], colors.menu_bg, colors.accent, colors.fg)?;
+        Editor::draw_menu_line(stdout, rows - 2, cols, r_col, &[("*", " Flag"), ("P", " Prev"), ("Y", " Prev Pg"),  ("M+T", " Theme"),   ("", ""), ("O", " Other (2/2)")], colors.menu_bg, colors.accent, colors.fg)?;
+        Editor::draw_menu_line(stdout, rows - 1, cols, r_col, &[("U", " (Un)Read"), ("N", " Next"), ("V", " Next Pg"),    ("M+M", " Move To"), ("", ""), ("?", " Help")], colors.menu_bg, colors.accent, colors.fg)?;
     }
 
     if let Some(time) = app.list_status_time {
@@ -610,6 +924,9 @@ fn draw_email_list(stdout: &mut std::io::Stdout, app: &App, cols: u16, rows: u16
             queue!(stdout, cursor::MoveTo(0, rows - 3), SetBackgroundColor(colors.selected_bg), terminal::Clear(ClearType::UntilNewLine), SetForegroundColor(colors.accent), Print(format!("{} ", app.list_status)), ResetColor)?;
         }
     }
+
+    queue!(stdout, cursor::Hide)?;
+
     Ok(())
 }
 
@@ -658,8 +975,8 @@ fn draw_folder_list(stdout: &mut std::io::Stdout, app: &App, cols: u16, rows: u1
     let rename_opt = if is_selected_folder_custom { ("R", " Rename") } else { ("", "") };
     let del_opt = if is_selected_folder_custom { ("D", " Del Fldr") } else { ("", "") };
 
-    Editor::draw_menu_line(stdout, rows - 2, cols, m_col, &[("M", " Main Menu"), ("P", " Prev"), ("Y", " Prev Pg"), (">", " Select"), rename_opt], colors.menu_bg, colors.accent, colors.fg)?;
-    Editor::draw_menu_line(stdout, rows - 1, cols, m_col, &[("<", " Back"), ("N", " Next"), ("V", " Next Pg"), ("A", " Add Fldr"), del_opt], colors.menu_bg, colors.accent, colors.fg)?;
+    Editor::draw_menu_line(stdout, rows - 2, cols, m_col, &[("M", " Main Menu"), ("P", " Prev"), ("Y", " Prev Pg"), (">", " Select"), rename_opt, ("","")], colors.menu_bg, colors.accent, colors.fg)?;
+    Editor::draw_menu_line(stdout, rows - 1, cols, m_col, &[("<", " Back"), ("N", " Next"), ("V", " Next Pg"), ("A", " Add Fldr"), del_opt, ("?", " Help")], colors.menu_bg, colors.accent, colors.fg)?;
     Ok(())
 }
 
@@ -686,7 +1003,7 @@ fn draw_main_menu(stdout: &mut std::io::Stdout, app: &App, cols: u16, rows: u16,
 
     let m_col = (cols as usize / 6).max(1);
     Editor::draw_menu_line(stdout, rows - 2, cols, m_col, &[("", ""), ("P", " Prev"), (">", " Select"), ("", ""), ("", ""), ("", "")], colors.menu_bg, colors.accent, colors.fg)?;
-    Editor::draw_menu_line(stdout, rows - 1, cols, m_col, &[("Q", " Quit"), ("N", " Next"), ("", ""), ("", ""), ("", ""), ("", "")], colors.menu_bg, colors.accent, colors.fg)?;
+    Editor::draw_menu_line(stdout, rows - 1, cols, m_col, &[("Q", " Quit"), ("N", " Next"), ("", ""), ("", ""), ("", ""), ("?", " Help")], colors.menu_bg, colors.accent, colors.fg)?;
 
     if app.accounts.is_empty() {
         queue!(stdout, cursor::MoveTo(0, rows.saturating_sub(3)), SetForegroundColor(Color::Red), Print("No email account. Please type 'E' and Add an email account."), ResetColor)?;

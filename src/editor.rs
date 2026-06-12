@@ -169,9 +169,9 @@ impl Editor {
             KeyCode::Char('6') if is_ctrl => self.toggle_mark(),
             KeyCode::Char('a') if is_alt => self.toggle_mark(),
 
-            KeyCode::Char('g') if is_ctrl => self.show_help()?,
-            KeyCode::F(1) => self.show_help()?,
-
+            KeyCode::Char('g') if is_ctrl => { self.show_help("composer")?; return Ok(EditorResult::Continue); }
+            KeyCode::F(1) => { self.show_help("composer")?; return Ok(EditorResult::Continue); }
+            
             KeyCode::Char('x') if is_ctrl => self.exit_editor()?,
             KeyCode::F(2) => self.exit_editor()?,
 
