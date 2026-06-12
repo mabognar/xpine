@@ -24,7 +24,6 @@ pub fn view_email(
     attachments: &[(String, Vec<u8>)]
 ) {
     let mut reader = Editor::new(None);
-    let mut reader = Editor::new(None);
     reader.menu_state = MenuState::EmailReader;
 
     let attach_lines = if attachments.is_empty() { 1 } else { 1 + attachments.len() };

@@ -15,8 +15,6 @@ mod prompt;
 mod read;
 mod browser;
 
-use crate::prompt::PromptExt;
-
 use app::{App, AppMode};
 use config::load_config;
 use editor::{Editor};

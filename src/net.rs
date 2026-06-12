@@ -77,7 +77,7 @@ pub struct GraphMessage {
     pub flag: Option<GraphFlag>,
     #[serde(rename = "singleValueExtendedProperties")]
     pub single_value_extended_properties: Option<Vec<GraphExtendedProperty>>,
-    #[serde(default)]
+    
     pub size: Option<u32>,
 }
 
@@ -574,12 +574,39 @@ pub fn fetch_emails(session: &mut MailSession, app: &mut App, items_per_page: u3
 
             let mut is_text_search = false;
 
-            // Updated URL: Added &$expand=singleValueExtendedProperties($filter=id eq 'Integer 0x1081')
+
+
+            // let url = if let Some(ref q) = app.search_query {
+            //     if q.trim() == "*" {
+            //         let order = if sort_newest_first { "receivedDateTime%20DESC" } else { "receivedDateTime%20ASC" };
+            //         format!(
+            //             "https://graph.microsoft.com/v1.0/me/mailFolders/{}/messages?$count=true&$top={}&$skip={}&$orderby={}&$filter=flag/flagStatus%20eq%20'flagged'&$select=id,receivedDateTime,subject,from,toRecipients,ccRecipients,replyTo,isRead,flag&$expand=singleValueExtendedProperties($filter=id eq 'Integer 0x1081')",
+            //             folder, items_per_page, skip, order
+            //         )
+            //     } else {
+            //         is_text_search = true;
+            //         let search_str = format!("\"{}\"", q);
+            //         let encoded_q = urlencoding::encode(&search_str);
+            //
+            //         format!(
+            //             "https://graph.microsoft.com/v1.0/me/mailFolders/{}/messages?$top={}&$skip={}&$search={}&$select=id,receivedDateTime,subject,from,toRecipients,ccRecipients,replyTo,isRead,flag&$expand=singleValueExtendedProperties($filter=id eq 'Integer 0x1081')",
+            //             folder, items_per_page, skip, encoded_q
+            //         )
+            //     }
+            // } else {
+            //     let order = if sort_newest_first { "receivedDateTime%20DESC" } else { "receivedDateTime%20ASC" };
+            //     format!(
+            //         "https://graph.microsoft.com/v1.0/me/mailFolders/{}/messages?$count=true&$top={}&$skip={}&$orderby={}&$select=id,receivedDateTime,subject,from,toRecipients,ccRecipients,replyTo,isRead,flag&$expand=singleValueExtendedProperties($filter=id eq 'Integer 0x1081')",
+            //         folder, items_per_page, skip, order
+            //     )
+            // };
+
             let url = if let Some(ref q) = app.search_query {
                 if q.trim() == "*" {
                     let order = if sort_newest_first { "receivedDateTime%20DESC" } else { "receivedDateTime%20ASC" };
                     format!(
-                        "https://graph.microsoft.com/v1.0/me/mailFolders/{}/messages?$count=true&$top={}&$skip={}&$orderby={}&$filter=flag/flagStatus%20eq%20'flagged'&$select=id,receivedDateTime,subject,from,toRecipients,ccRecipients,replyTo,isRead,flag&$expand=singleValueExtendedProperties($filter=id eq 'Integer 0x1081')",
+                        // Removed $select completely
+                        "https://graph.microsoft.com/v1.0/me/mailFolders/{}/messages?$count=true&$top={}&$skip={}&$orderby={}&$filter=flag/flagStatus%20eq%20'flagged'&$expand=singleValueExtendedProperties($filter=id eq 'Integer 0x1081')",
                         folder, items_per_page, skip, order
                     )
                 } else {
@@ -588,18 +615,20 @@ pub fn fetch_emails(session: &mut MailSession, app: &mut App, items_per_page: u3
                     let encoded_q = urlencoding::encode(&search_str);
 
                     format!(
-                        "https://graph.microsoft.com/v1.0/me/mailFolders/{}/messages?$top={}&$skip={}&$search={}&$select=id,receivedDateTime,subject,from,toRecipients,ccRecipients,replyTo,isRead,flag&$expand=singleValueExtendedProperties($filter=id eq 'Integer 0x1081')",
+                        // Removed $select completely
+                        "https://graph.microsoft.com/v1.0/me/mailFolders/{}/messages?$top={}&$skip={}&$search={}&$expand=singleValueExtendedProperties($filter=id eq 'Integer 0x1081')",
                         folder, items_per_page, skip, encoded_q
                     )
                 }
             } else {
                 let order = if sort_newest_first { "receivedDateTime%20DESC" } else { "receivedDateTime%20ASC" };
                 format!(
-                    "https://graph.microsoft.com/v1.0/me/mailFolders/{}/messages?$count=true&$top={}&$skip={}&$orderby={}&$select=id,receivedDateTime,subject,from,toRecipients,ccRecipients,replyTo,isRead,flag&$expand=singleValueExtendedProperties($filter=id eq 'Integer 0x1081')",
+                    // Removed $select completely
+                    "https://graph.microsoft.com/v1.0/me/mailFolders/{}/messages?$count=true&$top={}&$skip={}&$orderby={}&$expand=singleValueExtendedProperties($filter=id eq 'Integer 0x1081')",
                     folder, items_per_page, skip, order
                 )
             };
-            
+
             let client = reqwest::blocking::Client::new();
             let res = client.get(&url)
                 .header("Authorization", format!("Bearer {}", access_token))
@@ -629,15 +658,36 @@ pub fn fetch_emails(session: &mut MailSession, app: &mut App, items_per_page: u3
                             Box::new(graph_data.value.into_iter())
                         };
 
+                        // for msg in messages_iter {
+                        //     // --- PARSING LOGIC START ---
+                        //     let mut is_answered = false;
+                        //     if let Some(props) = &msg.single_value_extended_properties {
+                        //         for prop in props {
+                        //             // 102 is the MAPI code for "Replied"
+                        //             if prop.id == "Integer 0x1081" && prop.value == "102" {
+                        //                 is_answered = true;
+                        //                 break;
+                        //             }
+                        //         }
+                        //     }
+
                         for msg in messages_iter {
                             // --- PARSING LOGIC START ---
                             let mut is_answered = false;
+                            let mut msg_size = 0; // Initialize size to 0
+
                             if let Some(props) = &msg.single_value_extended_properties {
                                 for prop in props {
                                     // 102 is the MAPI code for "Replied"
                                     if prop.id == "Integer 0x1081" && prop.value == "102" {
                                         is_answered = true;
-                                        break;
+                                        // CRITICAL: DO NOT PUT `break;` HERE!
+                                        // It will skip parsing the size if the email was replied to!
+                                    } else if prop.id.eq_ignore_ascii_case("Integer 0x0e08") {
+                                        // 0x0e08 is the MAPI code for PR_MESSAGE_SIZE
+                                        if let Ok(parsed_size) = prop.value.parse::<u32>() {
+                                            msg_size = parsed_size;
+                                        }
                                     }
                                 }
                             }
@@ -690,22 +740,39 @@ pub fn fetch_emails(session: &mut MailSession, app: &mut App, items_per_page: u3
 
                             let is_flagged = msg.flag.and_then(|f| f.flag_status).map_or(false, |s| s.to_lowercase() == "flagged");
 
+                            // app.page_emails.push(EmailMeta {
+                            //     id: msg.id, // Native Graph String ID
+                            //     uid: 0,
+                            //     timestamp: internal_date,
+                            //     subject: msg.subject.unwrap_or_else(|| "No Subject".to_string()),
+                            //     from,
+                            //     reply_to,
+                            //     // reply_to_display: String::new(),
+                            //     to_addr,
+                            //     cc,
+                            //     date: date_str,
+                            //     size: 0,
+                            //     is_read: msg.is_read,
+                            //     is_deleted: false,
+                            //     is_flagged,
+                            //     is_answered, // Flag set correctly
+                            // });
+
                             app.page_emails.push(EmailMeta {
-                                id: msg.id, // Native Graph String ID
+                                id: msg.id,
                                 uid: 0,
                                 timestamp: internal_date,
                                 subject: msg.subject.unwrap_or_else(|| "No Subject".to_string()),
                                 from,
                                 reply_to,
-                                // reply_to_display: String::new(),
                                 to_addr,
                                 cc,
                                 date: date_str,
-                                size: 0,
+                                size: msg.size.unwrap_or(0), // Grab the native size!
                                 is_read: msg.is_read,
                                 is_deleted: false,
                                 is_flagged,
-                                is_answered, // Flag set correctly
+                                is_answered,
                             });
                         }
 
