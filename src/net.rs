@@ -417,7 +417,7 @@ pub fn fetch_emails(session: &mut MailSession, app: &mut App, items_per_page: u3
             } else {
                 if app.total_messages > 0 {
                     let mut end_idx = app.total_messages.saturating_sub(app.current_page * items_per_page);
-                    let mut start_idx = end_idx.saturating_sub(items_per_page - 1).max(1);
+                    let start_idx = end_idx.saturating_sub(items_per_page - 1).max(1);
 
                     // NEW: Populate the page fully if there are enough messages
                     if start_idx == 1 {

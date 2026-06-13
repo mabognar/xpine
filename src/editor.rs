@@ -679,4 +679,232 @@ impl Editor {
         }
         Ok(())
     }
+
+    pub fn edit_buffer(&mut self, title: &str, initial_content: &str) -> io::Result<Option<String>> {
+        // 1. SAVE STATE: Bookmark where the editor currently is
+        let prev_buffer = self.buffer.clone();
+        let prev_menu_state = self.menu_state;
+        let prev_top_margin = self.top_margin;
+        let prev_cursor_x = self.cursor_x;
+        let prev_cursor_y = self.cursor_y;
+        let prev_col_offset = self.col_offset;
+        let prev_row_offset = self.row_offset;
+
+        // FIX 1: Save the lingering status message state
+        let prev_status_message = self.status_message.clone();
+        let prev_status_time = self.status_time;
+
+        // 2. SANDBOX SETUP
+        self.buffer = ropey::Rope::from_str(initial_content);
+        self.menu_state = MenuState::EmailComposer;
+        self.top_margin = 1;
+
+        // FIX: Calculate exact cursor position for multiline text
+        self.cursor_y = self.buffer.len_lines().saturating_sub(1);
+        self.cursor_x = self.line_len(self.cursor_y);
+        self.desired_cursor_x = self.cursor_x;
+        self.row_offset = 0;
+        self.col_offset = 0;
+
+        // Force the editor to calculate the correct scroll offsets instantly
+        // so if there are 50 emails, the camera immediately pans to the bottom.
+        let _ = self.scroll();
+
+        // Wipe the status message clean for the new window
+        self.status_message = String::new();
+        self.status_time = None;
+
+        let mut stdout = std::io::stdout();
+        let mut result = None;
+        
+        // 3. MINI TUI LOOP
+        loop {
+            let (cols, rows) = crossterm::terminal::size().unwrap_or((80, 24));
+            let theme = &self.theme_set.themes[&self.current_theme];
+            let colors = crate::theme::derive_ui_colors(theme);
+
+            // Draw the Top Title Bar (1 Line High)
+            crossterm::queue!(
+                stdout,
+                crossterm::cursor::MoveTo(0, 0),
+                crossterm::style::SetBackgroundColor(colors.menu_bg),
+                crossterm::terminal::Clear(crossterm::terminal::ClearType::UntilNewLine),
+                crossterm::style::SetForegroundColor(colors.accent),
+                crossterm::style::Print(format!(" {} ", title)),
+                crossterm::style::ResetColor
+            )?;
+
+            // Let the built-in engine handle scrolling, text rendering, and cursor placement
+            self.draw_screen()?;
+
+            // Save the cursor exactly where `draw_screen` just left it
+            crossterm::queue!(stdout, crossterm::cursor::SavePosition)?;
+
+            // Draw the Bottom Menu Hotkeys
+            let m_col = (cols as usize / 6).max(1);
+            Self::draw_menu_line(
+                &mut stdout, rows - 2, cols, m_col,
+                &[("^X", " Save"), ("^C", " Cancel")],
+                colors.menu_bg, colors.accent, colors.fg
+            )?;
+            Self::draw_menu_line(
+                &mut stdout, rows - 1, cols, m_col,
+                &[("", "")],
+                colors.menu_bg, colors.accent, colors.fg
+            )?;
+
+            // Teleport the cursor back up into the text box and show it
+            crossterm::queue!(
+                stdout,
+                crossterm::cursor::RestorePosition,
+                crossterm::cursor::Show
+            )?;
+
+            use std::io::Write;
+            stdout.flush()?;
+
+            // Wait for keystrokes
+            if crossterm::event::poll(std::time::Duration::from_millis(100))? {
+                if let crossterm::event::Event::Key(key_event) = crossterm::event::read()? {
+                    if key_event.kind == crossterm::event::KeyEventKind::Press {
+
+                        // Check for our exit conditions (Ctrl+X or Ctrl+C)
+                        if key_event.modifiers.contains(crossterm::event::KeyModifiers::CONTROL) {
+                            if key_event.code == crossterm::event::KeyCode::Char('x') {
+                                result = Some(self.buffer.to_string());
+                                break;
+                            }
+                            if key_event.code == crossterm::event::KeyCode::Char('c') {
+                                break;
+                            }
+                        }
+
+                        // Otherwise, feed the keystroke to your native text engine
+                        let _ = self.handle_keypress(key_event)?;
+                    }
+                }
+            }
+        }
+
+        // 4. RESTORE STATE
+        self.buffer = prev_buffer;
+        self.menu_state = prev_menu_state;
+        self.top_margin = prev_top_margin;
+        self.cursor_x = prev_cursor_x;
+        self.cursor_y = prev_cursor_y;
+        self.col_offset = prev_col_offset;
+        self.row_offset = prev_row_offset;
+        self.desired_cursor_x = prev_cursor_x;
+
+        // FIX 3: Restore the old status message and timer
+        self.status_message = prev_status_message;
+        self.status_time = prev_status_time;
+
+        Ok(result)
+    }
+
+    // pub fn edit_buffer(&mut self, title: &str, initial_content: &str) -> io::Result<Option<String>> {
+    //     // 1. SAVE STATE: Bookmark where the editor currently is so we don't
+    //     // accidentally wipe out an email the user was drafting!
+    //     let prev_buffer = self.buffer.clone();
+    //     let prev_menu_state = self.menu_state;
+    //     let prev_top_margin = self.top_margin;
+    //     let prev_cursor_x = self.cursor_x;
+    //     let prev_cursor_y = self.cursor_y;
+    //     let prev_col_offset = self.col_offset;
+    //     let prev_row_offset = self.row_offset;
+    //
+    //     // 2. SANDBOX SETUP: Clear the editor out for our temporary team edit
+    //     self.buffer = ropey::Rope::from_str(initial_content);
+    //     self.menu_state = MenuState::EmailComposer;
+    //     self.top_margin = 2; // Reserve the top 2 lines for our title
+    //     self.cursor_x = initial_content.chars().count(); // Put cursor at end of text
+    //     self.cursor_y = 0;
+    //     self.row_offset = 0;
+    //     self.col_offset = 0;
+    //     self.desired_cursor_x = self.cursor_x;
+    //
+    //     let mut stdout = std::io::stdout();
+    //     let mut result = None;
+    //
+    //     // 3. MINI TUI LOOP: Run a blocking editor until they press ^X or ^C
+    //     loop {
+    //         let (cols, rows) = crossterm::terminal::size().unwrap_or((80, 24));
+    //         let theme = &self.theme_set.themes[&self.current_theme];
+    //         let colors = crate::theme::derive_ui_colors(theme);
+    //
+    //         // Draw the Top Title Bar
+    //         crossterm::queue!(
+    //             stdout,
+    //             crossterm::cursor::MoveTo(0, 0),
+    //             crossterm::style::SetBackgroundColor(colors.menu_bg),
+    //             crossterm::terminal::Clear(crossterm::terminal::ClearType::UntilNewLine),
+    //             crossterm::style::SetForegroundColor(colors.accent),
+    //             crossterm::style::Print(format!(" {} ", title)),
+    //             crossterm::style::ResetColor
+    //         )?;
+    //
+    //         crossterm::queue!(
+    //             stdout,
+    //             crossterm::cursor::MoveTo(0, 1),
+    //             crossterm::style::SetBackgroundColor(colors.menu_bg),
+    //             crossterm::terminal::Clear(crossterm::terminal::ClearType::UntilNewLine),
+    //         )?;
+    //
+    //         // Let the built-in engine handle all the scrolling, text rendering, and cursor math
+    //         self.draw_screen()?;
+    //
+    //         // Draw the Bottom Menu Hotkeys
+    //         let m_col = (cols as usize / 6).max(1);
+    //         Self::draw_menu_line(
+    //             &mut stdout, rows - 2, cols, m_col,
+    //             &[("^X", " Save"), ("^C", " Cancel")],
+    //             colors.menu_bg, colors.accent, colors.fg
+    //         )?;
+    //         Self::draw_menu_line(
+    //             &mut stdout, rows - 1, cols, m_col,
+    //             &[("", "")],
+    //             colors.menu_bg, colors.accent, colors.fg
+    //         )?;
+    //
+    //         crossterm::queue!(stdout, crossterm::cursor::Show)?;
+    //         use std::io::Write;
+    //         stdout.flush()?;
+    //
+    //         // Wait for keystrokes
+    //         if crossterm::event::poll(std::time::Duration::from_millis(100))? {
+    //             if let crossterm::event::Event::Key(key_event) = crossterm::event::read()? {
+    //                 if key_event.kind == crossterm::event::KeyEventKind::Press {
+    //
+    //                     // Check for our exit conditions (Ctrl+X or Ctrl+C)
+    //                     if key_event.modifiers.contains(crossterm::event::KeyModifiers::CONTROL) {
+    //                         if key_event.code == crossterm::event::KeyCode::Char('x') {
+    //                             result = Some(self.buffer.to_string());
+    //                             break;
+    //                         }
+    //                         if key_event.code == crossterm::event::KeyCode::Char('c') {
+    //                             break; // Returns None
+    //                         }
+    //                     }
+    //
+    //                     // Otherwise, feed the keystroke to your native text engine
+    //                     let _ = self.handle_keypress(key_event)?;
+    //                 }
+    //             }
+    //         }
+    //     }
+    //
+    //     // 4. RESTORE STATE: Put everything exactly back to how the user left it!
+    //     self.buffer = prev_buffer;
+    //     self.menu_state = prev_menu_state;
+    //     self.top_margin = prev_top_margin;
+    //     self.cursor_x = prev_cursor_x;
+    //     self.cursor_y = prev_cursor_y;
+    //     self.col_offset = prev_col_offset;
+    //     self.row_offset = prev_row_offset;
+    //     self.desired_cursor_x = prev_cursor_x;
+    //
+    //     Ok(result)
+    // }
+
 }

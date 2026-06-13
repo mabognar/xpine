@@ -791,7 +791,7 @@ fn draw_email_accounts(stdout: &mut std::io::Stdout, app: &App, cols: u16, rows:
 
     let m_col = (cols as usize / 6).max(1);
     Editor::draw_menu_line(stdout, rows - 2, cols, m_col,
-                           &[(" <", " Back"), ("A", " Add Acct"), ("D", " Del Acct"), ("P", " Prev"), ("M", " MS Auth"), ("", "")],
+                           &[(" <", " Back"), ("A", " Add Acct"), ("D", " Del Acct"), ("P", " Prev"), ("", ""), ("", "")],
                            colors.menu_bg, colors.accent, colors.fg)?;
     Editor::draw_menu_line(stdout, rows - 1, cols, m_col,
                            &[("", ""), ("E", " Edit Acct"), ("", ""), ("N", " Next"), ("", ""), ("", "")],
@@ -937,7 +937,12 @@ fn draw_email_list(stdout: &mut std::io::Stdout, app: &App, cols: u16, rows: u16
 
     if let Some(time) = app.list_status_time {
         if time.elapsed() >= app.list_status_duration {} else if !app.list_status.is_empty() {
-            queue!(stdout, cursor::MoveTo(0, rows - 3), SetBackgroundColor(colors.selected_bg), terminal::Clear(ClearType::UntilNewLine), SetForegroundColor(colors.accent), Print(format!("{} ", app.list_status)), ResetColor)?;
+            queue!(stdout, cursor::MoveTo(0, rows - 3),
+                SetBackgroundColor(colors.selected_bg),
+                terminal::Clear(ClearType::UntilNewLine),
+                SetForegroundColor(colors.accent),
+                Print(format!("{} ",app.list_status)),
+                ResetColor)?;
         }
     }
 

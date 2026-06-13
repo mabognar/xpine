@@ -269,16 +269,90 @@ impl PromptExt for Editor {
         }
     }
 
+    // fn prompt_with_autocomplete(&mut self, prompt_text: &str, suggestions: &[String]) -> io::Result<Option<String>> {
+    //     let mut stdout = stdout();
+    //     let mut input = String::new();
+    //     let (_, rows) = term_size()?;
+    //
+    //     execute!(stdout, cursor::Show)?;
+    //     let theme = &self.theme_set.themes[&self.current_theme];
+    //     let colors = derive_ui_colors(theme);
+    //
+    //     loop {
+    //         // Calculate the current autocomplete hint
+    //         let mut hint = String::new();
+    //         if !input.is_empty() {
+    //             let last_part = input.split(',').last().unwrap_or("").trim_start();
+    //             if !last_part.is_empty() {
+    //                 for addr in suggestions {
+    //                     if addr.to_lowercase().starts_with(&last_part.to_lowercase()) {
+    //                         hint = addr[last_part.len()..].to_string();
+    //                         break;
+    //                     }
+    //                 }
+    //             }
+    //         }
+    //
+    //         queue!(
+    //             stdout,
+    //             cursor::MoveTo(0, rows - 3),
+    //             SetBackgroundColor(colors.menu_bg),
+    //             Clear(ClearType::CurrentLine),
+    //             SetForegroundColor(colors.fg),
+    //             Print(prompt_text),
+    //             Print(&input),
+    //             SetForegroundColor(colors.date_color),
+    //             Print(&hint),
+    //             ResetColor
+    //         )?;
+    //
+    //         // 3. Move the cursor to the end of the USER INPUT (not the end of the hint)
+    //         let cursor_x = prompt_text.len() as u16 + input.len() as u16;
+    //         queue!(stdout, cursor::MoveTo(cursor_x, rows - 3))?;
+    //
+    //         stdout.flush()?;
+    //
+    //         if let Event::Key(key) = event::read()? {
+    //             if key.kind == KeyEventKind::Press {
+    //                 match key.code {
+    //                     KeyCode::Enter => {
+    //                         execute!(stdout, cursor::Hide)?; // Hide cursor before returning
+    //                         return Ok(Some(input));
+    //                     },
+    //                     KeyCode::Char('c') | KeyCode::Char('C') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+    //                         execute!(stdout, cursor::Hide)?; // Hide cursor before returning
+    //                         return Ok(None);
+    //                     }
+    //                     KeyCode::Esc => {
+    //                         execute!(stdout, cursor::Hide)?; // Hide cursor before returning
+    //                         return Ok(None);
+    //                     },
+    //                     KeyCode::Backspace => { input.pop(); },
+    //                     KeyCode::Char(c) => input.push(c),
+    //                     KeyCode::Right | KeyCode::Tab => {
+    //                         if !hint.is_empty() {
+    //                             input.push_str(&hint);
+    //                         }
+    //                     }
+    //                     _ => {}
+    //                 }
+    //             }
+    //         }
+    //     }
+    // }
+
     fn prompt_with_autocomplete(&mut self, prompt_text: &str, suggestions: &[String]) -> io::Result<Option<String>> {
         let mut stdout = stdout();
         let mut input = String::new();
-        let (_, rows) = term_size()?;
 
         execute!(stdout, cursor::Show)?;
         let theme = &self.theme_set.themes[&self.current_theme];
         let colors = derive_ui_colors(theme);
 
         loop {
+            // 1. Check screen size every loop in case the user resizes the terminal
+            let (cols, rows) = term_size().unwrap_or((80, 24));
+
             // Calculate the current autocomplete hint
             let mut hint = String::new();
             if !input.is_empty() {
@@ -293,22 +367,45 @@ impl PromptExt for Editor {
                 }
             }
 
+            // --- 2. HORIZONTAL WINDOWING LOGIC ---
+            let prompt_len = prompt_text.chars().count();
+            let hint_len = hint.chars().count();
+            let input_len = input.chars().count();
+
+            // Calculate the maximum space we have on screen for the typed input
+            // Subtracting prompt length, hint length, and a 1-character safety buffer
+            let max_input_display = (cols as usize).saturating_sub(prompt_len + hint_len + 1);
+
+            // If the user's input is wider than the available space, slice the string
+            let display_input = if input_len > max_input_display {
+                // Reserve 3 characters for the "..."
+                let start_idx = input_len.saturating_sub(max_input_display.saturating_sub(3));
+                let window: String = input.chars().skip(start_idx).collect();
+                format!("...{}", window)
+            } else {
+                input.clone()
+            };
+            // -------------------------------------
+
+            let prompt_y = rows.saturating_sub(3);
+
             queue!(
             stdout,
-            cursor::MoveTo(0, rows - 3),
+            cursor::MoveTo(0, prompt_y),
             SetBackgroundColor(colors.menu_bg),
             Clear(ClearType::CurrentLine),
             SetForegroundColor(colors.fg),
             Print(prompt_text),
-            Print(&input),
+            Print(&display_input), // Use the sliced display text here!
             SetForegroundColor(colors.date_color),
             Print(&hint),
             ResetColor
         )?;
 
             // 3. Move the cursor to the end of the USER INPUT (not the end of the hint)
-            let cursor_x = prompt_text.len() as u16 + input.len() as u16;
-            queue!(stdout, cursor::MoveTo(cursor_x, rows - 3))?;
+            // Use the DISPLAY input length so the hardware cursor matches the screen!
+            let cursor_x = (prompt_len + display_input.chars().count()) as u16;
+            queue!(stdout, cursor::MoveTo(cursor_x, prompt_y))?;
 
             stdout.flush()?;
 
@@ -320,11 +417,11 @@ impl PromptExt for Editor {
                             return Ok(Some(input));
                         },
                         KeyCode::Char('c') | KeyCode::Char('C') if key.modifiers.contains(KeyModifiers::CONTROL) => {
-                            execute!(stdout, cursor::Hide)?; // Hide cursor before returning
+                            execute!(stdout, cursor::Hide)?;
                             return Ok(None);
                         }
                         KeyCode::Esc => {
-                            execute!(stdout, cursor::Hide)?; // Hide cursor before returning
+                            execute!(stdout, cursor::Hide)?;
                             return Ok(None);
                         },
                         KeyCode::Backspace => { input.pop(); },

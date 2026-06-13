@@ -8,7 +8,6 @@ use crossterm::execute;
 use crossterm::terminal::size as term_size;
 use crate::prompt::PromptExt;
 use crate::ui::UiExt;
-use crate::editor;
 
 fn check_and_expunge_outlook(app: &mut App, session: &mut Option<MailSession>, theme_provider: &mut Editor) {
     let is_outlook = app.active_account.imap_server.to_lowercase().contains("outlook") ||
@@ -45,7 +44,7 @@ fn check_and_expunge_outlook(app: &mut App, session: &mut Option<MailSession>, t
     }
 }
 
-pub fn handle_event(event: Event, app: &mut App, session: &mut Option<MailSession>, editor: &mut Editor, theme_provider: &mut Editor, stdout: &mut std::io::Stdout) -> bool {
+pub fn handle_event(event: Event, app: &mut App, session: &mut Option<MailSession>, theme_provider: &mut Editor, stdout: &mut std::io::Stdout) -> bool {
     let mut quit = false;
 
     if let Event::Key(k) = event {
@@ -120,6 +119,7 @@ fn handle_address_book_events(k: KeyEvent, app: &mut App, theme_provider: &mut E
                 if let Ok(Some(team_name)) = theme_provider.prompt("Team Name (e.g. My Team): ", false) {
                     let team_name = team_name.trim();
                     if !team_name.is_empty() {
+                        // REVERTED: Using prompt_with_autocomplete to keep email hints!
                         if let Ok(Some(emails)) = theme_provider.prompt_with_autocomplete("Emails (comma separated): ", &addresses) {
                             let trimmed_emails = emails.trim().trim_end_matches(';');
                             if !trimmed_emails.is_empty() {
@@ -143,10 +143,50 @@ fn handle_address_book_events(k: KeyEvent, app: &mut App, theme_provider: &mut E
         KeyCode::Char('e') | KeyCode::Char('E') => {
             if !addresses.is_empty() && !addresses[selected_idx].trim().is_empty() {
                 let current_val = &addresses[selected_idx];
-                if let Ok(Some(new_val)) = theme_provider.prompt_edit("Edit: ", current_val) {
-                    if !new_val.trim().is_empty() {
-                        addresses[selected_idx] = new_val.trim().to_string();
-                        crate::address::clean_and_save_address_book(&mut addresses);                    }
+
+                // Check if this is a Team (contains a colon)
+                if current_val.contains(':') {
+                    // --- TEAM EDITING: Use Multiline Editor ---
+                    let (prefix, emails_part) = if let Some(colon_idx) = current_val.find(':') {
+                        let prefix = &current_val[..colon_idx];
+                        let emails = current_val[colon_idx + 1..].trim_end_matches(';').trim();
+                        (prefix, emails)
+                    } else {
+                        ("", current_val.as_str())
+                    };
+
+                    let multiline_emails = emails_part
+                        .split(',')
+                        .map(|s| s.trim())
+                        .filter(|s| !s.is_empty())
+                        .collect::<Vec<&str>>()
+                        .join("\n");
+
+                    let title = format!("Edit Team: {}", prefix);
+
+                    if let Ok(Some(edited_text)) = theme_provider.edit_buffer(&title, &multiline_emails) {
+                        let cleaned_emails = edited_text
+                            .replace('\n', ",")
+                            .replace(';', ",")
+                            .split(',')
+                            .map(|s| s.trim())
+                            .filter(|s| !s.is_empty())
+                            .collect::<Vec<&str>>()
+                            .join(", ");
+
+                        if !cleaned_emails.is_empty() {
+                            addresses[selected_idx] = format!("{}: {};", prefix, cleaned_emails);
+                            crate::address::clean_and_save_address_book(&mut addresses);
+                        }
+                    }
+                } else {
+                    // --- SINGLE ADDRESS EDITING: Use one-line prompt_edit ---
+                    if let Ok(Some(new_val)) = theme_provider.prompt_edit("Edit: ", current_val) {
+                        if !new_val.trim().is_empty() {
+                            addresses[selected_idx] = new_val.trim().to_string();
+                            crate::address::clean_and_save_address_book(&mut addresses);
+                        }
+                    }
                 }
             }
         }
@@ -286,52 +326,52 @@ fn handle_email_accounts_events(k: KeyEvent, app: &mut App, theme_provider: &mut
                 }
             }
         }
-        KeyCode::Char('m') | KeyCode::Char('M') => {
-            if !app.accounts.is_empty() {
-                let mut acc = app.accounts[selected_idx].clone();
-
-                let client_id = acc.client_id.as_deref().unwrap_or("YOUR_MS_CLIENT_ID");
-                let client_secret = acc.client_secret.as_deref().unwrap_or("YOUR_MS_CLIENT_SECRET");
-
-                let _ = crossterm::terminal::disable_raw_mode();
-                let _ = execute!(std::io::stdout(), crossterm::terminal::LeaveAlternateScreen);
-
-                println!("Account Email: {}", acc.email);
-                println!("Client ID being sent: '{}'", client_id);
-                println!("Client Secret being sent: '{}'", client_secret);
-
-                let auth_result = net::run_microsoft_auth_flow(client_id, client_secret);
-
-                match auth_result {
-                    Ok(tokens) => {
-                        if let Some(refresh) = tokens.refresh_token {
-                            acc.refresh_token = Some(refresh);
-                            app.accounts[selected_idx] = acc;
-                            crate::config::save_config(&app.accounts);
-
-                            app.update_status("MS Auth Successful. Token saved.".to_string());
-                        }
-                    },
-                    Err(e) => {
-                        println!("\r\nAuthentication Failed!");
-                        println!("Error details: {}\r\n", e);
-                        println!("Press ENTER to return to xpine...");
-
-                        let mut input = String::new();
-                        let _ = std::io::stdin().read_line(&mut input);
-
-                        app.update_status("MS Auth Failed.".to_string());
-                    }
-                }
-
-                let _ = crossterm::terminal::enable_raw_mode();
-                let _ = execute!(
-                    std::io::stdout(),
-                    crossterm::terminal::EnterAlternateScreen,
-                    crossterm::terminal::Clear(crossterm::terminal::ClearType::All)
-                );
-            }
-        },
+        // KeyCode::Char('m') | KeyCode::Char('M') => {
+        //     if !app.accounts.is_empty() {
+        //         let mut acc = app.accounts[selected_idx].clone();
+        //
+        //         let client_id = acc.client_id.as_deref().unwrap_or("YOUR_MS_CLIENT_ID");
+        //         let client_secret = acc.client_secret.as_deref().unwrap_or("YOUR_MS_CLIENT_SECRET");
+        //
+        //         let _ = crossterm::terminal::disable_raw_mode();
+        //         let _ = execute!(std::io::stdout(), crossterm::terminal::LeaveAlternateScreen);
+        //
+        //         println!("Account Email: {}", acc.email);
+        //         println!("Client ID being sent: '{}'", client_id);
+        //         println!("Client Secret being sent: '{}'", client_secret);
+        //
+        //         let auth_result = net::run_microsoft_auth_flow(client_id, client_secret);
+        //
+        //         match auth_result {
+        //             Ok(tokens) => {
+        //                 if let Some(refresh) = tokens.refresh_token {
+        //                     acc.refresh_token = Some(refresh);
+        //                     app.accounts[selected_idx] = acc;
+        //                     crate::config::save_config(&app.accounts);
+        //
+        //                     app.update_status("MS Auth Successful. Token saved.".to_string());
+        //                 }
+        //             },
+        //             Err(e) => {
+        //                 println!("\r\nAuthentication Failed!");
+        //                 println!("Error details: {}\r\n", e);
+        //                 println!("Press ENTER to return to xpine...");
+        //
+        //                 let mut input = String::new();
+        //                 let _ = std::io::stdin().read_line(&mut input);
+        //
+        //                 app.update_status("MS Auth Failed.".to_string());
+        //             }
+        //         }
+        //
+        //         let _ = crossterm::terminal::enable_raw_mode();
+        //         let _ = execute!(
+        //             std::io::stdout(),
+        //             crossterm::terminal::EnterAlternateScreen,
+        //             crossterm::terminal::Clear(crossterm::terminal::ClearType::All)
+        //         );
+        //     }
+        // },
         KeyCode::Char('e') | KeyCode::Char('E') => {
             if !app.accounts.is_empty() {
                 let acc = &app.accounts[selected_idx].clone();
@@ -771,7 +811,7 @@ fn handle_email_list_events(k: KeyEvent, app: &mut App, session: &mut Option<Mai
         KeyCode::Char('h') | KeyCode::Char('H') | KeyCode::Char('?') => {
             let _ = theme_provider.show_help("email_list");
         }
-        KeyCode::Char('q') | KeyCode::Esc => {
+        KeyCode::Char('q')  => {
             check_and_expunge_outlook(app, session, theme_provider);
             *quit = true;
         },

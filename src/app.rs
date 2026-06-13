@@ -113,6 +113,6 @@ impl App {
     pub fn update_status(&mut self, msg: String) {
         self.list_status = msg;
         self.list_status_time = Some(Instant::now());
-        self.list_status_duration = Duration::from_millis(1500);
+        self.list_status_duration = Duration::from_millis(3000);
     }
 }
