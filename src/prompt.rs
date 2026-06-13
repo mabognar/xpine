@@ -319,6 +319,10 @@ impl PromptExt for Editor {
                             execute!(stdout, cursor::Hide)?; // Hide cursor before returning
                             return Ok(Some(input));
                         },
+                        KeyCode::Char('c') | KeyCode::Char('C') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+                            execute!(stdout, cursor::Hide)?; // Hide cursor before returning
+                            return Ok(None);
+                        }
                         KeyCode::Esc => {
                             execute!(stdout, cursor::Hide)?; // Hide cursor before returning
                             return Ok(None);
@@ -368,35 +372,30 @@ impl PromptExt for Editor {
 
             let (_, rows) = terminal::size().unwrap_or((80, 24));
 
-            // We queue the commands to temporarily overwrite the menu
-            queue!(
-                stdout(),
-                cursor::SavePosition, // 1. Save where the typing cursor currently is!
+            queue!(stdout(), cursor::SavePosition)?;
 
-                SetBackgroundColor(colors.menu_bg),
-                SetForegroundColor(colors.fg),
+            let ui_colors = derive_ui_colors(theme);
+            let col_width = (cols as usize / 6).max(1);
 
-                // 2. Move to the menu area (Assuming a standard 2-line menu at the bottom)
-                cursor::MoveTo(0, rows - 2),
-                Clear(ClearType::CurrentLine),
-                cursor::MoveTo(0, rows - 1),
-                Clear(ClearType::CurrentLine),
-
-                // 3. Draw the contextual menu
-                cursor::MoveTo(0, rows - 1),
-                // You can wrap these in your app's theme colors if you pass them into the function!
-                Print("^C"),
-                Print(" Cancel"),
-
-                // 4. Put the cursor back exactly where it was so the user can type
-                cursor::RestorePosition,
-                ResetColor,
+            Self::draw_menu_line(
+                &mut stdout(), rows.saturating_sub(2), cols, col_width,
+                &[("", ""), ("", ""), ("", ""), ("", ""), ("", ""), ("", "")],
+                ui_colors.menu_bg, ui_colors.accent, ui_colors.fg,
+            )?;
+            Self::draw_menu_line(
+                &mut stdout(), rows.saturating_sub(1), cols, col_width,
+                &[("^C", " Cancel"), ("", ""), ("", ""), ("", ""), ("", ""), ("", "")],
+                ui_colors.menu_bg, ui_colors.accent, ui_colors.fg,
             )?;
 
-            // Flush to make sure it draws to the screen before the blocking loop starts
+            queue!(
+                stdout(),
+                cursor::RestorePosition,
+                ResetColor
+            )?;
+
             stdout().flush()?;
 
-            // Calculate cursor position based on the INTERNAL index, not the total length
             let prompt_len = prompt_text.chars().count();
             let cursor_x = (prompt_len + 1 + cursor_idx) as u16;
 

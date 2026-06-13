@@ -385,6 +385,8 @@ pub fn fetch_emails(session: &mut MailSession, app: &mut App, items_per_page: u3
             let sequence = if let Some(ref q) = app.search_query {
                 let query = if q.trim() == "*" {
                     String::from("FLAGGED")
+                } else if q.trim().eq_ignore_ascii_case("n") { // Intercept "N" or "n"
+                    String::from("UNSEEN")
                 } else {
                     format!("OR FROM \"{}\" SUBJECT \"{}\"", q, q)
                 };
@@ -396,8 +398,13 @@ pub fn fetch_emails(session: &mut MailSession, app: &mut App, items_per_page: u3
                         let mut sorted_seqs: Vec<u32> = seq_ids.into_iter().collect();
                         sorted_seqs.sort();
 
-                        let end_idx = sorted_seqs.len().saturating_sub((app.current_page * items_per_page) as usize);
+                        let mut end_idx = sorted_seqs.len().saturating_sub((app.current_page * items_per_page) as usize);
                         let start_idx = end_idx.saturating_sub(items_per_page as usize - 1).max(1);
+
+                        // NEW: Populate the page fully if there are enough messages
+                        if start_idx == 1 {
+                            end_idx = (items_per_page as usize).min(sorted_seqs.len());
+                        }
 
                         let page_seqs = &sorted_seqs[(start_idx - 1)..end_idx];
                         page_seqs.iter().map(|id| id.to_string()).collect::<Vec<_>>().join(",")
@@ -409,13 +416,28 @@ pub fn fetch_emails(session: &mut MailSession, app: &mut App, items_per_page: u3
                 }
             } else {
                 if app.total_messages > 0 {
-                    let end_idx = app.total_messages.saturating_sub(app.current_page * items_per_page);
-                    let start_idx = end_idx.saturating_sub(items_per_page - 1).max(1);
+                    let mut end_idx = app.total_messages.saturating_sub(app.current_page * items_per_page);
+                    let mut start_idx = end_idx.saturating_sub(items_per_page - 1).max(1);
+
+                    // NEW: Populate the page fully if there are enough messages
+                    if start_idx == 1 {
+                        end_idx = items_per_page.min(app.total_messages);
+                    }
+
                     format!("{}:{}", start_idx, end_idx)
                 } else {
                     return;
                 }
             };
+            // } else {
+            //     if app.total_messages > 0 {
+            //         let end_idx = app.total_messages.saturating_sub(app.current_page * items_per_page);
+            //         let start_idx = end_idx.saturating_sub(items_per_page - 1).max(1);
+            //         format!("{}:{}", start_idx, end_idx)
+            //     } else {
+            //         return;
+            //     }
+            // };
 
             if !sequence.is_empty() {
                 if let Ok(messages) = imap_sess.fetch(&sequence, "(UID ENVELOPE FLAGS RFC822.SIZE INTERNALDATE)") {
@@ -452,6 +474,18 @@ pub fn fetch_emails(session: &mut MailSession, app: &mut App, items_per_page: u3
                                 subject = decode_mime_string(s);
                             }
 
+                            // if let Some(d) = env.date.as_ref() {
+                            //     let raw_date = String::from_utf8_lossy(d).into_owned();
+                            //     if let Ok(dt) = DateTime::parse_from_rfc2822(&raw_date) {
+                            //         let now = Utc::now().timestamp();
+                            //         let diff = now - dt.timestamp();
+                            //         let local_dt = dt.with_timezone(&Local);
+                            //         date = if diff < 7 * 24 * 3600 && diff >= -86400 { local_dt.format("%a %H:%M").to_string() } else { local_dt.format("%b %d").to_string() };
+                            //     } else {
+                            //         date = raw_date.split(" +").next().unwrap_or(&raw_date).to_string();
+                            //     }
+                            // }
+
                             if let Some(d) = env.date.as_ref() {
                                 let raw_date = String::from_utf8_lossy(d).into_owned();
                                 if let Ok(dt) = DateTime::parse_from_rfc2822(&raw_date) {
@@ -459,9 +493,24 @@ pub fn fetch_emails(session: &mut MailSession, app: &mut App, items_per_page: u3
                                     let diff = now - dt.timestamp();
                                     let local_dt = dt.with_timezone(&Local);
                                     date = if diff < 7 * 24 * 3600 && diff >= -86400 { local_dt.format("%a %H:%M").to_string() } else { local_dt.format("%b %d").to_string() };
+                                } else if let Some(dt) = message.internal_date() {
+                                    // Fallback to the server's guaranteed internal receive time
+                                    let now = Utc::now().timestamp();
+                                    let diff = now - dt.timestamp();
+                                    let local_dt = dt.with_timezone(&Local);
+                                    date = if diff < 7 * 24 * 3600 && diff >= -86400 { local_dt.format("%a %H:%M").to_string() } else { local_dt.format("%b %d").to_string() };
                                 } else {
-                                    date = raw_date.split(" +").next().unwrap_or(&raw_date).to_string();
+                                    // Extreme fallback: truncate to exactly 6 characters (e.g., "Apr 02") to preserve UI column width
+                                    let mut s = raw_date.split(" +").next().unwrap_or(&raw_date).to_string();
+                                    s.truncate(6);
+                                    date = s;
                                 }
+                            } else if let Some(dt) = message.internal_date() {
+                                // Fallback if the Date header is completely missing
+                                let now = Utc::now().timestamp();
+                                let diff = now - dt.timestamp();
+                                let local_dt = dt.with_timezone(&Local);
+                                date = if diff < 7 * 24 * 3600 && diff >= -86400 { local_dt.format("%a %H:%M").to_string() } else { local_dt.format("%b %d").to_string() };
                             }
 
                             macro_rules! format_addrs {
@@ -568,17 +617,20 @@ pub fn fetch_emails(session: &mut MailSession, app: &mut App, items_per_page: u3
 
             let folder = &folder_id;
 
-            let skip = app.current_page * items_per_page;
+            let mut skip = app.current_page * items_per_page;
+
+            // NEW: Shift the skip offset back to populate the page fully if there are enough messages
+            if app.current_page > 0 && skip + items_per_page > app.total_messages && app.total_messages >= items_per_page {
+                skip = app.total_messages - items_per_page;
+            }
 
             let mut is_text_search = false;
-
-
 
             // let url = if let Some(ref q) = app.search_query {
             //     if q.trim() == "*" {
             //         let order = if sort_newest_first { "receivedDateTime%20DESC" } else { "receivedDateTime%20ASC" };
             //         format!(
-            //             "https://graph.microsoft.com/v1.0/me/mailFolders/{}/messages?$count=true&$top={}&$skip={}&$orderby={}&$filter=flag/flagStatus%20eq%20'flagged'&$select=id,receivedDateTime,subject,from,toRecipients,ccRecipients,replyTo,isRead,flag&$expand=singleValueExtendedProperties($filter=id eq 'Integer 0x1081')",
+            //             "https://graph.microsoft.com/v1.0/me/mailFolders/{}/messages?$count=true&$top={}&$skip={}&$orderby={}&$filter=flag/flagStatus%20eq%20'flagged'&$expand=singleValueExtendedProperties($filter=id%20eq%20'Integer%200x1081'%20or%20id%20eq%20'Long%200x0E08')",
             //             folder, items_per_page, skip, order
             //         )
             //     } else {
@@ -587,14 +639,14 @@ pub fn fetch_emails(session: &mut MailSession, app: &mut App, items_per_page: u3
             //         let encoded_q = urlencoding::encode(&search_str);
             //
             //         format!(
-            //             "https://graph.microsoft.com/v1.0/me/mailFolders/{}/messages?$top={}&$skip={}&$search={}&$select=id,receivedDateTime,subject,from,toRecipients,ccRecipients,replyTo,isRead,flag&$expand=singleValueExtendedProperties($filter=id eq 'Integer 0x1081')",
+            //             "https://graph.microsoft.com/v1.0/me/mailFolders/{}/messages?$top={}&$skip={}&$search={}&$expand=singleValueExtendedProperties($filter=id%20eq%20'Integer%200x1081'%20or%20id%20eq%20'Long%200x0E08')",
             //             folder, items_per_page, skip, encoded_q
             //         )
             //     }
             // } else {
             //     let order = if sort_newest_first { "receivedDateTime%20DESC" } else { "receivedDateTime%20ASC" };
             //     format!(
-            //         "https://graph.microsoft.com/v1.0/me/mailFolders/{}/messages?$count=true&$top={}&$skip={}&$orderby={}&$select=id,receivedDateTime,subject,from,toRecipients,ccRecipients,replyTo,isRead,flag&$expand=singleValueExtendedProperties($filter=id eq 'Integer 0x1081')",
+            //         "https://graph.microsoft.com/v1.0/me/mailFolders/{}/messages?$count=true&$top={}&$skip={}&$orderby={}&$expand=singleValueExtendedProperties($filter=id%20eq%20'Integer%200x1081'%20or%20id%20eq%20'Long%200x0E08')",
             //         folder, items_per_page, skip, order
             //     )
             // };
@@ -604,6 +656,12 @@ pub fn fetch_emails(session: &mut MailSession, app: &mut App, items_per_page: u3
                     let order = if sort_newest_first { "receivedDateTime%20DESC" } else { "receivedDateTime%20ASC" };
                     format!(
                         "https://graph.microsoft.com/v1.0/me/mailFolders/{}/messages?$count=true&$top={}&$skip={}&$orderby={}&$filter=flag/flagStatus%20eq%20'flagged'&$expand=singleValueExtendedProperties($filter=id%20eq%20'Integer%200x1081'%20or%20id%20eq%20'Long%200x0E08')",
+                        folder, items_per_page, skip, order
+                    )
+                } else if q.trim().eq_ignore_ascii_case("n") { // Intercept "N" or "n"
+                    let order = if sort_newest_first { "receivedDateTime%20DESC" } else { "receivedDateTime%20ASC" };
+                    format!(
+                        "https://graph.microsoft.com/v1.0/me/mailFolders/{}/messages?$count=true&$top={}&$skip={}&$orderby={}&$filter=isRead%20eq%20false&$expand=singleValueExtendedProperties($filter=id%20eq%20'Integer%200x1081'%20or%20id%20eq%20'Long%200x0E08')",
                         folder, items_per_page, skip, order
                     )
                 } else {
@@ -652,19 +710,6 @@ pub fn fetch_emails(session: &mut MailSession, app: &mut App, items_per_page: u3
                             }
                             Box::new(graph_data.value.into_iter())
                         };
-
-                        // for msg in messages_iter {
-                        //     // --- PARSING LOGIC START ---
-                        //     let mut is_answered = false;
-                        //     if let Some(props) = &msg.single_value_extended_properties {
-                        //         for prop in props {
-                        //             // 102 is the MAPI code for "Replied"
-                        //             if prop.id == "Integer 0x1081" && prop.value == "102" {
-                        //                 is_answered = true;
-                        //                 break;
-                        //             }
-                        //         }
-                        //     }
 
                         for msg in messages_iter {
                             // --- PARSING LOGIC START ---
@@ -733,24 +778,6 @@ pub fn fetch_emails(session: &mut MailSession, app: &mut App, items_per_page: u3
                             let reply_to = format_graph_addrs!(msg.reply_to);
 
                             let is_flagged = msg.flag.and_then(|f| f.flag_status).map_or(false, |s| s.to_lowercase() == "flagged");
-
-                            // app.page_emails.push(EmailMeta {
-                            //     id: msg.id, // Native Graph String ID
-                            //     uid: 0,
-                            //     timestamp: internal_date,
-                            //     subject: msg.subject.unwrap_or_else(|| "No Subject".to_string()),
-                            //     from,
-                            //     reply_to,
-                            //     // reply_to_display: String::new(),
-                            //     to_addr,
-                            //     cc,
-                            //     date: date_str,
-                            //     size: 0,
-                            //     is_read: msg.is_read,
-                            //     is_deleted: false,
-                            //     is_flagged,
-                            //     is_answered, // Flag set correctly
-                            // });
 
                             app.page_emails.push(EmailMeta {
                                 id: msg.id,
