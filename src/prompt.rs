@@ -740,6 +740,35 @@ pub fn prompt_cancel(stdout: &mut io::Stdout, colors: &UiColors) -> bool {
     }
 }
 
+// pub fn find_email_suggestions(input: &str, address_book: &[String]) -> Vec<String> {
+//     let mut matches = Vec::new();
+//     if input.is_empty() { return matches; }
+//
+//     let last_part = input.split(',').last().unwrap_or("").trim_start();
+//     if last_part.is_empty() { return matches; }
+//
+//     let last_part_lower = last_part.to_lowercase();
+//
+//     for addr in address_book {
+//         if addr.trim().is_empty() { continue; } // Skip empty spacer lines
+//
+//         // Extract the searchable portion: just the team name if it's a team,
+//         // or the full email address if it's an individual.
+//         let searchable_part = if let Some((team_name, _)) = addr.split_once(':') {
+//             team_name.trim()
+//         } else {
+//             addr.as_str()
+//         };
+//
+//         // Match against the isolated searchable part
+//         if searchable_part.to_lowercase().starts_with(&last_part_lower) {
+//             // matches.push(addr.clone()); // Still return the full string for insertion
+//             matches.push(searchable_part.to_string());        }
+//     }
+//
+//     matches
+// }
+
 pub fn find_email_suggestions(input: &str, address_book: &[String]) -> Vec<String> {
     let mut matches = Vec::new();
     if input.is_empty() { return matches; }
@@ -752,18 +781,19 @@ pub fn find_email_suggestions(input: &str, address_book: &[String]) -> Vec<Strin
     for addr in address_book {
         if addr.trim().is_empty() { continue; } // Skip empty spacer lines
 
-        // Extract the searchable portion: just the team name if it's a team,
-        // or the full email address if it's an individual.
-        let searchable_part = if let Some((team_name, _)) = addr.split_once(':') {
-            team_name.trim()
+        // If the address contains a colon, it's a team list
+        if let Some((team_name, _)) = addr.split_once(':') {
+            let team_name = team_name.trim();
+            if team_name.to_lowercase().starts_with(&last_part_lower) {
+                // Return the formatted Team string instead of the raw file line
+                matches.push(format!("{} (Team)", team_name));
+            }
         } else {
-            addr.as_str()
-        };
-
-        // Match against the isolated searchable part
-        if searchable_part.to_lowercase().starts_with(&last_part_lower) {
-            // matches.push(addr.clone()); // Still return the full string for insertion
-            matches.push(searchable_part.to_string());        }
+            // It's a standard individual email
+            if addr.to_lowercase().starts_with(&last_part_lower) {
+                matches.push(addr.clone());
+            }
+        }
     }
 
     matches

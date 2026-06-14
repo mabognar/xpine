@@ -502,9 +502,12 @@ impl UiExt for Editor {
                 Blank,
                 Header("ACTIONS"),
                 Cmd1("A", "Add a new email address"),
-                Cmd1("T", "Create a new Team (group distribution list)"),
+                Cmd1("T", "Create a new Team (group distribution list)."),
                 Cmd1("E", "Edit the currently selected entry"),
                 Cmd1("D", "Delete the currently selected entry"),
+                Cmd1("I", "Import email list from text file. Format: "),
+                Cmd1("", "   1. emails are separated by commas, or"),
+                Cmd1("", "   2. emails on separate lines"),
             ],
             "email_accounts" => vec![
                 Title("xpine - Email Accounts Help"),
@@ -1066,13 +1069,34 @@ fn draw_settings(stdout: &mut std::io::Stdout, cols: u16, rows: u16, theme_provi
         ("    Sort Newest First", theme_provider.sort_newest_first), ("    Spellcheck Before Sending", theme_provider.spellcheck_before_send),
     ];
 
+    // for (i, (title, is_enabled)) in options.iter().enumerate() {
+    //     let y = 1 + i as u16;
+    //     if i == selected_idx { queue!(stdout, cursor::MoveTo(1, y), SetBackgroundColor(colors.selected_bg))?; } else { queue!(stdout, cursor::MoveTo(1, y), SetBackgroundColor(colors.bg), SetForegroundColor(colors.fg))?; }
+    //     queue!(stdout, Print(format!("{} {:<20} ", if *is_enabled { " [X]" } else { " [ ]" }, title)), ResetColor)?;
+    // }
+    //
+    // let theme_y = 2 + options.len() as u16;
+
     for (i, (title, is_enabled)) in options.iter().enumerate() {
         let y = 1 + i as u16;
         if i == selected_idx { queue!(stdout, cursor::MoveTo(1, y), SetBackgroundColor(colors.selected_bg))?; } else { queue!(stdout, cursor::MoveTo(1, y), SetBackgroundColor(colors.bg), SetForegroundColor(colors.fg))?; }
         queue!(stdout, Print(format!("{} {:<20} ", if *is_enabled { " [X]" } else { " [ ]" }, title)), ResetColor)?;
     }
 
-    let theme_y = 2 + options.len() as u16;
+    // --- NEW: Signature Option ---
+    let sig_idx = options.len();
+    let sig_y = 1 + sig_idx as u16;
+    if selected_idx == sig_idx {
+        queue!(stdout, cursor::MoveTo(1, sig_y), SetBackgroundColor(colors.selected_bg))?;
+    } else {
+        queue!(stdout, cursor::MoveTo(1, sig_y), SetBackgroundColor(colors.bg), SetForegroundColor(colors.fg))?;
+    }
+    queue!(stdout, Print(" [>]     Edit Email Signature               "), ResetColor)?;
+    // -----------------------------
+
+    // Shifted from 2 to 3 to account for the new signature line
+    let theme_y = 3 + options.len() as u16;
+
     queue!(stdout, cursor::MoveTo(2, theme_y), SetBackgroundColor(colors.bg), SetForegroundColor(colors.accent), Print("Meta+T"), ResetColor)?;
     queue!(stdout, cursor::MoveTo(10, theme_y), SetBackgroundColor(colors.bg), SetForegroundColor(colors.fg), Print("Theme: "), ResetColor)?;
     queue!(stdout, SetBackgroundColor(colors.bg), SetForegroundColor(colors.accent), Print(format!("{}", theme_provider.current_theme)), ResetColor)?;

@@ -45,12 +45,51 @@ pub fn compose_email(account: &Account, default_to: Option<&str>, default_subjec
         scroll_offset: 0,
     };
 
+    // let mut editor = Editor::new(None);
+    // editor.menu_state = MenuState::EmailComposer;
+    // editor.top_margin = 6;
+    // editor.current_theme = current_theme.clone();
+    //
+    // if let Some(body) = default_body { editor.buffer = Rope::from_str(body); }
+
     let mut editor = Editor::new(None);
     editor.menu_state = MenuState::EmailComposer;
     editor.top_margin = 6;
     editor.current_theme = current_theme.clone();
 
-    if let Some(body) = default_body { editor.buffer = Rope::from_str(body); }
+    let signature = crate::config::load_signature();
+    let is_forward = default_subject.unwrap_or("").to_lowercase().starts_with("fwd:");
+    let sig_block = if signature.trim().is_empty() || is_forward {
+        String::new()
+    } else {
+        format!("\n\n{}", signature.trim())
+    };
+
+    if let Some(body) = default_body {
+        // CHANGED: We now put sig_block BEFORE the body, and add two
+        // newlines between them so the quote has breathing room.
+        // editor.buffer = Rope::from_str(&format!("{}\n\n{}", sig_block, body));
+        editor.buffer = Rope::from_str(&format!("{}\n\n{}", sig_block, body.trim_start()));
+    } else if !sig_block.is_empty() {
+        editor.buffer = Rope::from_str(&sig_block);
+    }
+    // --------------------------------------
+
+    // let signature = crate::config::load_signature();
+    // let sig_block = if signature.trim().is_empty() {
+    //     String::new()
+    // } else {
+    //     // 3 newlines creates exactly 2 visual blank lines before the text
+    //     format!("\n\n{}", signature.trim())
+    // };
+    //
+    // if let Some(body) = default_body {
+    //     editor.buffer = Rope::from_str(&format!("{}{}", body, sig_block));
+    // } else if !sig_block.is_empty() {
+    //     // For a blank email, insert the block directly so the user
+    //     // has 2 blank lines of space to type above their signature
+    //     editor.buffer = Rope::from_str(&sig_block);
+    // }
 
     let mut stdout = stdout();
     let mut final_body = String::new();
@@ -67,6 +106,23 @@ pub fn compose_email(account: &Account, default_to: Option<&str>, default_subjec
         let (cols, rows) = term_size().unwrap_or((80, 24));
         let theme = &editor.theme_set.themes[&editor.current_theme];
         let colors = derive_ui_colors(theme);
+
+        // --- NEW: Macro to print strings with highlighted "(Team)" text ---
+        macro_rules! print_highlighted {
+            ($out:expr, $text:expr, $base_color:expr, $accent_color:expr) => {
+                let mut parts = $text.split("(Team)");
+                if let Some(first) = parts.next() {
+                    queue!($out, SetForegroundColor($base_color), Print(first)).unwrap();
+                }
+                for part in parts {
+                    queue!(
+                        $out,
+                        SetForegroundColor($accent_color), Print("(Team)"),
+                        SetForegroundColor($base_color), Print(part)
+                    ).unwrap();
+                }
+            };
+        }
 
         let header_title = format!("Compose Email ({})", account.email);
         queue!(
@@ -111,10 +167,19 @@ pub fn compose_email(account: &Account, default_to: Option<&str>, default_subjec
                         let last_part = val.split(',').last().unwrap_or("").trim_start();
 
                         if last_part.to_lowercase() != current_suggestion.to_lowercase() {
-                            hint_str = if current_suggestion.to_lowercase().starts_with(&last_part.to_lowercase()) {
-                                format!("{}", &current_suggestion[last_part.len()..])
+                            // NEW: Calculate how many matches exist to hint at scrolling
+                            let match_indicator = if suggestions.len() > 1 {
+                                format!(" ({} of {})", (suggestion_idx % suggestions.len()) + 1, suggestions.len())
                             } else {
-                                format!("  -> {}", current_suggestion)
+                                String::new() // Don't show anything if there is only 1 match
+                            };
+
+                            hint_str = if current_suggestion.to_lowercase().starts_with(&last_part.to_lowercase()) {
+                                // Append the indicator to the inline remainder
+                                format!(" {}{}", &current_suggestion[last_part.len()..], match_indicator)
+                            } else {
+                                // Append the indicator to the fallback substring match
+                                format!("  -> {}{}", current_suggestion, match_indicator)
                             };
                         }
                     }
@@ -145,12 +210,20 @@ pub fn compose_email(account: &Account, default_to: Option<&str>, default_subjec
                         ).unwrap();
                     }
 
+                    // queue!(
+                    //     stdout,
+                    //     cursor::MoveTo(label_width, current_y + line_idx as u16),
+                    //     SetBackgroundColor(colors.menu_bg), SetForegroundColor(colors.fg),
+                    //     Print(line)
+                    // ).unwrap();
                     queue!(
                         stdout,
                         cursor::MoveTo(label_width, current_y + line_idx as u16),
-                        SetBackgroundColor(colors.menu_bg), SetForegroundColor(colors.fg),
-                        Print(line)
+                        SetBackgroundColor(colors.menu_bg) // Only set BG here
                     ).unwrap();
+
+                    // Render the line with conditional highlights
+                    print_highlighted!(stdout, line, colors.fg, colors.accent);
                 }
 
                 // 5. Render the Autocomplete hint (now guaranteed to render on the same line)
@@ -163,13 +236,24 @@ pub fn compose_email(account: &Account, default_to: Option<&str>, default_subjec
                         // Safety truncation if a single word + hint is wider than the terminal screen
                         let screen_space = (cols as usize).saturating_sub(label_width as usize + last_line_len);
 
+                        // if screen_space > 0 {
+                        //     queue!(
+                        //         stdout,
+                        //         cursor::MoveTo(label_width + last_line_len as u16, current_y + relative_row as u16),
+                        //         SetForegroundColor(if colors.is_dark { Color::DarkGrey } else { Color::Grey }),
+                        //         Print(hint_str.chars().take(screen_space).collect::<String>())
+                        //     ).unwrap();
+                        // }
                         if screen_space > 0 {
+                            let hint_color = if colors.is_dark { Color::DarkGrey } else { Color::Grey };
                             queue!(
                                 stdout,
                                 cursor::MoveTo(label_width + last_line_len as u16, current_y + relative_row as u16),
-                                SetForegroundColor(if colors.is_dark { Color::DarkGrey } else { Color::Grey }),
-                                Print(hint_str.chars().take(screen_space).collect::<String>())
+                                SetBackgroundColor(colors.menu_bg)
                             ).unwrap();
+
+                            let hint_disp = hint_str.chars().take(screen_space).collect::<String>();
+                            print_highlighted!(stdout, &hint_disp, hint_color, colors.accent);
                         }
                     }
                 }
@@ -189,11 +273,17 @@ pub fn compose_email(account: &Account, default_to: Option<&str>, default_subjec
                     val.to_string()
                 };
 
+                // queue!(
+                //     stdout, cursor::MoveTo(label_width, current_y),
+                //     SetBackgroundColor(colors.menu_bg), SetForegroundColor(colors.fg),
+                //     Print(display_text)
+                // ).unwrap();
                 queue!(
                     stdout, cursor::MoveTo(label_width, current_y),
-                    SetBackgroundColor(colors.menu_bg), SetForegroundColor(colors.fg),
-                    Print(display_text)
+                    SetBackgroundColor(colors.menu_bg)
                 ).unwrap();
+
+                print_highlighted!(stdout, &display_text, colors.fg, colors.accent);
 
                 current_y += 1;
             }
@@ -264,8 +354,12 @@ pub fn compose_email(account: &Account, default_to: Option<&str>, default_subjec
                     }
 
                     if state.active_idx == 4 {
-                        // if key_event.code == KeyCode::Up && editor.cursor_y == 0 { state.active_idx = 3; continue; }
-                        if key_event.code == KeyCode::Up && editor.cursor_y == 0 {
+
+                        // --- NEW: Treat both physical Up arrow and Ctrl+P as an upward jump command ---
+                        let is_up_cmd = key_event.code == KeyCode::Up ||
+                            (key_event.code == KeyCode::Char('p') && key_event.modifiers.contains(KeyModifiers::CONTROL));
+
+                        if is_up_cmd && editor.cursor_y == 0 {
                             state.active_idx = 3;
                             cursor_pos = state.subject.len(); // Reset cursor to end of Subject
                             continue;
@@ -285,12 +379,26 @@ pub fn compose_email(account: &Account, default_to: Option<&str>, default_subjec
                             EditorResult::Cancel => { if crate::prompt::prompt_cancel(&mut stdout, &colors) { cancelled = true; break; } }
                             EditorResult::Continue => {}
                         }
+                    // } else {
+                    //
+                    //     let label_width = 9;
+                    //     let available_width = cols.saturating_sub(label_width + 2) as usize;
+                    //
+                    //     match key_event.code {
+                    //         KeyCode::Left => {
                     } else {
 
                         let label_width = 9;
                         let available_width = cols.saturating_sub(label_width + 2) as usize;
 
-                        match key_event.code {
+                        // --- NEW: Map Ctrl+P / Ctrl+N to Up / Down ---
+                        let mut effective_code = key_event.code;
+                        if key_event.modifiers.contains(KeyModifiers::CONTROL) {
+                            if key_event.code == KeyCode::Char('p') { effective_code = KeyCode::Up; }
+                            if key_event.code == KeyCode::Char('n') { effective_code = KeyCode::Down; }
+                        }
+
+                        match effective_code {
                             KeyCode::Left => {
                                 if cursor_pos > 0 { cursor_pos -= 1; }
                             }
@@ -298,29 +406,59 @@ pub fn compose_email(account: &Account, default_to: Option<&str>, default_subjec
                                 let target = match state.active_idx { 0 => &state.to, 1 => &state.cc, 2 => &state.bcc, 3 => &state.subject, _ => "" };
                                 if cursor_pos < target.len() { cursor_pos += 1; }
                             }
-                            KeyCode::Char('p') if key_event.modifiers.contains(KeyModifiers::CONTROL) => {
-                                state.active_idx = state.active_idx.saturating_sub(1);
-                                let new_target = match state.active_idx { 0 => &state.to, 1 => &state.cc, 2 => &state.bcc, 3 => &state.subject, _ => unreachable!() };
-                                cursor_pos = new_target.len();
-                            }
-                            KeyCode::Char('n') if key_event.modifiers.contains(KeyModifiers::CONTROL) => {
-                                state.active_idx = (state.active_idx + 1).min(4);
-                                if state.active_idx < 4 {
-                                    let new_target = match state.active_idx { 0 => &state.to, 1 => &state.cc, 2 => &state.bcc, 3 => &state.subject, _ => unreachable!() };
-                                    cursor_pos = new_target.len();
-                                }
-                            }
+                            // KeyCode::Char('p') if key_event.modifiers.contains(KeyModifiers::CONTROL) => {
+                            //     state.active_idx = state.active_idx.saturating_sub(1);
+                            //     let new_target = match state.active_idx { 0 => &state.to, 1 => &state.cc, 2 => &state.bcc, 3 => &state.subject, _ => unreachable!() };
+                            //     cursor_pos = new_target.len();
+                            // }
+                            // KeyCode::Char('n') if key_event.modifiers.contains(KeyModifiers::CONTROL) => {
+                            //     state.active_idx = (state.active_idx + 1).min(4);
+                            //     if state.active_idx < 4 {
+                            //         let new_target = match state.active_idx { 0 => &state.to, 1 => &state.cc, 2 => &state.bcc, 3 => &state.subject, _ => unreachable!() };
+                            //         cursor_pos = new_target.len();
+                            //     }
+                            // }
+                            // KeyCode::Up => {
+                            //     if cursor_pos >= available_width {
+                            //         cursor_pos -= available_width;
+                            //     } else {
+                            //         let scrolled_suggestion = false;
+                            //
+                            //         if !scrolled_suggestion {
+                            //             if state.active_idx > 0 {
+                            //                 state.active_idx -= 1;
+                            //                 let new_target = match state.active_idx { 0 => &state.to, 1 => &state.cc, 2 => &state.bcc, 3 => &state.subject, _ => unreachable!() };
+                            //                 cursor_pos = new_target.len(); // Fix: Jump to start, not end
+                            //                 state.scroll_offset = 0; // Reset scroll
+                            //             } else {
+                            //                 cursor_pos = 0;
+                            //             }
+                            //             suggestion_idx = 0;
+                            //         }
+                            //     }
+                            // }
                             KeyCode::Up => {
                                 if cursor_pos >= available_width {
                                     cursor_pos -= available_width;
                                 } else {
-                                    let scrolled_suggestion = false;
+                                    let mut scrolled_suggestion = false;
+
+                                    // --- NEW: Scroll suggestions UP ---
+                                    if state.active_idx < 3 {
+                                        let target = match state.active_idx { 0 => &state.to, 1 => &state.cc, 2 => &state.bcc, _ => unreachable!() };
+                                        let suggestions = crate::prompt::find_email_suggestions(target, &address_book);
+                                        if suggestions.len() > 1 {
+                                            // Wrap around to the end of the list if we hit the top
+                                            suggestion_idx = if suggestion_idx == 0 { suggestions.len() - 1 } else { suggestion_idx - 1 };
+                                            scrolled_suggestion = true;
+                                        }
+                                    }
 
                                     if !scrolled_suggestion {
                                         if state.active_idx > 0 {
                                             state.active_idx -= 1;
                                             let new_target = match state.active_idx { 0 => &state.to, 1 => &state.cc, 2 => &state.bcc, 3 => &state.subject, _ => unreachable!() };
-                                            cursor_pos = new_target.len(); // Fix: Jump to start, not end
+                                            cursor_pos = new_target.len();
                                             state.scroll_offset = 0; // Reset scroll
                                         } else {
                                             cursor_pos = 0;
@@ -462,7 +600,27 @@ pub fn compose_email(account: &Account, default_to: Option<&str>, default_subjec
     builder = parse_and_add(builder, &final_cc, "cc");
     builder = parse_and_add(builder, &final_bcc, "bcc");
 
-    let formatted_body = crate::mail::justify_all_text(&final_body);
+    // let formatted_body = crate::mail::justify_all_text(&final_body);
+    // --- NEW: Protect the signature from being squashed by the text wrapper ---
+    let signature = crate::config::load_signature();
+    let clean_sig = signature.trim();
+
+    let formatted_body = if !clean_sig.is_empty() && final_body.contains(clean_sig) {
+        // Split the email into two halves: everything above the signature, and everything below
+        if let Some((top, bottom)) = final_body.split_once(clean_sig) {
+            let justified_top = crate::mail::justify_all_text(top);
+            let justified_bottom = crate::mail::justify_all_text(bottom);
+
+            // Re-glue them together with the untouched signature safely in the middle
+            format!("{}{}{}", justified_top, clean_sig, justified_bottom)
+        } else {
+            crate::mail::justify_all_text(&final_body)
+        }
+    } else {
+        crate::mail::justify_all_text(&final_body)
+    };
+    // --------------------------------------------------------------------------
+
     let mut multipart = lettre::message::MultiPart::mixed().singlepart(lettre::message::SinglePart::plain(formatted_body));
 
     for att in &state.attachments {

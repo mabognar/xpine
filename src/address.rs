@@ -178,13 +178,11 @@ pub fn clean_and_save_address_book(addresses: &mut Vec<String>) {
 }
 
 pub fn expand_address_lists(input: &str, address_book: &[String]) -> String {
-    // 1. Pre-process: If the user autocompleted a team, it will contain the full
-    // "teamname: email1, email2;" string. We must replace the full string
-    // with just the emails before splitting by comma.
+    // 1. Pre-process: (Kept for backward compatibility if you have drafts
+    // containing the old raw string insertion format)
     let mut processed_input = input.to_string();
     for addr in address_book {
         if let Some((_, emails)) = addr.split_once(':') {
-            // Replace the full team definition with just the emails
             processed_input = processed_input.replace(addr, emails.trim());
         }
     }
@@ -194,12 +192,15 @@ pub fn expand_address_lists(input: &str, address_book: &[String]) -> String {
     // 2. Now it is safe to split by comma
     for part in processed_input.split(',') {
         let part = part.trim();
+
+        // --- NEW: Strip out the " (Team)" suffix safely before checking ---
+        let clean_part = part.strip_suffix(" (Team)").unwrap_or(part).trim();
         let mut matched_list = false;
 
-        // 3. Check if they just typed the team name manually (e.g., "me")
+        // 3. Check if the cleaned name matches a team in the address book
         for addr in address_book {
             if let Some((list_name, emails)) = addr.split_once(':') {
-                if part.to_lowercase() == list_name.trim().to_lowercase() {
+                if clean_part.to_lowercase() == list_name.trim().to_lowercase() {
                     expanded.push(emails.trim().trim_end_matches(';').to_string());
                     matched_list = true;
                     break;
@@ -207,10 +208,50 @@ pub fn expand_address_lists(input: &str, address_book: &[String]) -> String {
             }
         }
 
-        if !matched_list && !part.is_empty() {
-            expanded.push(part.to_string());
+        if !matched_list && !clean_part.is_empty() {
+            // If it wasn't a team, push the cleaned part. (Using clean_part
+            // ensures we don't accidentally send to an invalid email if they typed it manually)
+            expanded.push(clean_part.to_string());
         }
     }
 
     expanded.join(", ")
 }
+
+// pub fn expand_address_lists(input: &str, address_book: &[String]) -> String {
+//     // 1. Pre-process: If the user autocompleted a team, it will contain the full
+//     // "teamname: email1, email2;" string. We must replace the full string
+//     // with just the emails before splitting by comma.
+//     let mut processed_input = input.to_string();
+//     for addr in address_book {
+//         if let Some((_, emails)) = addr.split_once(':') {
+//             // Replace the full team definition with just the emails
+//             processed_input = processed_input.replace(addr, emails.trim());
+//         }
+//     }
+//
+//     let mut expanded = Vec::new();
+//
+//     // 2. Now it is safe to split by comma
+//     for part in processed_input.split(',') {
+//         let part = part.trim();
+//         let mut matched_list = false;
+//
+//         // 3. Check if they just typed the team name manually (e.g., "me")
+//         for addr in address_book {
+//             if let Some((list_name, emails)) = addr.split_once(':') {
+//                 if part.to_lowercase() == list_name.trim().to_lowercase() {
+//                     expanded.push(emails.trim().trim_end_matches(';').to_string());
+//                     matched_list = true;
+//                     break;
+//                 }
+//             }
+//         }
+//
+//         if !matched_list && !part.is_empty() {
+//             expanded.push(part.to_string());
+//         }
+//     }
+//
+//     expanded.join(", ")
+// }

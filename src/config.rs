@@ -231,3 +231,15 @@ pub fn save_config(accounts: &[Account]) {
         fs::write(config_path, toml_string).expect("Failed to write config file.");
     }
 }
+
+pub fn load_signature() -> String {
+    let home = dirs::home_dir().expect("Could not find home directory.");
+    let path = home.join(".xpine").join("signature");
+    std::fs::read_to_string(path).unwrap_or_default()
+}
+
+pub fn save_signature(sig: &str) {
+    let home = dirs::home_dir().expect("Could not find home directory.");
+    let path = home.join(".xpine").join("signature");
+    let _ = std::fs::write(path, sig);
+}

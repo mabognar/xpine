@@ -806,9 +806,17 @@ fn handle_email_list_events(k: KeyEvent, app: &mut App, session: &mut Option<Mai
 
                     let (t_body, _, _) = net::fetch_email_body(sess, &fetch_seq);
 
+                    // if k.code == KeyCode::Char('f') || k.code == KeyCode::Char('F') {
+                    //     let sub = if subject.to_lowercase().starts_with("fwd:") { subject.clone() } else { format!("Fwd: {}", subject) };
+                    //     let fwd_body = format!("\n\n--- Forwarded message ---\nFrom: {}\nDate: {}\nSubject: {}\n\n{}", from, date, subject, t_body);
+                    //     if let Some(s) = compose_email(&app.active_account, None, Some(&sub), Some(&fwd_body), &mut theme_provider.current_theme) {
+                    //         app.update_status(s);
+                    //     }
+                    // }
                     if k.code == KeyCode::Char('f') || k.code == KeyCode::Char('F') {
                         let sub = if subject.to_lowercase().starts_with("fwd:") { subject.clone() } else { format!("Fwd: {}", subject) };
-                        let fwd_body = format!("\n\n--- Forwarded message ---\nFrom: {}\nDate: {}\nSubject: {}\n\n{}", from, date, subject, t_body);
+                        // CHANGED: Removed the \n\n from the very beginning of the string format
+                        let fwd_body = format!("--- Forwarded message ---\nFrom: {}\nDate: {}\nSubject: {}\n\n{}", from, date, subject, t_body);
                         if let Some(s) = compose_email(&app.active_account, None, Some(&sub), Some(&fwd_body), &mut theme_provider.current_theme) {
                             app.update_status(s);
                         }
@@ -1159,9 +1167,26 @@ fn handle_settings_events(k: KeyEvent, app: &mut App, theme_provider: &mut Edito
 
     let mut next_mode = None;
 
+    // match k.code {
+    //     KeyCode::Up | KeyCode::Char('p') | KeyCode::Char('P') => selected_idx = selected_idx.saturating_sub(1),
+    //     KeyCode::Down | KeyCode::Char('n') | KeyCode::Char('N') => selected_idx = (selected_idx + 1).min(3),
+    //     KeyCode::Left | KeyCode::Char('<') | KeyCode::Char('q') | KeyCode::Char('Q') | KeyCode::Char('s') | KeyCode::Char('S') => next_mode = Some(AppMode::MainMenu { selected_idx: 3 }),
+    //     KeyCode::Char('x') | KeyCode::Char('X') | KeyCode::Right | KeyCode::Enter => {
+    //         if selected_idx == 0 { theme_provider.soft_wrap = !theme_provider.soft_wrap; theme_provider.save_settings(); }
+    //         else if selected_idx == 1 { theme_provider.show_line_numbers = !theme_provider.show_line_numbers; theme_provider.save_settings(); }
+    //         else if selected_idx == 2 {
+    //             theme_provider.sort_newest_first = !theme_provider.sort_newest_first;
+    //             theme_provider.save_settings();
+    //             app.needs_fetch = true;
+    //         }
+    //         else if selected_idx == 3 {
+    //             theme_provider.spellcheck_before_send = !theme_provider.spellcheck_before_send;
+    //             theme_provider.save_settings();
+    //         }
+    //     }
     match k.code {
         KeyCode::Up | KeyCode::Char('p') | KeyCode::Char('P') => selected_idx = selected_idx.saturating_sub(1),
-        KeyCode::Down | KeyCode::Char('n') | KeyCode::Char('N') => selected_idx = (selected_idx + 1).min(3),
+        KeyCode::Down | KeyCode::Char('n') | KeyCode::Char('N') => selected_idx = (selected_idx + 1).min(4), // <-- Increased to 4
         KeyCode::Left | KeyCode::Char('<') | KeyCode::Char('q') | KeyCode::Char('Q') | KeyCode::Char('s') | KeyCode::Char('S') => next_mode = Some(AppMode::MainMenu { selected_idx: 3 }),
         KeyCode::Char('x') | KeyCode::Char('X') | KeyCode::Right | KeyCode::Enter => {
             if selected_idx == 0 { theme_provider.soft_wrap = !theme_provider.soft_wrap; theme_provider.save_settings(); }
@@ -1174,6 +1199,13 @@ fn handle_settings_events(k: KeyEvent, app: &mut App, theme_provider: &mut Edito
             else if selected_idx == 3 {
                 theme_provider.spellcheck_before_send = !theme_provider.spellcheck_before_send;
                 theme_provider.save_settings();
+            }
+            // --- NEW: Trigger Multiline Editor ---
+            else if selected_idx == 4 {
+                let current_sig = crate::config::load_signature();
+                if let Ok(Some(new_sig)) = theme_provider.edit_buffer("Edit Email Signature", &current_sig) {
+                    crate::config::save_signature(&new_sig);
+                }
             }
         }
         KeyCode::Char('w') | KeyCode::Char('W') => { theme_provider.soft_wrap = !theme_provider.soft_wrap; theme_provider.save_settings(); }
