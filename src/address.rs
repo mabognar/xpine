@@ -48,11 +48,38 @@ pub fn load_address_book() -> Vec<String> {
     addresses
 }
 
+// pub fn add_to_address_book(address: &str) -> std::io::Result<bool> {
+//     let addresses = load_address_book();
+//
+//     // Check if the address already exists (ignoring whitespace differences)
+//     if addresses.iter().any(|a| a.trim() == address.trim()) {
+//         return Ok(false); // Return false indicating it's a duplicate
+//     }
+//
+//     let path = get_address_book_path();
+//     let mut file = fs::OpenOptions::new()
+//         .create(true)
+//         .append(true)
+//         .open(path)?;
+//
+//     use std::io::Write;
+//     writeln!(file, "{}", address.trim())?;
+//
+//     Ok(true) // Return true indicating it was added
+// }
 pub fn add_to_address_book(address: &str) -> std::io::Result<bool> {
     let addresses = load_address_book();
 
+    // Check if it's a team and expand any nested teams before saving
+    let mut final_address = address.trim().to_string();
+    if let Some((team_name, emails)) = final_address.clone().split_once(':') {
+        let expanded_emails = expand_address_lists(emails, &addresses);
+        // Rebuild the team string with just the expanded emails
+        final_address = format!("{}: {};", team_name.trim(), expanded_emails.trim_end_matches(';'));
+    }
+
     // Check if the address already exists (ignoring whitespace differences)
-    if addresses.iter().any(|a| a.trim() == address.trim()) {
+    if addresses.iter().any(|a| a.trim() == final_address) {
         return Ok(false); // Return false indicating it's a duplicate
     }
 
@@ -63,7 +90,7 @@ pub fn add_to_address_book(address: &str) -> std::io::Result<bool> {
         .open(path)?;
 
     use std::io::Write;
-    writeln!(file, "{}", address.trim())?;
+    writeln!(file, "{}", final_address)?;
 
     Ok(true) // Return true indicating it was added
 }
@@ -81,8 +108,47 @@ pub fn save_address_book(addresses: &[String]) -> std::io::Result<()> {
     Ok(())
 }
 
+// pub fn clean_and_save_address_book(addresses: &mut Vec<String>) {
+//     addresses.retain(|a| !a.trim().is_empty());
+//
+//     // Sort: Individuals first, Teams (containing ':') at the bottom
+//     addresses.sort_by(|a, b| {
+//         let a_is_team = a.contains(':');
+//         let b_is_team = b.contains(':');
+//
+//         if a_is_team == b_is_team {
+//             a.cmp(b) // Sort alphabetically within their respective groups
+//         } else if a_is_team {
+//             std::cmp::Ordering::Greater // Teams are pushed to the bottom
+//         } else {
+//             std::cmp::Ordering::Less    // Individuals are pulled to the top
+//         }
+//     });
+//
+//     // Insert the blank spacer line exactly before the first Team
+//     if let Some(first_team_idx) = addresses.iter().position(|a| a.contains(':')) {
+//         if first_team_idx > 0 {
+//             addresses.insert(first_team_idx, String::new());
+//         }
+//     }
+//
+//     // Save
+//     let mut save_list = addresses.clone();
+//     save_list.retain(|a| !a.trim().is_empty());
+//     let _ = save_address_book(&save_list);
+// }
+
 pub fn clean_and_save_address_book(addresses: &mut Vec<String>) {
     addresses.retain(|a| !a.trim().is_empty());
+
+    // Expand any nested teams inside of teams before sorting/saving
+    let current_book = addresses.clone();
+    for a in addresses.iter_mut() {
+        if let Some((team_name, emails)) = a.clone().split_once(':') {
+            let expanded_emails = expand_address_lists(emails, &current_book);
+            *a = format!("{}: {};", team_name.trim(), expanded_emails.trim_end_matches(';'));
+        }
+    }
 
     // Sort: Individuals first, Teams (containing ':') at the bottom
     addresses.sort_by(|a, b| {

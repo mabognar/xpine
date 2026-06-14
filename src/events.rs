@@ -8,6 +8,7 @@ use crossterm::execute;
 use crossterm::terminal::size as term_size;
 use crate::prompt::PromptExt;
 use crate::ui::UiExt;
+use crate::browser::BrowserExt;
 
 fn check_and_expunge_outlook(app: &mut App, session: &mut Option<MailSession>, theme_provider: &mut Editor) {
     let is_outlook = app.active_account.imap_server.to_lowercase().contains("outlook") ||
@@ -121,13 +122,28 @@ fn handle_address_book_events(k: KeyEvent, app: &mut App, theme_provider: &mut E
                     if !team_name.is_empty() {
                         // REVERTED: Using prompt_with_autocomplete to keep email hints!
                         if let Ok(Some(emails)) = theme_provider.prompt_with_autocomplete("Emails (comma separated): ", &addresses) {
-                            let trimmed_emails = emails.trim().trim_end_matches(';');
-                            if !trimmed_emails.is_empty() {
-                                let formatted_list = format!("{}: {};", team_name, trimmed_emails);
+                            let mut unique_emails = Vec::new();
+                            for email in emails.split(',') {
+                                let trimmed = email.trim().trim_end_matches(';');
+                                if !trimmed.is_empty() && !unique_emails.contains(&trimmed) {
+                                    unique_emails.push(trimmed);
+                                }
+                            }
+
+                            if !unique_emails.is_empty() {
+                                let formatted_list = format!("{}: {};", team_name, unique_emails.join(", "));
                                 addresses.push(formatted_list);
                                 crate::address::clean_and_save_address_book(&mut addresses);
                             }
                         }
+                        // if let Ok(Some(emails)) = theme_provider.prompt_with_autocomplete("Emails (comma separated): ", &addresses) {
+                        //     let trimmed_emails = emails.trim().trim_end_matches(';');
+                        //     if !trimmed_emails.is_empty() {
+                        //         let formatted_list = format!("{}: {};", team_name, trimmed_emails);
+                        //         addresses.push(formatted_list);
+                        //         crate::address::clean_and_save_address_book(&mut addresses);
+                        //     }
+                        // }
                     }
                 }
             }
@@ -165,20 +181,40 @@ fn handle_address_book_events(k: KeyEvent, app: &mut App, theme_provider: &mut E
                     let title = format!("Edit Team: {}", prefix);
 
                     if let Ok(Some(edited_text)) = theme_provider.edit_buffer(&title, &multiline_emails) {
-                        let cleaned_emails = edited_text
-                            .replace('\n', ",")
-                            .replace(';', ",")
-                            .split(',')
-                            .map(|s| s.trim())
-                            .filter(|s| !s.is_empty())
-                            .collect::<Vec<&str>>()
-                            .join(", ");
+                        // Bind the new String to a variable so it stays alive
+                        // for the duration of this block.
+                        let normalized_text = edited_text.replace('\n', ",").replace(';', ",");
+
+                        let mut unique_emails = Vec::new();
+                        for email in normalized_text.split(',') {
+                            let trimmed = email.trim();
+                            if !trimmed.is_empty() && !unique_emails.contains(&trimmed) {
+                                unique_emails.push(trimmed);
+                            }
+                        }
+
+                        let cleaned_emails = unique_emails.join(", ");
 
                         if !cleaned_emails.is_empty() {
                             addresses[selected_idx] = format!("{}: {};", prefix, cleaned_emails);
                             crate::address::clean_and_save_address_book(&mut addresses);
                         }
                     }
+                    // if let Ok(Some(edited_text)) = theme_provider.edit_buffer(&title, &multiline_emails) {
+                    //     let cleaned_emails = edited_text
+                    //         .replace('\n', ",")
+                    //         .replace(';', ",")
+                    //         .split(',')
+                    //         .map(|s| s.trim())
+                    //         .filter(|s| !s.is_empty())
+                    //         .collect::<Vec<&str>>()
+                    //         .join(", ");
+                    //
+                    //     if !cleaned_emails.is_empty() {
+                    //         addresses[selected_idx] = format!("{}: {};", prefix, cleaned_emails);
+                    //         crate::address::clean_and_save_address_book(&mut addresses);
+                    //     }
+                    // }
                 } else {
                     // --- SINGLE ADDRESS EDITING: Use one-line prompt_edit ---
                     if let Ok(Some(new_val)) = theme_provider.prompt_edit("Edit: ", current_val) {
@@ -192,6 +228,43 @@ fn handle_address_book_events(k: KeyEvent, app: &mut App, theme_provider: &mut E
         }
         KeyCode::Char('h') | KeyCode::Char('H') | KeyCode::Char('?') => {
             let _ = theme_provider.show_help("address_book");
+        }
+        KeyCode::Char('i') | KeyCode::Char('I') => {
+            // Trigger the file browser
+            if let Ok(Some(filepath)) = theme_provider.run_file_browser(false, None) {
+                let expanded_path = crate::editor::Editor::expand_tilde(&filepath);
+
+                // Attempt to read the selected file
+                match std::fs::read_to_string(&expanded_path) {
+                    Ok(contents) => {
+                        let mut added_count = 0;
+
+                        // Normalize the file by turning all newlines and semicolons into commas
+                        let normalized = contents.replace('\n', ",").replace('\r', "").replace(';', ",");
+
+                        // Split by comma and filter out duplicates
+                        for email in normalized.split(',') {
+                            let trimmed = email.trim();
+                            if !trimmed.is_empty() && !addresses.iter().any(|a| a.trim() == trimmed) {
+                                addresses.push(trimmed.to_string());
+                                added_count += 1;
+                            }
+                        }
+
+                        // Save if anything new was added
+                        if added_count > 0 {
+                            crate::address::clean_and_save_address_book(&mut addresses);
+                        }
+
+                        // Flash the 3-second success status at the bottom of the screen
+                        theme_provider.set_status(format!("Import successful - {} emails added to address book", added_count));
+                    }
+                    Err(_) => {
+                        // Flash the failure message
+                        theme_provider.set_status("Import not successful".to_string());
+                    }
+                }
+            }
         }
         _ => {}
     }

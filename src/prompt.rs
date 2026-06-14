@@ -762,8 +762,8 @@ pub fn find_email_suggestions(input: &str, address_book: &[String]) -> Vec<Strin
 
         // Match against the isolated searchable part
         if searchable_part.to_lowercase().starts_with(&last_part_lower) {
-            matches.push(addr.clone()); // Still return the full string for insertion
-        }
+            // matches.push(addr.clone()); // Still return the full string for insertion
+            matches.push(searchable_part.to_string());        }
     }
 
     matches

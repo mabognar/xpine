@@ -735,10 +735,22 @@ fn draw_address_book(stdout: &mut std::io::Stdout, cols: u16, rows: u16, theme_p
 
             // Check if this is a Team (contains a colon)
             if let Some((team_name, emails)) = display_str.split_once(':') {
+                // Calculate space taken by the padding, team name, and the colon
+                let prefix_len = padding.len() + team_name.chars().count() + 1;
+                let available_len = (cols as usize).saturating_sub(prefix_len);
+
+                // If the emails run past the margin, truncate and add "..."
+                let emails_display = if emails.chars().count() > available_len {
+                    let take_len = available_len.saturating_sub(3);
+                    format!("{}...", emails.chars().take(take_len).collect::<String>())
+                } else {
+                    emails.to_string()
+                };
+
                 queue!(
                     stdout,
                     SetForegroundColor(colors.accent), Print(team_name),
-                    SetForegroundColor(colors.fg), Print(":"), Print(emails)
+                    SetForegroundColor(colors.fg), Print(":"), Print(emails_display)
                 )?;
             } else {
                 queue!(stdout, SetForegroundColor(colors.fg), Print(display_str))?;
@@ -748,11 +760,14 @@ fn draw_address_book(stdout: &mut std::io::Stdout, cols: u16, rows: u16, theme_p
 
     let m_col = (cols as usize / 6).max(1);
     Editor::draw_menu_line(stdout, rows - 2, cols, m_col,
-                           &[("<", " Back"), ("P", " Prev"), ("Y", " Prev Pg"), ("A", " Add Email"), ("E", " Edit"), ("", "")],
+                           &[("<", " Back"), ("P", " Prev"), ("Y", " Prev Pg"), ("A", " Add Email"), ("E", " Edit"), ("I", " Import")],
                            colors.menu_bg, colors.accent, colors.fg)?;
     Editor::draw_menu_line(stdout, rows - 1, cols, m_col,
                            &[("", ""), ("N", " Next"), ("V", " Next Pg"), ("T", " Team"), ("D", " Delete"), ("?", " Help")],
                            colors.menu_bg, colors.accent, colors.fg)?;
+
+    queue!(stdout, cursor::Hide)?;
+
     Ok(())
 }
 
