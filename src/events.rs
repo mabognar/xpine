@@ -1203,7 +1203,7 @@ fn handle_settings_events(k: KeyEvent, app: &mut App, theme_provider: &mut Edito
             // --- NEW: Trigger Multiline Editor ---
             else if selected_idx == 4 {
                 let current_sig = crate::config::load_signature();
-                if let Ok(Some(new_sig)) = theme_provider.edit_buffer("Edit Email Signature", &current_sig) {
+                if let Ok(Some(new_sig)) = theme_provider.edit_buffer("Edit Email Signature (leave blank for no signature)", &current_sig) {
                     crate::config::save_signature(&new_sig);
                 }
             }

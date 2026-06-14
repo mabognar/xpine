@@ -57,23 +57,25 @@ pub fn compose_email(account: &Account, default_to: Option<&str>, default_subjec
     editor.top_margin = 6;
     editor.current_theme = current_theme.clone();
 
-    let signature = crate::config::load_signature();
-    let is_forward = default_subject.unwrap_or("").to_lowercase().starts_with("fwd:");
-    let sig_block = if signature.trim().is_empty() || is_forward {
-        String::new()
-    } else {
-        format!("\n\n{}", signature.trim())
-    };
+    if let Some(body) = default_body { editor.buffer = Rope::from_str(body); }
 
-    if let Some(body) = default_body {
-        // CHANGED: We now put sig_block BEFORE the body, and add two
-        // newlines between them so the quote has breathing room.
-        // editor.buffer = Rope::from_str(&format!("{}\n\n{}", sig_block, body));
-        editor.buffer = Rope::from_str(&format!("{}\n\n{}", sig_block, body.trim_start()));
-    } else if !sig_block.is_empty() {
-        editor.buffer = Rope::from_str(&sig_block);
-    }
-    // --------------------------------------
+    // let signature = crate::config::load_signature();
+    // let is_forward = default_subject.unwrap_or("").to_lowercase().starts_with("fwd:");
+    // let sig_block = if signature.trim().is_empty() || is_forward {
+    //     String::new()
+    // } else {
+    //     format!("\n\n{}", signature.trim())
+    // };
+    //
+    // if let Some(body) = default_body {
+    //     // CHANGED: We now put sig_block BEFORE the body, and add two
+    //     // newlines between them so the quote has breathing room.
+    //     // editor.buffer = Rope::from_str(&format!("{}\n\n{}", sig_block, body));
+    //     editor.buffer = Rope::from_str(&format!("{}\n\n{}", sig_block, body.trim_start()));
+    // } else if !sig_block.is_empty() {
+    //     editor.buffer = Rope::from_str(&sig_block);
+    // }
+    // // --------------------------------------
 
     // let signature = crate::config::load_signature();
     // let sig_block = if signature.trim().is_empty() {
@@ -314,7 +316,7 @@ pub fn compose_email(account: &Account, default_to: Option<&str>, default_subjec
 
         if state.active_idx < 4 {
             let m_col = (cols as usize / 6).max(1);
-            Editor::draw_menu_line(&mut stdout, rows - 2, cols, m_col, &[("^X", " Send"),   (" ^P", " Prev"), ("^A", " Attach"), ("", ""), ("", "")], colors.menu_bg, colors.accent, colors.fg).unwrap();
+            Editor::draw_menu_line(&mut stdout, rows - 2, cols, m_col, &[("^X", " Send"),   (" ^P", " Prev"), ("^A", " Attach"), ("^G", " Signature"), ("", "")], colors.menu_bg, colors.accent, colors.fg).unwrap();
             Editor::draw_menu_line(&mut stdout, rows - 1, cols, m_col, &[("^C", " Cancel"), ("Tab", " Next"), ("", ""), ("", ""), ("", ""), ("", "")], colors.menu_bg, colors.accent, colors.fg).unwrap();
             queue!(stdout, cursor::Show).unwrap();
 
@@ -347,14 +349,52 @@ pub fn compose_email(account: &Account, default_to: Option<&str>, default_subjec
                         if key_event.code == KeyCode::Char('c') {
                             if crate::prompt::prompt_cancel(&mut stdout, &colors) { cancelled = true; break; } else { continue; }
                         }
+                    //     if key_event.code == KeyCode::Char('a') {
+                    //         if let Ok(Some(path)) = editor.run_file_browser(false, None) { state.attachments.push(path); }
+                    //         continue;
+                    //     }
+                    // }
+                    //
+                    // if state.active_idx == 4 {
                         if key_event.code == KeyCode::Char('a') {
                             if let Ok(Some(path)) = editor.run_file_browser(false, None) { state.attachments.push(path); }
                             continue;
                         }
+
+                        // --- NEW: Insert Signature Hotkey ---
+                        if key_event.code == KeyCode::Char('g') {
+                            if state.active_idx == 4 { // Ensure they are typing in the body
+                                let signature = crate::config::load_signature();
+                                let clean_sig = signature.trim();
+                                if !clean_sig.is_empty() {
+                                    let sig_block = format!("{}\n", clean_sig);
+                                    let idx = editor.get_cursor_char_idx();
+                                    editor.buffer.insert(idx, &sig_block);
+
+                                    // --- NEW FIX: Update the cursor and force the screen to redraw ---
+                                    let new_idx = idx + sig_block.chars().count();
+                                    editor.cursor_y = editor.buffer.char_to_line(new_idx);
+                                    editor.cursor_x = new_idx - editor.buffer.line_to_char(editor.cursor_y);
+                                    editor.desired_cursor_x = editor.cursor_x;
+
+                                    // Invalidate the visual cache so the pasted text appears instantly
+                                    editor.highlight_cache.clear();
+                                    editor.is_modified = true;
+                                    // -----------------------------------------------------------------
+
+                                    editor.set_status("Signature inserted".to_string());
+                                } else {
+                                    editor.set_status("Signature is empty (Check Settings)".to_string());
+                                }
+                            } else {
+                                editor.set_status("Move to the message body to insert signature".to_string());
+                            }
+                            continue;
+                        }
+                        // ------------------------------------
                     }
 
                     if state.active_idx == 4 {
-
                         // --- NEW: Treat both physical Up arrow and Ctrl+P as an upward jump command ---
                         let is_up_cmd = key_event.code == KeyCode::Up ||
                             (key_event.code == KeyCode::Char('p') && key_event.modifiers.contains(KeyModifiers::CONTROL));

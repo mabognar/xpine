@@ -282,7 +282,7 @@ impl UiExt for Editor {
 
                     Self::draw_menu_line(
                         &mut stdout, rows - 1, cols, col_width,
-                        &[("^C", " Cancel"), ("^N", " Next"), ("^V", " Next Pg"), ("^U", " UnCut"), ("^A", " Attach"), ("^G", " Get Help")],
+                        &[("^C", " Cancel"), ("^N", " Next"), ("^V", " Next Pg"), ("^U", " UnCut"), ("^A", " Attach"), ("^G", " Signature")],
                         ui_bg, menu_key_fg, menu_text_fg)?;
                 } else {
                     Self::draw_menu_line(
