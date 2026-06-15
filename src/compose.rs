@@ -541,18 +541,21 @@ pub fn compose_email(account: &Account, default_to: Option<&str>, default_subjec
 
                                     if !suggestions.is_empty() {
                                         let suggestion = &suggestions[suggestion_idx % suggestions.len()];
+
+                                        // FIX: Strip hidden newlines/carriage returns
+                                        let clean_suggestion = suggestion.trim_end();
+
                                         let last_part = target.split(',').last().unwrap_or("").trim_start();
 
-                                        if last_part.to_lowercase() != suggestion.to_lowercase() {
+                                        if last_part.to_lowercase() != clean_suggestion.to_lowercase() {
                                             if let Some(last_comma_idx) = target.rfind(',') {
                                                 target.truncate(last_comma_idx + 1);
                                                 target.push(' ');
-                                                target.push_str(suggestion);
+                                                target.push_str(clean_suggestion); // Append the cleaned version
                                             } else {
-                                                *target = suggestion.clone();
+                                                *target = clean_suggestion.to_string(); // Replace with the cleaned version
                                             }
 
-                                            // FIX: Move the cursor to the end of the newly completed string
                                             cursor_pos = target.len();
 
                                             suggestion_idx = 0;
@@ -560,6 +563,31 @@ pub fn compose_email(account: &Account, default_to: Option<&str>, default_subjec
                                         }
                                     }
                                 }
+                                // if state.active_idx < 3 {
+                                //     let target = match state.active_idx { 0 => &mut state.to, 1 => &mut state.cc, 2 => &mut state.bcc, _ => unreachable!() };
+                                //     let suggestions = crate::prompt::find_email_suggestions(target, &address_book);
+                                //
+                                //     if !suggestions.is_empty() {
+                                //         let suggestion = &suggestions[suggestion_idx % suggestions.len()];
+                                //         let last_part = target.split(',').last().unwrap_or("").trim_start();
+                                //
+                                //         if last_part.to_lowercase() != suggestion.to_lowercase() {
+                                //             if let Some(last_comma_idx) = target.rfind(',') {
+                                //                 target.truncate(last_comma_idx + 1);
+                                //                 target.push(' ');
+                                //                 target.push_str(suggestion);
+                                //             } else {
+                                //                 *target = suggestion.clone();
+                                //             }
+                                //
+                                //             // FIX: Move the cursor to the end of the newly completed string
+                                //             cursor_pos = target.len();
+                                //
+                                //             suggestion_idx = 0;
+                                //             continue;
+                                //         }
+                                //     }
+                                // }
                                 state.scroll_offset = 0;
                                 state.active_idx = (state.active_idx + 1).min(4);
                                 if state.active_idx < 4 {
@@ -833,7 +861,8 @@ fn wrap_text(text: &str, width: usize, hint_len: usize, cursor_pos: usize) -> (V
             for c in word.chars() {
                 if char_idx == cursor_pos { c_row = lines.len(); c_col = current_line.chars().count(); }
                 current_line.push(c);
-                char_idx += 1;
+                char_idx += c.len_utf8(); // FIX: Advance by byte length, not 1
+                // char_idx += 1;
             }
         } else {
             if space_needed > 0 {
@@ -844,7 +873,8 @@ fn wrap_text(text: &str, width: usize, hint_len: usize, cursor_pos: usize) -> (V
             for c in word.chars() {
                 if char_idx == cursor_pos { c_row = lines.len(); c_col = current_line.chars().count(); }
                 current_line.push(c);
-                char_idx += 1;
+                // char_idx += 1;
+                char_idx += c.len_utf8();
             }
         }
     }
