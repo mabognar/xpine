@@ -858,6 +858,36 @@ pub fn prompt_cancel(stdout: &mut io::Stdout, colors: &UiColors) -> bool {
 //     matches
 // }
 
+// pub fn find_email_suggestions(input: &str, address_book: &[String]) -> Vec<String> {
+//     let mut matches = Vec::new();
+//     if input.is_empty() { return matches; }
+//
+//     let last_part = input.split(',').last().unwrap_or("").trim_start();
+//     if last_part.is_empty() { return matches; }
+//
+//     let last_part_lower = last_part.to_lowercase();
+//
+//     for addr in address_book {
+//         if addr.trim().is_empty() { continue; } // Skip empty spacer lines
+//
+//         // If the address contains a colon, it's a team list
+//         if let Some((team_name, _)) = addr.split_once(':') {
+//             let team_name = team_name.trim();
+//             if team_name.to_lowercase().starts_with(&last_part_lower) {
+//                 // Return the formatted Team string instead of the raw file line
+//                 matches.push(format!("{} (Team)", team_name));
+//             }
+//         } else {
+//             // It's a standard individual email
+//             if addr.to_lowercase().starts_with(&last_part_lower) {
+//                 matches.push(addr.clone());
+//             }
+//         }
+//     }
+//
+//     matches
+// }
+
 pub fn find_email_suggestions(input: &str, address_book: &[String]) -> Vec<String> {
     let mut matches = Vec::new();
     if input.is_empty() { return matches; }
@@ -866,6 +896,8 @@ pub fn find_email_suggestions(input: &str, address_book: &[String]) -> Vec<Strin
     if last_part.is_empty() { return matches; }
 
     let last_part_lower = last_part.to_lowercase();
+    // Strip leading quote so typing 'm' or '"m' both successfully match '"Matt Bognar"'
+    let search_term = last_part_lower.trim_start_matches('"');
 
     for addr in address_book {
         if addr.trim().is_empty() { continue; } // Skip empty spacer lines
@@ -873,13 +905,25 @@ pub fn find_email_suggestions(input: &str, address_book: &[String]) -> Vec<Strin
         // If the address contains a colon, it's a team list
         if let Some((team_name, _)) = addr.split_once(':') {
             let team_name = team_name.trim();
-            if team_name.to_lowercase().starts_with(&last_part_lower) {
+            if team_name.to_lowercase().starts_with(search_term) {
                 // Return the formatted Team string instead of the raw file line
                 matches.push(format!("{} (Team)", team_name));
             }
         } else {
             // It's a standard individual email
-            if addr.to_lowercase().starts_with(&last_part_lower) {
+            let addr_lower = addr.to_lowercase();
+            let clean_name_lower = addr_lower.trim_start_matches('"');
+
+            // Extract the raw email address if it's wrapped in < >
+            let mut email_part = "";
+            if let Some(start) = addr_lower.find('<') {
+                if let Some(end) = addr_lower.find('>') {
+                    email_part = addr_lower[start + 1..end].trim();
+                }
+            }
+
+            // Match if the search term matches the beginning of the name OR the beginning of the email
+            if clean_name_lower.starts_with(search_term) || email_part.starts_with(search_term) {
                 matches.push(addr.clone());
             }
         }

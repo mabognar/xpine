@@ -180,8 +180,8 @@ fn handle_address_book_events(k: KeyEvent, app: &mut App, theme_provider: &mut E
 
                     let title = format!("Edit Team: {}", prefix);
 
-                    if let Ok(Some(edited_text)) = theme_provider.edit_buffer(&title, &multiline_emails) {
-                        // Bind the new String to a variable so it stays alive
+                    // if let Ok(Some(edited_text)) = theme_provider.edit_buffer(&title, &multiline_emails) {
+                    if let Ok(Some(edited_text)) = theme_provider.edit_buffer(&title, &multiline_emails, crate::editor::MenuState::TeamEditor) {
                         // for the duration of this block.
                         let normalized_text = edited_text.replace('\n', ",").replace(';', ",");
 
@@ -1200,10 +1200,10 @@ fn handle_settings_events(k: KeyEvent, app: &mut App, theme_provider: &mut Edito
                 theme_provider.spellcheck_before_send = !theme_provider.spellcheck_before_send;
                 theme_provider.save_settings();
             }
-            // --- NEW: Trigger Multiline Editor ---
             else if selected_idx == 4 {
                 let current_sig = crate::config::load_signature();
-                if let Ok(Some(new_sig)) = theme_provider.edit_buffer("Edit Email Signature (leave blank for no signature)", &current_sig) {
+                // Update this line:
+                if let Ok(Some(new_sig)) = theme_provider.edit_buffer("Edit Email Signature (leave blank for no signature)", &current_sig, crate::editor::MenuState::EmailComposer) {
                     crate::config::save_signature(&new_sig);
                 }
             }

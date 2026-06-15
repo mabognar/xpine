@@ -2,6 +2,26 @@ use std::fs;
 use std::io::BufRead;
 use std::path::PathBuf;
 
+pub fn enforce_quotes(address: &str) -> String {
+    let trimmed = address.trim();
+    if let Some(start) = trimmed.find('<') {
+        let name_part = trimmed[..start].trim();
+        if name_part.is_empty() {
+            return trimmed.to_string();
+        }
+
+        // If it's already properly quoted, leave it alone
+        if name_part.starts_with('"') && name_part.ends_with('"') {
+            return trimmed.to_string();
+        }
+
+        // Remove any dangling outer quotes just in case, then explicitly wrap
+        let clean_name = name_part.trim_matches('"');
+        return format!("\"{}\" {}", clean_name, &trimmed[start..]);
+    }
+    trimmed.to_string()
+}
+
 pub fn get_address_book_path() -> PathBuf {
     let home = dirs::home_dir().expect("Could not find home directory.");
     let xpine_dir = home.join(".xpine");
@@ -95,30 +115,91 @@ pub fn load_address_book() -> Vec<String> {
 //     Ok(true) // Return true indicating it was added
 // }
 
+// pub fn add_to_address_book(address: &str) -> std::io::Result<bool> {
+//     let mut addresses = load_address_book();
+//
+//     // Check if it's a team and expand any nested teams before saving
+//     let mut final_address = address.trim().to_string();
+//     if let Some((team_name, emails)) = final_address.clone().split_once(':') {
+//         let expanded_emails = expand_address_lists(emails, &addresses);
+//         // Rebuild the team string with just the expanded emails
+//         final_address = format!("{}: {};", team_name.trim(), expanded_emails.trim_end_matches(';'));
+//
+//         // Check if the team already exists
+//         if addresses.iter().any(|a| a.trim() == final_address) {
+//             return Ok(false); // Return false indicating it's a duplicate
+//         }
+//     } else {
+//         // --- Individual Email Upgrade Logic ---
+//         let new_raw = crate::mail::extract_email(&final_address).to_lowercase();
+//         let new_has_name = final_address.contains('<') && final_address.contains('>');
+//         let mut replaced = false;
+//
+//         for existing_addr in addresses.iter_mut() {
+//             if existing_addr.contains(':') {
+//                 continue; // Skip teams when checking individual emails
+//             }
+//
+//             let existing_raw = crate::mail::extract_email(existing_addr).to_lowercase();
+//
+//             if new_raw == existing_raw {
+//                 let existing_has_name = existing_addr.contains('<') && existing_addr.contains('>');
+//
+//                 if new_has_name && !existing_has_name {
+//                     // Upgrade: Replace the raw email with the named version
+//                     *existing_addr = final_address.clone();
+//                     replaced = true;
+//                     break;
+//                 } else {
+//                     // The address book already has this email (either as named, or exactly the same)
+//                     // Do not add or replace.
+//                     return Ok(false);
+//                 }
+//             }
+//         }
+//
+//         if replaced {
+//             // If we replaced an entry, rewrite the entire address book file
+//             save_address_book(&addresses)?;
+//             return Ok(true);
+//         }
+//     }
+//
+//     // If we get here, it's a brand new individual email or a new team, so append it
+//     let path = get_address_book_path();
+//     let mut file = fs::OpenOptions::new()
+//         .create(true)
+//         .append(true)
+//         .open(path)?;
+//
+//     use std::io::Write;
+//     writeln!(file, "{}", final_address)?;
+//
+//     Ok(true)
+// }
+
 pub fn add_to_address_book(address: &str) -> std::io::Result<bool> {
     let mut addresses = load_address_book();
 
-    // Check if it's a team and expand any nested teams before saving
     let mut final_address = address.trim().to_string();
     if let Some((team_name, emails)) = final_address.clone().split_once(':') {
         let expanded_emails = expand_address_lists(emails, &addresses);
-        // Rebuild the team string with just the expanded emails
         final_address = format!("{}: {};", team_name.trim(), expanded_emails.trim_end_matches(';'));
 
-        // Check if the team already exists
         if addresses.iter().any(|a| a.trim() == final_address) {
-            return Ok(false); // Return false indicating it's a duplicate
+            return Ok(false);
         }
     } else {
+        // NEW: Enforce quotes before checking or saving
+        final_address = enforce_quotes(&final_address);
+
         // --- Individual Email Upgrade Logic ---
         let new_raw = crate::mail::extract_email(&final_address).to_lowercase();
         let new_has_name = final_address.contains('<') && final_address.contains('>');
         let mut replaced = false;
 
         for existing_addr in addresses.iter_mut() {
-            if existing_addr.contains(':') {
-                continue; // Skip teams when checking individual emails
-            }
+            if existing_addr.contains(':') { continue; }
 
             let existing_raw = crate::mail::extract_email(existing_addr).to_lowercase();
 
@@ -126,26 +207,22 @@ pub fn add_to_address_book(address: &str) -> std::io::Result<bool> {
                 let existing_has_name = existing_addr.contains('<') && existing_addr.contains('>');
 
                 if new_has_name && !existing_has_name {
-                    // Upgrade: Replace the raw email with the named version
+                    // Upgrade: Replace the raw email with the formatted named version
                     *existing_addr = final_address.clone();
                     replaced = true;
                     break;
                 } else {
-                    // The address book already has this email (either as named, or exactly the same)
-                    // Do not add or replace.
                     return Ok(false);
                 }
             }
         }
 
         if replaced {
-            // If we replaced an entry, rewrite the entire address book file
             save_address_book(&addresses)?;
             return Ok(true);
         }
     }
 
-    // If we get here, it's a brand new individual email or a new team, so append it
     let path = get_address_book_path();
     let mut file = fs::OpenOptions::new()
         .create(true)
@@ -205,11 +282,15 @@ pub fn clean_and_save_address_book(addresses: &mut Vec<String>) {
     addresses.retain(|a| !a.trim().is_empty());
 
     // Expand any nested teams inside of teams before sorting/saving
+    // Expand any nested teams inside of teams before sorting/saving
     let current_book = addresses.clone();
     for a in addresses.iter_mut() {
         if let Some((team_name, emails)) = a.clone().split_once(':') {
             let expanded_emails = expand_address_lists(emails, &current_book);
             *a = format!("{}: {};", team_name.trim(), expanded_emails.trim_end_matches(';'));
+        } else {
+            // NEW: Enforce quotes on individual emails saved via the Editor
+            *a = enforce_quotes(a);
         }
     }
 
@@ -272,9 +353,8 @@ pub fn expand_address_lists(input: &str, address_book: &[String]) -> String {
         }
 
         if !matched_list && !clean_part.is_empty() {
-            // If it wasn't a team, push the cleaned part. (Using clean_part
-            // ensures we don't accidentally send to an invalid email if they typed it manually)
-            expanded.push(clean_part.to_string());
+            // If it wasn't a team, enforce quotes and push the cleaned part.
+            expanded.push(enforce_quotes(clean_part));
         }
     }
 

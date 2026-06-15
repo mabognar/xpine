@@ -370,6 +370,16 @@ impl UiExt for Editor {
                 Self::draw_menu_line(&mut stdout, rows - 2, cols, col_width, &menu1, ui_bg, menu_key_fg, menu_text_fg)?;
                 Self::draw_menu_line(&mut stdout, rows - 1, cols, col_width, &menu2, ui_bg, menu_key_fg, menu_text_fg)?;
             }
+            MenuState::TeamEditor => {
+                Self::draw_menu_line(
+                    &mut stdout, rows - 2, cols, col_width,
+                    &[("^X", " Save"), ("^C", " Cancel"), ("^P", " Prev"), ("^Y", "Prev Pg"), ("^A", " Add Email"), ("", "")],
+                    ui_bg, menu_key_fg, menu_text_fg)?;
+                Self::draw_menu_line(
+                    &mut stdout, rows - 1, cols, col_width,
+                    &[("", ""), ("", ""), ("^N", " Next"), ("^V", " Next Pg"), ("", ""), ("", "")],
+                    ui_bg, menu_key_fg, menu_text_fg)?;
+            }
         }
 
         let visual_x = self.get_visual_cursor_x();
@@ -849,8 +859,15 @@ fn draw_email_list(stdout: &mut std::io::Stdout, app: &App, cols: u16, rows: u16
     } else {
         // xpine paginates from the highest index (newest) downwards.
         // So page 0 always contains the highest message numbers.
-        let end_idx = app.total_messages.saturating_sub(app.current_page * items_per_page);
+        // let end_idx = app.total_messages.saturating_sub(app.current_page * items_per_page);
+        let mut end_idx = app.total_messages.saturating_sub(app.current_page * items_per_page);
+        let start_idx = end_idx.saturating_sub(items_per_page.saturating_sub(1)).max(1);
 
+        // Mirror the page boundary shift applied in net.rs to ensure the UI counter stays synced
+        if start_idx == 1 {
+            end_idx = items_per_page.min(app.total_messages);
+        }
+        
         let msg_x = if theme_provider.sort_newest_first {
             end_idx.saturating_sub(app.selected_index as u32)
         } else {
