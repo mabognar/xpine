@@ -67,8 +67,36 @@ pub fn load_address_book() -> Vec<String> {
 //
 //     Ok(true) // Return true indicating it was added
 // }
+// pub fn add_to_address_book(address: &str) -> std::io::Result<bool> {
+//     let addresses = load_address_book();
+//
+//     // Check if it's a team and expand any nested teams before saving
+//     let mut final_address = address.trim().to_string();
+//     if let Some((team_name, emails)) = final_address.clone().split_once(':') {
+//         let expanded_emails = expand_address_lists(emails, &addresses);
+//         // Rebuild the team string with just the expanded emails
+//         final_address = format!("{}: {};", team_name.trim(), expanded_emails.trim_end_matches(';'));
+//     }
+//
+//     // Check if the address already exists (ignoring whitespace differences)
+//     if addresses.iter().any(|a| a.trim() == final_address) {
+//         return Ok(false); // Return false indicating it's a duplicate
+//     }
+//
+//     let path = get_address_book_path();
+//     let mut file = fs::OpenOptions::new()
+//         .create(true)
+//         .append(true)
+//         .open(path)?;
+//
+//     use std::io::Write;
+//     writeln!(file, "{}", final_address)?;
+//
+//     Ok(true) // Return true indicating it was added
+// }
+
 pub fn add_to_address_book(address: &str) -> std::io::Result<bool> {
-    let addresses = load_address_book();
+    let mut addresses = load_address_book();
 
     // Check if it's a team and expand any nested teams before saving
     let mut final_address = address.trim().to_string();
@@ -76,13 +104,48 @@ pub fn add_to_address_book(address: &str) -> std::io::Result<bool> {
         let expanded_emails = expand_address_lists(emails, &addresses);
         // Rebuild the team string with just the expanded emails
         final_address = format!("{}: {};", team_name.trim(), expanded_emails.trim_end_matches(';'));
+
+        // Check if the team already exists
+        if addresses.iter().any(|a| a.trim() == final_address) {
+            return Ok(false); // Return false indicating it's a duplicate
+        }
+    } else {
+        // --- Individual Email Upgrade Logic ---
+        let new_raw = crate::mail::extract_email(&final_address).to_lowercase();
+        let new_has_name = final_address.contains('<') && final_address.contains('>');
+        let mut replaced = false;
+
+        for existing_addr in addresses.iter_mut() {
+            if existing_addr.contains(':') {
+                continue; // Skip teams when checking individual emails
+            }
+
+            let existing_raw = crate::mail::extract_email(existing_addr).to_lowercase();
+
+            if new_raw == existing_raw {
+                let existing_has_name = existing_addr.contains('<') && existing_addr.contains('>');
+
+                if new_has_name && !existing_has_name {
+                    // Upgrade: Replace the raw email with the named version
+                    *existing_addr = final_address.clone();
+                    replaced = true;
+                    break;
+                } else {
+                    // The address book already has this email (either as named, or exactly the same)
+                    // Do not add or replace.
+                    return Ok(false);
+                }
+            }
+        }
+
+        if replaced {
+            // If we replaced an entry, rewrite the entire address book file
+            save_address_book(&addresses)?;
+            return Ok(true);
+        }
     }
 
-    // Check if the address already exists (ignoring whitespace differences)
-    if addresses.iter().any(|a| a.trim() == final_address) {
-        return Ok(false); // Return false indicating it's a duplicate
-    }
-
+    // If we get here, it's a brand new individual email or a new team, so append it
     let path = get_address_book_path();
     let mut file = fs::OpenOptions::new()
         .create(true)
@@ -92,7 +155,7 @@ pub fn add_to_address_book(address: &str) -> std::io::Result<bool> {
     use std::io::Write;
     writeln!(file, "{}", final_address)?;
 
-    Ok(true) // Return true indicating it was added
+    Ok(true)
 }
 
 pub fn save_address_book(addresses: &[String]) -> std::io::Result<()> {

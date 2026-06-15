@@ -740,14 +740,14 @@ impl PromptExt for Editor {
             // 2. Draw the upper menu line (Navigation hints)
             Self::draw_menu_line(
                 &mut stdout, rows.saturating_sub(2), cols, col_width,
-                &[("^C", " Cancel"), ("P", " Prev"), ("Enter", " Select"), ("", ""), ("", ""), ("", "")],
+                &[("", ""), ("P", " Prev"), ("Enter", " Select"), ("", ""), ("", ""), ("", "")],
                 colors.menu_bg, colors.accent, colors.fg,
             )?;
 
             // 3. Draw the lower menu line
             Self::draw_menu_line(
                 &mut stdout, rows.saturating_sub(1), cols, col_width,
-                &[("", ""), ("N", " Next"), ("", ""), ("", ""), ("", ""), ("", "")],
+                &[("^C", " Cancel"), ("N", " Next"), ("", ""), ("", ""), ("", ""), ("", "")],
                 colors.menu_bg, colors.accent, colors.fg,
             )?;
 
