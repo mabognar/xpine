@@ -223,15 +223,50 @@ pub fn view_email(
                 }
 
                 if !key.modifiers.contains(event::KeyModifiers::CONTROL) && !key.modifiers.contains(event::KeyModifiers::ALT) {
-
+                    // if key.code == event::KeyCode::Char('a') || key.code == event::KeyCode::Char('A') {
+                    //     if let Ok(added) = address::add_to_address_book(&email_from) {
+                    //         if added {
+                    //             reader.set_status(format!("Added {} to address book.", email_from));
+                    //         } else {
+                    //             reader.set_status("Address already in address book".to_string());
+                    //         }
+                    //     }
+                    //     continue;
+                    // }
                     if key.code == event::KeyCode::Char('a') || key.code == event::KeyCode::Char('A') {
-                        if let Ok(added) = address::add_to_address_book(&email_from) {
-                            if added {
-                                reader.set_status(format!("Added {} to address book.", email_from));
-                            } else {
-                                reader.set_status("Address already in address book".to_string());
-                            }
+                        // 1. Combine all available address fields
+                        let combined_addrs = format!("{}, {}, {}", email_from, email_to, email_cc);
+
+                        // 2. Parse out individual addresses, remove whitespace, and filter blanks
+                        let mut addrs: Vec<String> = combined_addrs.split(',')
+                            .map(|s| s.trim().to_string())
+                            .filter(|s| !s.is_empty())
+                            .collect();
+
+                        // 3. Remove duplicates so the user doesn't scroll through the same address twice
+                        addrs.sort();
+                        addrs.dedup();
+
+                        if addrs.is_empty() {
+                            reader.set_status("No addresses found to add.".to_string());
+                            continue;
                         }
+
+                        // 4. Trigger our new scrolling selection prompt
+                        if let Ok(Some(selected_addr)) = reader.prompt_select_item("Add address:", &addrs) {
+                            if let Ok(added) = address::add_to_address_book(&selected_addr) {
+                                if added {
+                                    reader.set_status(format!("Added {} to address book.", selected_addr));
+                                } else {
+                                    reader.set_status("Address already in address book".to_string());
+                                }
+                            } else {
+                                reader.set_status("Failed to access address book".to_string());
+                            }
+                        } else {
+                            reader.set_status("Add address cancelled.".to_string());
+                        }
+
                         continue;
                     }
                     if key.code == event::KeyCode::Char('r') || key.code == event::KeyCode::Char('R') {

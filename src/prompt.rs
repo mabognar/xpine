@@ -16,6 +16,7 @@ pub trait PromptExt {
     fn prompt_with_autocomplete(&mut self, prompt_text: &str, suggestions: &[String]) -> io::Result<Option<String>>;
     fn prompt_edit(&mut self, prompt_text: &str, initial_text: &str) -> io::Result<Option<String>>;
     fn prompt_for_folder(&mut self, prompt_text: &str, folders: &[String]) -> io::Result<Option<String>>;
+    fn prompt_select_item(&mut self, prompt_text: &str, items: &[String]) -> io::Result<Option<String>>;
 }
 
 impl PromptExt for Editor {
@@ -689,6 +690,94 @@ impl PromptExt for Editor {
                                 input = folder.clone();
                                 suggestion_idx = 0; // Reset index after completing
                             }
+                        }
+                        _ => {}
+                    }
+                }
+            }
+        }
+    }
+
+    fn prompt_select_item(&mut self, prompt_text: &str, items: &[String]) -> io::Result<Option<String>> {
+        if items.is_empty() {
+            return Ok(None);
+        }
+
+        let mut stdout = stdout();
+        let (cols, rows) = term_size()?;
+        let theme = &self.theme_set.themes[&self.current_theme];
+        let colors = derive_ui_colors(theme);
+        let col_width = (cols as usize / 6).max(1);
+
+        let mut idx = 0;
+
+        loop {
+            let item = &items[idx];
+            let indicator = if items.len() > 1 {
+                format!(" ({}/{})", idx + 1, items.len())
+            } else {
+                String::new()
+            };
+
+            let prompt_y = rows.saturating_sub(3);
+
+            // 1. Draw the prompt and the currently selected item
+            queue!(
+                stdout,
+                cursor::MoveTo(0, prompt_y),
+                SetBackgroundColor(colors.menu_bg),
+                Clear(ClearType::CurrentLine),
+                SetForegroundColor(colors.accent),
+                Print(prompt_text),
+                SetForegroundColor(colors.fg),
+                Print(" "),
+                Print(item),
+                SetForegroundColor(colors.date_color),
+                Print(indicator),
+                ResetColor
+            )?;
+
+            // 2. Draw the upper menu line (Navigation hints)
+            Self::draw_menu_line(
+                &mut stdout, rows.saturating_sub(2), cols, col_width,
+                &[("^C", " Cancel"), ("P", " Prev"), ("Enter", " Select"), ("", ""), ("", ""), ("", "")],
+                colors.menu_bg, colors.accent, colors.fg,
+            )?;
+
+            // 3. Draw the lower menu line
+            Self::draw_menu_line(
+                &mut stdout, rows.saturating_sub(1), cols, col_width,
+                &[("", ""), ("N", " Next"), ("", ""), ("", ""), ("", ""), ("", "")],
+                colors.menu_bg, colors.accent, colors.fg,
+            )?;
+
+            queue!(stdout, cursor::Hide)?;
+            stdout.flush()?;
+
+            // 4. Handle Keyboard Events
+            if let Event::Key(key) = event::read()? {
+                if key.kind == KeyEventKind::Press {
+                    match key.code {
+                        KeyCode::Enter => {
+                            queue!(stdout, cursor::Hide, ResetColor)?;
+                            stdout.flush()?;
+                            return Ok(Some(items[idx].clone()));
+                        }
+                        KeyCode::Esc => {
+                            queue!(stdout, cursor::Hide, ResetColor)?;
+                            stdout.flush()?;
+                            return Ok(None);
+                        }
+                        KeyCode::Char('c') | KeyCode::Char('C') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+                            queue!(stdout, cursor::Hide, ResetColor)?;
+                            stdout.flush()?;
+                            return Ok(None);
+                        }
+                        KeyCode::Up | KeyCode::Char('p') | KeyCode::Char('P') => {
+                            idx = if idx == 0 { items.len() - 1 } else { idx - 1 };
+                        }
+                        KeyCode::Down | KeyCode::Char('n') | KeyCode::Char('N') => {
+                            idx = (idx + 1) % items.len();
                         }
                         _ => {}
                     }
