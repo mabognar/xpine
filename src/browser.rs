@@ -203,3 +203,11 @@ impl BrowserExt for Editor {
         }
     }
 }
+
+pub fn open_url(url: &str) -> io::Result<()> {
+    if webbrowser::open(url).is_ok() {
+        Ok(())
+    } else {
+        Err(io::Error::new(io::ErrorKind::Other, "Failed to open web browser"))
+    }
+}

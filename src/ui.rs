@@ -18,28 +18,6 @@ pub trait UiExt {
 }
 
 impl UiExt for Editor {
-    // fn draw_menu_line(writer: &mut io::Stdout, row: u16, cols: u16, col_width: usize,
-    //                   items: &[(&str, &str)], ui_bg: Color, key_fg: Color, text_fg: Color) -> io::Result<()> {
-    //     queue!(writer, cursor::MoveTo(0, row), SetBackgroundColor(ui_bg))?;
-    //     let mut printed = 0;
-    //     for (cmd, desc) in items.iter() {
-    //         let cmd_chars = cmd.chars().count();
-    //         let desc_chars = desc.chars().count();
-    //         let total_chars = cmd_chars + desc_chars;
-    //
-    //         let safe_col_width = col_width.max(1);
-    //
-    //         if total_chars <= safe_col_width {
-    //             queue!(writer, SetForegroundColor(key_fg), Print(cmd), SetForegroundColor(text_fg), Print(format!("{}{}", desc, " ".repeat(safe_col_width - total_chars))))?;
-    //         } else {
-    //             queue!(writer, SetForegroundColor(key_fg), Print(cmd), SetForegroundColor(text_fg), Print(desc.chars().take(safe_col_width.saturating_sub(cmd_chars)).collect::<String>()))?;
-    //         }
-    //         printed += safe_col_width;
-    //     }
-    //     queue!(writer, Print(" ".repeat((cols as usize).saturating_sub(printed))), SetBackgroundColor(Color::Reset))?;
-    //     Ok(())
-    // }
-
     fn draw_menu_line(writer: &mut io::Stdout, row: u16, _cols: u16, col_width: usize,
                       items: &[(&str, &str)], ui_bg: Color, key_fg: Color, text_fg: Color) -> io::Result<()> {
 
@@ -572,19 +550,15 @@ impl UiExt for Editor {
         let mut stdout = stdout();
         let mut scroll_offset = 0;
 
-        // Start the interactive help loop
         loop {
             let (cols, rows) = terminal::size()?;
             let visible_lines = (rows as usize).saturating_sub(3);
             let max_scroll = help_content.len().saturating_sub(visible_lines);
 
-            // Ensure bounds if the terminal is resized
             scroll_offset = scroll_offset.min(max_scroll);
 
-            // Paint the entire background
             queue!(stdout, SetBackgroundColor(colors.bg), terminal::Clear(ClearType::All))?;
 
-            // Only render the lines that fit in the current scrolled window
             for (i, line) in help_content.iter().skip(scroll_offset).take(visible_lines).enumerate() {
                 queue!(stdout, cursor::MoveTo(0, i as u16))?;
 
@@ -702,7 +676,6 @@ pub fn draw_app(stdout: &mut std::io::Stdout, app: &App, theme_provider: &Editor
         AppMode::EmailRead { .. } => {} // Rendered completely in src/read.rs
     }
 
-    // Draw the global status message overlay if one is active
     if !theme_provider.status_message.is_empty() {
         if let Some(time) = theme_provider.status_time {
             if time.elapsed() < std::time::Duration::from_secs(3) {
@@ -846,7 +819,6 @@ fn draw_email_list(stdout: &mut std::io::Stdout, app: &App, cols: u16, rows: u16
         queue!(stdout, SetForegroundColor(colors.flag_star), Print(format!("   Search Results: {}", query)))?;
     }
 
-    // --- NEW: Top Right Message Counter ---
     let items_per_page = (rows.saturating_sub(3) as u32).max(1);
 
     if app.total_messages == 0 || app.page_emails.is_empty() {
@@ -857,13 +829,9 @@ fn draw_email_list(stdout: &mut std::io::Stdout, app: &App, cols: u16, rows: u16
             Print(no_msg)
         )?;
     } else {
-        // xpine paginates from the highest index (newest) downwards.
-        // So page 0 always contains the highest message numbers.
-        // let end_idx = app.total_messages.saturating_sub(app.current_page * items_per_page);
         let mut end_idx = app.total_messages.saturating_sub(app.current_page * items_per_page);
         let start_idx = end_idx.saturating_sub(items_per_page.saturating_sub(1)).max(1);
 
-        // Mirror the page boundary shift applied in net.rs to ensure the UI counter stays synced
         if start_idx == 1 {
             end_idx = items_per_page.min(app.total_messages);
         }
@@ -887,7 +855,6 @@ fn draw_email_list(stdout: &mut std::io::Stdout, app: &App, cols: u16, rows: u16
             SetForegroundColor(colors.fg), Print(&y_str) // Removed the trailing Print(" ")
         )?;
     }
-    // --------------------------------------
 
     queue!(stdout, ResetColor)?;
 
@@ -1044,10 +1011,30 @@ fn draw_main_menu(stdout: &mut std::io::Stdout, app: &App, cols: u16, rows: u16,
     let theme = &theme_provider.theme_set.themes[&theme_provider.current_theme];
     let colors = derive_ui_colors(theme);
 
+    // --- NEW: Dynamic Version Strings ---
+    let current_version = env!("CARGO_PKG_VERSION");
+    let (update_desc, is_update_avail) = match &app.latest_version {
+        Some(latest) if latest != current_version => {
+            (format!("Update xpine to version {}", latest), true)
+        }
+        Some(_) => {
+            (format!("xpine ({}) is up to date", current_version), false)
+        }
+        None => {
+            ("Checking for updates...".to_string(), false)
+        }
+    };
+
+    // Add 'U' to the menu array right before 'Q'
     let menu_options = [
-        ("I", "INBOX", "Go to the default Inbox"), ("A", "ADDRESS BOOK", "Update address book"),
-        ("F", "FOLDER LIST", "Select folder"), ("S", "SETTINGS", "Configure xpine"),
-        ("E", "EMAIL ACCOUNTS", "Edit email accounts"), ("H", "HELP", "Get help using xpine"), ("Q", "QUIT", "Leave the xpine program"),
+        ("I", "INBOX", "Go to the default Inbox"),
+        ("A", "ADDRESS BOOK", "Update address book"),
+        ("F", "FOLDER LIST", "Select folder"),
+        ("S", "SETTINGS", "Configure xpine"),
+        ("E", "EMAIL ACCOUNTS", "Edit/Add email accounts"),
+        ("H", "HELP", "Get help using xpine"),
+        ("U", "UPDATE XPINE", update_desc.as_str()), // ADDED
+        ("Q", "QUIT", "Leave the xpine program"),    // Pushed down
     ];
 
     let header_title = format!("xpine - Main Menu ({})", app.active_account.email);
@@ -1058,7 +1045,35 @@ fn draw_main_menu(stdout: &mut std::io::Stdout, app: &App, cols: u16, rows: u16,
         let x = (cols / 2).saturating_sub(25);
         let row_bg = if i == selected_idx { colors.selected_bg } else { colors.bg };
 
-        queue!(stdout, cursor::MoveTo(x, y), SetBackgroundColor(row_bg), SetForegroundColor(colors.accent), Print(format!(" {:>2} ", key)), SetForegroundColor(colors.fg), Print(format!("{:<15} - {}", title, desc)), ResetColor)?;
+        // Print the Key and Title exactly as before
+        queue!(
+            stdout,
+            cursor::MoveTo(x, y),
+            SetBackgroundColor(row_bg),
+            SetForegroundColor(colors.accent), Print(format!(" {:>2} ", key)),
+            SetForegroundColor(colors.fg), Print(format!("{:<15} - ", title)),
+        )?;
+
+        // --- NEW: Custom multi-color rendering for the description ---
+        if *key == "U" && !is_update_avail && app.latest_version.is_some() {
+            // Split the string into 3 parts to inject `colors.accent` in the middle
+            queue!(
+                stdout,
+                SetForegroundColor(colors.fg), Print("xpine ("),
+                SetForegroundColor(colors.accent), Print(current_version), // Hot-key color here!
+                SetForegroundColor(colors.fg), Print(") is up to date")
+            )?;
+        } else {
+            // Fallback for all other menu items (and the LightRed update alert)
+            let desc_color = if is_update_avail && *key == "U" {
+                Color::Red
+            } else {
+                colors.fg
+            };
+            queue!(stdout, SetForegroundColor(desc_color), Print(desc))?;
+        }
+
+        queue!(stdout, ResetColor)?;
     }
 
     let m_col = (cols as usize / 6).max(1);
@@ -1066,7 +1081,7 @@ fn draw_main_menu(stdout: &mut std::io::Stdout, app: &App, cols: u16, rows: u16,
                            &[("", ""), ("P", " Prev"), (">", " Select"), ("", ""), ("", ""), ("", "")],
                            colors.menu_bg, colors.accent, colors.fg)?;
     Editor::draw_menu_line(stdout, rows - 1, cols, m_col,
-                           &[("Q", " Quit"), ("N", " Next"), ("", ""), ("", ""), ("", ""), ("?", " Help")],
+                           &[("Q", " Quit"), ("N", " Next"), ("", ""), ("", ""), ("", ""), ("", "")],
                            colors.menu_bg, colors.accent, colors.fg)?;
 
     if app.accounts.is_empty() {
@@ -1085,14 +1100,6 @@ fn draw_settings(stdout: &mut std::io::Stdout, cols: u16, rows: u16, theme_provi
         ("    Soft Wrap", theme_provider.soft_wrap), ("    Show Line Numbers", theme_provider.show_line_numbers),
         ("    Sort Newest First", theme_provider.sort_newest_first), ("    Spellcheck Before Sending", theme_provider.spellcheck_before_send),
     ];
-
-    // for (i, (title, is_enabled)) in options.iter().enumerate() {
-    //     let y = 1 + i as u16;
-    //     if i == selected_idx { queue!(stdout, cursor::MoveTo(1, y), SetBackgroundColor(colors.selected_bg))?; } else { queue!(stdout, cursor::MoveTo(1, y), SetBackgroundColor(colors.bg), SetForegroundColor(colors.fg))?; }
-    //     queue!(stdout, Print(format!("{} {:<20} ", if *is_enabled { " [X]" } else { " [ ]" }, title)), ResetColor)?;
-    // }
-    //
-    // let theme_y = 2 + options.len() as u16;
 
     for (i, (title, is_enabled)) in options.iter().enumerate() {
         let y = 1 + i as u16;

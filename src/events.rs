@@ -136,14 +136,6 @@ fn handle_address_book_events(k: KeyEvent, app: &mut App, theme_provider: &mut E
                                 crate::address::clean_and_save_address_book(&mut addresses);
                             }
                         }
-                        // if let Ok(Some(emails)) = theme_provider.prompt_with_autocomplete("Emails (comma separated): ", &addresses) {
-                        //     let trimmed_emails = emails.trim().trim_end_matches(';');
-                        //     if !trimmed_emails.is_empty() {
-                        //         let formatted_list = format!("{}: {};", team_name, trimmed_emails);
-                        //         addresses.push(formatted_list);
-                        //         crate::address::clean_and_save_address_book(&mut addresses);
-                        //     }
-                        // }
                     }
                 }
             }
@@ -178,11 +170,21 @@ fn handle_address_book_events(k: KeyEvent, app: &mut App, theme_provider: &mut E
                         .collect::<Vec<&str>>()
                         .join("\n");
 
+                    // Inside handle_address_book_events() for the Team editing block:
+
                     let title = format!("Edit Team: {}", prefix);
 
-                    // if let Ok(Some(edited_text)) = theme_provider.edit_buffer(&title, &multiline_emails) {
-                    if let Ok(Some(edited_text)) = theme_provider.edit_buffer(&title, &multiline_emails, crate::editor::MenuState::TeamEditor) {
-                        // for the duration of this block.
+                    // 1. CLEAR BEFORE: Ensure no lingering ghost text enters the editor
+                    let _ = execute!(std::io::stdout(), crossterm::terminal::Clear(crossterm::terminal::ClearType::All));
+
+                    // 2. Capture the result
+                    let edit_result = theme_provider.edit_buffer(&title, &multiline_emails, crate::editor::MenuState::TeamEditor);
+
+                    // 3. CLEAR AFTER: Wipe the editor away before redrawing the menu
+                    let _ = execute!(std::io::stdout(), crossterm::terminal::Clear(crossterm::terminal::ClearType::All));
+
+                    // 4. Process the result normally
+                    if let Ok(Some(edited_text)) = edit_result {
                         let normalized_text = edited_text.replace('\n', ",").replace(';', ",");
 
                         let mut unique_emails = Vec::new();
@@ -200,21 +202,7 @@ fn handle_address_book_events(k: KeyEvent, app: &mut App, theme_provider: &mut E
                             crate::address::clean_and_save_address_book(&mut addresses);
                         }
                     }
-                    // if let Ok(Some(edited_text)) = theme_provider.edit_buffer(&title, &multiline_emails) {
-                    //     let cleaned_emails = edited_text
-                    //         .replace('\n', ",")
-                    //         .replace(';', ",")
-                    //         .split(',')
-                    //         .map(|s| s.trim())
-                    //         .filter(|s| !s.is_empty())
-                    //         .collect::<Vec<&str>>()
-                    //         .join(", ");
-                    //
-                    //     if !cleaned_emails.is_empty() {
-                    //         addresses[selected_idx] = format!("{}: {};", prefix, cleaned_emails);
-                    //         crate::address::clean_and_save_address_book(&mut addresses);
-                    //     }
-                    // }
+
                 } else {
                     // --- SINGLE ADDRESS EDITING: Use one-line prompt_edit ---
                     if let Ok(Some(new_val)) = theme_provider.prompt_edit("Edit: ", current_val) {
@@ -302,6 +290,7 @@ fn handle_email_accounts_events(k: KeyEvent, app: &mut App, theme_provider: &mut
                 }
 
                 if is_microsoft {
+                    // ... (Keep existing Microsoft OAuth block unchanged) ...
                     let client_id = "014bd274-beed-47dd-afba-c2fc4f48ede0".to_string();
 
                     let mut new_acc = crate::config::Account {
@@ -369,29 +358,34 @@ fn handle_email_accounts_events(k: KeyEvent, app: &mut App, theme_provider: &mut
                                 let default_smtp = defaults.as_ref().map(|d| d.smtp).unwrap_or("smtp.");
 
                                 if let Ok(Some(smtp_server)) = theme_provider.prompt_edit("SMTP Server: ", default_smtp) {
-                                    let new_acc = crate::config::Account {
-                                        email: email.trim().to_string(),
-                                        password: Some(password.trim().to_string()),
-                                        client_id: None,
-                                        client_secret: None,
-                                        refresh_token: None,
-                                        imap_server: imap_server.trim().to_string(),
-                                        imap_port: imap_port.trim().parse().unwrap_or(993),
-                                        smtp_server: smtp_server.trim().to_string(),
-                                        smtp_port: 587,
-                                    };
 
-                                    app.accounts.push(new_acc);
-                                    crate::config::save_config(&app.accounts);
+                                    // NEW: Prompt for SMTP Port with 587 as the pre-populated default
+                                    if let Ok(Some(smtp_port)) = theme_provider.prompt_edit("SMTP Port: ", "587") {
+                                        let new_acc = crate::config::Account {
+                                            email: email.trim().to_string(),
+                                            password: Some(password.trim().to_string()),
+                                            client_id: None,
+                                            client_secret: None,
+                                            refresh_token: None,
+                                            imap_server: imap_server.trim().to_string(),
+                                            imap_port: imap_port.trim().parse().unwrap_or(993),
+                                            smtp_server: smtp_server.trim().to_string(),
+                                            // FIXED: Parse the user's input instead of hardcoding 587
+                                            smtp_port: smtp_port.trim().parse().unwrap_or(587),
+                                        };
 
-                                    app.current_account_idx = app.accounts.len() - 1;
-                                    app.active_account = app.accounts[app.current_account_idx].clone();
-                                    app.needs_reconnect = true;
+                                        app.accounts.push(new_acc);
+                                        crate::config::save_config(&app.accounts);
 
-                                    app.current_folder = "INBOX".to_string();
-                                    app.current_page = 0;
-                                    app.restore_index_from_end = Some(0);
-                                    selected_idx = app.current_account_idx;
+                                        app.current_account_idx = app.accounts.len() - 1;
+                                        app.active_account = app.accounts[app.current_account_idx].clone();
+                                        app.needs_reconnect = true;
+
+                                        app.current_folder = "INBOX".to_string();
+                                        app.current_page = 0;
+                                        app.restore_index_from_end = Some(0);
+                                        selected_idx = app.current_account_idx;
+                                    }
                                 }
                             }
                         }
@@ -399,6 +393,121 @@ fn handle_email_accounts_events(k: KeyEvent, app: &mut App, theme_provider: &mut
                 }
             }
         }
+
+        // KeyCode::Char('a') | KeyCode::Char('A') => {
+        //     if let Ok(Some(email)) = theme_provider.prompt("Email: ", false) {
+        //         let email_lower = email.trim().to_lowercase();
+        //
+        //         let mut is_microsoft = email_lower.ends_with("@outlook.com")
+        //             || email_lower.ends_with("@hotmail.com")
+        //             || email_lower.ends_with("@live.com")
+        //             || email_lower.ends_with("@msn.com");
+        //
+        //         if !is_microsoft {
+        //             if let Ok(Some(yes)) = theme_provider.prompt_yn("Is this a Microsoft / Graph API account?") {
+        //                 is_microsoft = yes;
+        //             }
+        //         }
+        //
+        //         if is_microsoft {
+        //             let client_id = "014bd274-beed-47dd-afba-c2fc4f48ede0".to_string();
+        //
+        //             let mut new_acc = crate::config::Account {
+        //                 email: email.trim().to_string(),
+        //                 password: None,
+        //                 client_id: Some(client_id.clone()),
+        //                 client_secret: Some("dummy_secret_do_not_remove".to_string()),
+        //                 refresh_token: None,
+        //                 imap_server: String::new(),
+        //                 imap_port: 0,
+        //                 smtp_server: String::new(),
+        //                 smtp_port: 0,
+        //             };
+        //
+        //             let _ = crossterm::terminal::disable_raw_mode();
+        //             let _ = execute!(std::io::stdout(), crossterm::terminal::LeaveAlternateScreen);
+        //
+        //             println!("Account Email: {}", new_acc.email);
+        //             println!("Client ID being sent: '{}'", client_id);
+        //
+        //             match net::run_microsoft_auth_flow(&client_id, "") {
+        //                 Ok(tokens) => {
+        //                     if let Some(refresh) = tokens.refresh_token {
+        //                         new_acc.refresh_token = Some(refresh);
+        //                         app.update_status("MS Auth Successful. Account added.".to_string());
+        //                     }
+        //                 },
+        //                 Err(e) => {
+        //                     println!("\r\nAuthentication Failed!");
+        //                     println!("Error details: {}\r\n", e);
+        //                     println!("Press ENTER to return to xpine...");
+        //                     let mut input = String::new();
+        //                     let _ = std::io::stdin().read_line(&mut input);
+        //                     app.update_status("MS Auth Failed. Account added without token.".to_string());
+        //                 }
+        //             }
+        //
+        //             let _ = crossterm::terminal::enable_raw_mode();
+        //             let _ = execute!(
+        //                 std::io::stdout(),
+        //                 crossterm::terminal::EnterAlternateScreen,
+        //                 crossterm::terminal::Clear(crossterm::terminal::ClearType::All)
+        //             );
+        //
+        //             app.accounts.push(new_acc);
+        //             crate::config::save_config(&app.accounts);
+        //
+        //             app.current_account_idx = app.accounts.len() - 1;
+        //             app.active_account = app.accounts[app.current_account_idx].clone();
+        //             app.needs_reconnect = true;
+        //
+        //             app.current_folder = "INBOX".to_string();
+        //             app.current_page = 0;
+        //             app.restore_index_from_end = Some(0);
+        //             selected_idx = app.current_account_idx;
+        //         } else {
+        //             if let Ok(Some(password)) = theme_provider.prompt("Password: ", false) {
+        //                 let defaults = crate::config::get_provider_defaults(&email);
+        //                 let default_imap = defaults.as_ref().map(|d| d.imap).unwrap_or("imap.");
+        //
+        //                 if let Ok(Some(imap_server)) = theme_provider.prompt_edit("IMAP Server: ", default_imap) {
+        //                     let default_port = defaults.as_ref().map(|d| d.port.to_string()).unwrap_or("993".to_string());
+        //
+        //                     if let Ok(Some(imap_port)) = theme_provider.prompt_edit("IMAP Port: ", &default_port) {
+        //                         let default_smtp = defaults.as_ref().map(|d| d.smtp).unwrap_or("smtp.");
+        //
+        //                         if let Ok(Some(smtp_server)) = theme_provider.prompt_edit("SMTP Server: ", default_smtp) {
+        //                             let new_acc = crate::config::Account {
+        //                                 email: email.trim().to_string(),
+        //                                 password: Some(password.trim().to_string()),
+        //                                 client_id: None,
+        //                                 client_secret: None,
+        //                                 refresh_token: None,
+        //                                 imap_server: imap_server.trim().to_string(),
+        //                                 imap_port: imap_port.trim().parse().unwrap_or(993),
+        //                                 smtp_server: smtp_server.trim().to_string(),
+        //                                 smtp_port: 587,
+        //                             };
+        //
+        //                             app.accounts.push(new_acc);
+        //                             crate::config::save_config(&app.accounts);
+        //
+        //                             app.current_account_idx = app.accounts.len() - 1;
+        //                             app.active_account = app.accounts[app.current_account_idx].clone();
+        //                             app.needs_reconnect = true;
+        //
+        //                             app.current_folder = "INBOX".to_string();
+        //                             app.current_page = 0;
+        //                             app.restore_index_from_end = Some(0);
+        //                             selected_idx = app.current_account_idx;
+        //                         }
+        //                     }
+        //                 }
+        //             }
+        //         }
+        //     }
+        // }
+
         // KeyCode::Char('m') | KeyCode::Char('M') => {
         //     if !app.accounts.is_empty() {
         //         let mut acc = app.accounts[selected_idx].clone();
@@ -455,21 +564,28 @@ fn handle_email_accounts_events(k: KeyEvent, app: &mut App, theme_provider: &mut
                         if let Ok(Some(imap_server)) = theme_provider.prompt_edit("IMAP Server: ", &acc.imap_server) {
                             if let Ok(Some(imap_port)) = theme_provider.prompt_edit("IMAP Port: ", &acc.imap_port.to_string()) {
                                 if let Ok(Some(smtp_server)) = theme_provider.prompt_edit("SMTP Server: ", &acc.smtp_server) {
-                                    app.accounts[selected_idx] = crate::config::Account {
-                                        email: email.trim().to_string(),
-                                        password: Some(password.trim().to_string()),
-                                        client_id: acc.client_id.clone(),
-                                        client_secret: acc.client_secret.clone(),
-                                        refresh_token: acc.refresh_token.clone(),
-                                        imap_server: imap_server.trim().to_string(),
-                                        imap_port: imap_port.trim().parse().unwrap_or(993),
-                                        smtp_server: smtp_server.trim().to_string(),
-                                        smtp_port: imap_port.trim().parse().unwrap_or(587),
-                                    };
-                                    crate::config::save_config(&app.accounts);
 
-                                    if selected_idx == app.current_account_idx {
-                                        app.needs_reconnect = true;
+                                    // NEW: Pre-populate with the saved port (or 587 if it somehow ended up as 0)
+                                    let default_smtp_port = if acc.smtp_port == 0 { "587".to_string() } else { acc.smtp_port.to_string() };
+
+                                    if let Ok(Some(smtp_port)) = theme_provider.prompt_edit("SMTP Port: ", &default_smtp_port) {
+                                        app.accounts[selected_idx] = crate::config::Account {
+                                            email: email.trim().to_string(),
+                                            password: Some(password.trim().to_string()),
+                                            client_id: acc.client_id.clone(),
+                                            client_secret: acc.client_secret.clone(),
+                                            refresh_token: acc.refresh_token.clone(),
+                                            imap_server: imap_server.trim().to_string(),
+                                            imap_port: imap_port.trim().parse().unwrap_or(993),
+                                            smtp_server: smtp_server.trim().to_string(),
+                                            // FIXED: Parses the new smtp_port prompt string instead of imap_port
+                                            smtp_port: smtp_port.trim().parse().unwrap_or(587),
+                                        };
+                                        crate::config::save_config(&app.accounts);
+
+                                        if selected_idx == app.current_account_idx {
+                                            app.needs_reconnect = true;
+                                        }
                                     }
                                 }
                             }
@@ -478,13 +594,75 @@ fn handle_email_accounts_events(k: KeyEvent, app: &mut App, theme_provider: &mut
                 }
             }
         }
+        // KeyCode::Char('e') | KeyCode::Char('E') => {
+        //     if !app.accounts.is_empty() {
+        //         let acc = &app.accounts[selected_idx].clone();
+        //         if let Ok(Some(email)) = theme_provider.prompt_edit("Email: ", &acc.email) {
+        //             let current_pass = acc.password.clone().unwrap_or_default();
+        //
+        //             if let Ok(Some(password)) = theme_provider.prompt_edit("Password: ", &current_pass) {
+        //                 if let Ok(Some(imap_server)) = theme_provider.prompt_edit("IMAP Server: ", &acc.imap_server) {
+        //                     if let Ok(Some(imap_port)) = theme_provider.prompt_edit("IMAP Port: ", &acc.imap_port.to_string()) {
+        //                         if let Ok(Some(smtp_server)) = theme_provider.prompt_edit("SMTP Server: ", &acc.smtp_server) {
+        //                             app.accounts[selected_idx] = crate::config::Account {
+        //                                 email: email.trim().to_string(),
+        //                                 password: Some(password.trim().to_string()),
+        //                                 client_id: acc.client_id.clone(),
+        //                                 client_secret: acc.client_secret.clone(),
+        //                                 refresh_token: acc.refresh_token.clone(),
+        //                                 imap_server: imap_server.trim().to_string(),
+        //                                 imap_port: imap_port.trim().parse().unwrap_or(993),
+        //                                 smtp_server: smtp_server.trim().to_string(),
+        //                                 smtp_port: imap_port.trim().parse().unwrap_or(587),
+        //                             };
+        //                             crate::config::save_config(&app.accounts);
+        //
+        //                             if selected_idx == app.current_account_idx {
+        //                                 app.needs_reconnect = true;
+        //                             }
+        //                         }
+        //                     }
+        //                 }
+        //             }
+        //         }
+        //     }
+        // }
+
+        // KeyCode::Char('d') | KeyCode::Char('D') => {
+        //     if !app.accounts.is_empty() {
+        //         let account_email = &app.accounts[selected_idx].email;
+        //         let prompt_msg = format!("Are you sure you want to delete {}? (y/n) ", account_email);
+        //
+        //         if let Ok(Some(confirm)) = theme_provider.prompt(&prompt_msg, false) {
+        //             if confirm.trim().to_lowercase() == "y" {
+        //                 app.accounts.remove(selected_idx);
+        //                 crate::config::save_config(&app.accounts);
+        //
+        //                 if !app.accounts.is_empty() && selected_idx >= app.accounts.len() {
+        //                     selected_idx = app.accounts.len() - 1;
+        //                 }
+        //
+        //                 if selected_idx == app.current_account_idx {
+        //                     app.needs_reconnect = true;
+        //                     app.current_account_idx = 0;
+        //                 } else if selected_idx < app.current_account_idx {
+        //                     app.current_account_idx = app.current_account_idx.saturating_sub(1);
+        //                 }
+        //             }
+        //         }
+        //     }
+        // }
+
         KeyCode::Char('d') | KeyCode::Char('D') => {
             if !app.accounts.is_empty() {
                 let account_email = &app.accounts[selected_idx].email;
-                let prompt_msg = format!("Are you sure you want to delete {}? (y/n) ", account_email);
+                let prompt_msg = format!("Delete account '{}'?", account_email);
 
-                if let Ok(Some(confirm)) = theme_provider.prompt(&prompt_msg, false) {
-                    if confirm.trim().to_lowercase() == "y" {
+                // First confirmation
+                if let Ok(Some(true)) = theme_provider.prompt_yn(&prompt_msg) {
+
+                    // Second "Are you sure?" confirmation
+                    if let Ok(Some(true)) = theme_provider.prompt_yn("Are you absolutely sure?") {
                         app.accounts.remove(selected_idx);
                         crate::config::save_config(&app.accounts);
 
@@ -1109,9 +1287,9 @@ fn handle_main_menu_events(k: KeyEvent, app: &mut App, session: &mut Option<Mail
 
     match k.code {
         KeyCode::Up | KeyCode::Char('p') | KeyCode::Char('P') => selected_idx = selected_idx.saturating_sub(1),
-        KeyCode::Down | KeyCode::Char('n') | KeyCode::Char('N') => selected_idx = (selected_idx + 1).min(6),
         KeyCode::Char('m') | KeyCode::Char('M') => next_mode = Some(AppMode::EmailList),
         KeyCode::Char('e') | KeyCode::Char('E') => next_mode = Some(AppMode::EmailAccounts { selected_idx: 0 }),
+        KeyCode::Down | KeyCode::Char('n') | KeyCode::Char('N') => selected_idx = (selected_idx + 1).min(7),
         KeyCode::Enter | KeyCode::Char('>') | KeyCode::Right => {
             match selected_idx {
                 0 => {
@@ -1128,13 +1306,34 @@ fn handle_main_menu_events(k: KeyEvent, app: &mut App, session: &mut Option<Mail
                     check_and_expunge_outlook(app, session, theme_provider);
                     next_mode = Some(AppMode::EmailAccounts { selected_idx: 0 });
                 },
-                // 5 => { app.update_status("Help not yet implemented.".to_string()); next_mode = Some(AppMode::EmailList); },
                 5 => { let _ = theme_provider.show_help("main_menu"); },
                 6 => {
+                    if let Some(latest) = &app.latest_version {
+                        if latest != env!("CARGO_PKG_VERSION") {
+                            let _ = crate::browser::open_url("https://github.com/mabognar/xpine/releases/latest");
+                        } else {
+                            theme_provider.set_status("xpine is the latest version, nothing to update".to_string());
+                        }
+                    } else {
+                        theme_provider.set_status("Still checking for updates...".to_string());
+                    }
+                },
+                7 => {
                     check_and_expunge_outlook(app, session, theme_provider);
                     *quit = true;
                 },
                 _ => {}
+            }
+        }
+        KeyCode::Char('u') | KeyCode::Char('U') => {
+            if let Some(latest) = &app.latest_version {
+                if latest != env!("CARGO_PKG_VERSION") {
+                    let _ = crate::browser::open_url("https://github.com/mabognar/xpine/releases/latest");
+                } else {
+                    theme_provider.set_status("xpine is the latest version, nothing to update".to_string());
+                }
+            } else {
+                theme_provider.set_status("Still checking for updates...".to_string());
             }
         }
         KeyCode::Char('i') | KeyCode::Char('I') => {
@@ -1167,23 +1366,6 @@ fn handle_settings_events(k: KeyEvent, app: &mut App, theme_provider: &mut Edito
 
     let mut next_mode = None;
 
-    // match k.code {
-    //     KeyCode::Up | KeyCode::Char('p') | KeyCode::Char('P') => selected_idx = selected_idx.saturating_sub(1),
-    //     KeyCode::Down | KeyCode::Char('n') | KeyCode::Char('N') => selected_idx = (selected_idx + 1).min(3),
-    //     KeyCode::Left | KeyCode::Char('<') | KeyCode::Char('q') | KeyCode::Char('Q') | KeyCode::Char('s') | KeyCode::Char('S') => next_mode = Some(AppMode::MainMenu { selected_idx: 3 }),
-    //     KeyCode::Char('x') | KeyCode::Char('X') | KeyCode::Right | KeyCode::Enter => {
-    //         if selected_idx == 0 { theme_provider.soft_wrap = !theme_provider.soft_wrap; theme_provider.save_settings(); }
-    //         else if selected_idx == 1 { theme_provider.show_line_numbers = !theme_provider.show_line_numbers; theme_provider.save_settings(); }
-    //         else if selected_idx == 2 {
-    //             theme_provider.sort_newest_first = !theme_provider.sort_newest_first;
-    //             theme_provider.save_settings();
-    //             app.needs_fetch = true;
-    //         }
-    //         else if selected_idx == 3 {
-    //             theme_provider.spellcheck_before_send = !theme_provider.spellcheck_before_send;
-    //             theme_provider.save_settings();
-    //         }
-    //     }
     match k.code {
         KeyCode::Up | KeyCode::Char('p') | KeyCode::Char('P') => selected_idx = selected_idx.saturating_sub(1),
         KeyCode::Down | KeyCode::Char('n') | KeyCode::Char('N') => selected_idx = (selected_idx + 1).min(4), // <-- Increased to 4
@@ -1202,8 +1384,15 @@ fn handle_settings_events(k: KeyEvent, app: &mut App, theme_provider: &mut Edito
             }
             else if selected_idx == 4 {
                 let current_sig = crate::config::load_signature();
-                // Update this line:
-                if let Ok(Some(new_sig)) = theme_provider.edit_buffer("Edit Email Signature (leave blank for no signature)", &current_sig, crate::editor::MenuState::EmailComposer) {
+
+                // 1. Capture the result
+                let edit_result = theme_provider.edit_buffer("Edit Email Signature (leave blank for no signature)", &current_sig, crate::editor::MenuState::EmailComposer);
+
+                // 2. NEW: Force a full screen clear
+                let _ = execute!(std::io::stdout(), crossterm::terminal::Clear(crossterm::terminal::ClearType::All));
+
+                // 3. Save if changes were made
+                if let Ok(Some(new_sig)) = edit_result {
                     crate::config::save_signature(&new_sig);
                 }
             }

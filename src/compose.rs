@@ -44,54 +44,13 @@ pub fn compose_email(account: &Account, default_to: Option<&str>, default_subjec
         active_idx: if default_to.is_some() { 4 } else { 0 },
         scroll_offset: 0,
     };
-
-    // let mut editor = Editor::new(None);
-    // editor.menu_state = MenuState::EmailComposer;
-    // editor.top_margin = 6;
-    // editor.current_theme = current_theme.clone();
-    //
-    // if let Some(body) = default_body { editor.buffer = Rope::from_str(body); }
-
+    
     let mut editor = Editor::new(None);
     editor.menu_state = MenuState::EmailComposer;
     editor.top_margin = 6;
     editor.current_theme = current_theme.clone();
 
     if let Some(body) = default_body { editor.buffer = Rope::from_str(body); }
-
-    // let signature = crate::config::load_signature();
-    // let is_forward = default_subject.unwrap_or("").to_lowercase().starts_with("fwd:");
-    // let sig_block = if signature.trim().is_empty() || is_forward {
-    //     String::new()
-    // } else {
-    //     format!("\n\n{}", signature.trim())
-    // };
-    //
-    // if let Some(body) = default_body {
-    //     // CHANGED: We now put sig_block BEFORE the body, and add two
-    //     // newlines between them so the quote has breathing room.
-    //     // editor.buffer = Rope::from_str(&format!("{}\n\n{}", sig_block, body));
-    //     editor.buffer = Rope::from_str(&format!("{}\n\n{}", sig_block, body.trim_start()));
-    // } else if !sig_block.is_empty() {
-    //     editor.buffer = Rope::from_str(&sig_block);
-    // }
-    // // --------------------------------------
-
-    // let signature = crate::config::load_signature();
-    // let sig_block = if signature.trim().is_empty() {
-    //     String::new()
-    // } else {
-    //     // 3 newlines creates exactly 2 visual blank lines before the text
-    //     format!("\n\n{}", signature.trim())
-    // };
-    //
-    // if let Some(body) = default_body {
-    //     editor.buffer = Rope::from_str(&format!("{}{}", body, sig_block));
-    // } else if !sig_block.is_empty() {
-    //     // For a blank email, insert the block directly so the user
-    //     // has 2 blank lines of space to type above their signature
-    //     editor.buffer = Rope::from_str(&sig_block);
-    // }
 
     let mut stdout = stdout();
     let mut final_body = String::new();
@@ -109,7 +68,7 @@ pub fn compose_email(account: &Account, default_to: Option<&str>, default_subjec
         let theme = &editor.theme_set.themes[&editor.current_theme];
         let colors = derive_ui_colors(theme);
 
-        // --- NEW: Macro to print strings with highlighted "(Team)" text ---
+        // Macro to print strings with highlighted "(Team)"
         macro_rules! print_highlighted {
             ($out:expr, $text:expr, $base_color:expr, $accent_color:expr) => {
                 let mut parts = $text.split("(Team)");
@@ -212,12 +171,6 @@ pub fn compose_email(account: &Account, default_to: Option<&str>, default_subjec
                         ).unwrap();
                     }
 
-                    // queue!(
-                    //     stdout,
-                    //     cursor::MoveTo(label_width, current_y + line_idx as u16),
-                    //     SetBackgroundColor(colors.menu_bg), SetForegroundColor(colors.fg),
-                    //     Print(line)
-                    // ).unwrap();
                     queue!(
                         stdout,
                         cursor::MoveTo(label_width, current_y + line_idx as u16),
@@ -238,14 +191,6 @@ pub fn compose_email(account: &Account, default_to: Option<&str>, default_subjec
                         // Safety truncation if a single word + hint is wider than the terminal screen
                         let screen_space = (cols as usize).saturating_sub(label_width as usize + last_line_len);
 
-                        // if screen_space > 0 {
-                        //     queue!(
-                        //         stdout,
-                        //         cursor::MoveTo(label_width + last_line_len as u16, current_y + relative_row as u16),
-                        //         SetForegroundColor(if colors.is_dark { Color::DarkGrey } else { Color::Grey }),
-                        //         Print(hint_str.chars().take(screen_space).collect::<String>())
-                        //     ).unwrap();
-                        // }
                         if screen_space > 0 {
                             let hint_color = if colors.is_dark { Color::DarkGrey } else { Color::Grey };
                             queue!(
@@ -275,11 +220,6 @@ pub fn compose_email(account: &Account, default_to: Option<&str>, default_subjec
                     val.to_string()
                 };
 
-                // queue!(
-                //     stdout, cursor::MoveTo(label_width, current_y),
-                //     SetBackgroundColor(colors.menu_bg), SetForegroundColor(colors.fg),
-                //     Print(display_text)
-                // ).unwrap();
                 queue!(
                     stdout, cursor::MoveTo(label_width, current_y),
                     SetBackgroundColor(colors.menu_bg)
@@ -349,13 +289,6 @@ pub fn compose_email(account: &Account, default_to: Option<&str>, default_subjec
                         if key_event.code == KeyCode::Char('c') {
                             if crate::prompt::prompt_cancel(&mut stdout, &colors) { cancelled = true; break; } else { continue; }
                         }
-                    //     if key_event.code == KeyCode::Char('a') {
-                    //         if let Ok(Some(path)) = editor.run_file_browser(false, None) { state.attachments.push(path); }
-                    //         continue;
-                    //     }
-                    // }
-                    //
-                    // if state.active_idx == 4 {
                         if key_event.code == KeyCode::Char('a') {
                             if let Ok(Some(path)) = editor.run_file_browser(false, None) { state.attachments.push(path); }
                             continue;
@@ -419,13 +352,6 @@ pub fn compose_email(account: &Account, default_to: Option<&str>, default_subjec
                             EditorResult::Cancel => { if crate::prompt::prompt_cancel(&mut stdout, &colors) { cancelled = true; break; } }
                             EditorResult::Continue => {}
                         }
-                    // } else {
-                    //
-                    //     let label_width = 9;
-                    //     let available_width = cols.saturating_sub(label_width + 2) as usize;
-                    //
-                    //     match key_event.code {
-                    //         KeyCode::Left => {
                     } else {
 
                         let label_width = 9;
@@ -446,37 +372,6 @@ pub fn compose_email(account: &Account, default_to: Option<&str>, default_subjec
                                 let target = match state.active_idx { 0 => &state.to, 1 => &state.cc, 2 => &state.bcc, 3 => &state.subject, _ => "" };
                                 if cursor_pos < target.len() { cursor_pos += 1; }
                             }
-                            // KeyCode::Char('p') if key_event.modifiers.contains(KeyModifiers::CONTROL) => {
-                            //     state.active_idx = state.active_idx.saturating_sub(1);
-                            //     let new_target = match state.active_idx { 0 => &state.to, 1 => &state.cc, 2 => &state.bcc, 3 => &state.subject, _ => unreachable!() };
-                            //     cursor_pos = new_target.len();
-                            // }
-                            // KeyCode::Char('n') if key_event.modifiers.contains(KeyModifiers::CONTROL) => {
-                            //     state.active_idx = (state.active_idx + 1).min(4);
-                            //     if state.active_idx < 4 {
-                            //         let new_target = match state.active_idx { 0 => &state.to, 1 => &state.cc, 2 => &state.bcc, 3 => &state.subject, _ => unreachable!() };
-                            //         cursor_pos = new_target.len();
-                            //     }
-                            // }
-                            // KeyCode::Up => {
-                            //     if cursor_pos >= available_width {
-                            //         cursor_pos -= available_width;
-                            //     } else {
-                            //         let scrolled_suggestion = false;
-                            //
-                            //         if !scrolled_suggestion {
-                            //             if state.active_idx > 0 {
-                            //                 state.active_idx -= 1;
-                            //                 let new_target = match state.active_idx { 0 => &state.to, 1 => &state.cc, 2 => &state.bcc, 3 => &state.subject, _ => unreachable!() };
-                            //                 cursor_pos = new_target.len(); // Fix: Jump to start, not end
-                            //                 state.scroll_offset = 0; // Reset scroll
-                            //             } else {
-                            //                 cursor_pos = 0;
-                            //             }
-                            //             suggestion_idx = 0;
-                            //         }
-                            //     }
-                            // }
                             KeyCode::Up => {
                                 if cursor_pos >= available_width {
                                     cursor_pos -= available_width;
@@ -563,31 +458,6 @@ pub fn compose_email(account: &Account, default_to: Option<&str>, default_subjec
                                         }
                                     }
                                 }
-                                // if state.active_idx < 3 {
-                                //     let target = match state.active_idx { 0 => &mut state.to, 1 => &mut state.cc, 2 => &mut state.bcc, _ => unreachable!() };
-                                //     let suggestions = crate::prompt::find_email_suggestions(target, &address_book);
-                                //
-                                //     if !suggestions.is_empty() {
-                                //         let suggestion = &suggestions[suggestion_idx % suggestions.len()];
-                                //         let last_part = target.split(',').last().unwrap_or("").trim_start();
-                                //
-                                //         if last_part.to_lowercase() != suggestion.to_lowercase() {
-                                //             if let Some(last_comma_idx) = target.rfind(',') {
-                                //                 target.truncate(last_comma_idx + 1);
-                                //                 target.push(' ');
-                                //                 target.push_str(suggestion);
-                                //             } else {
-                                //                 *target = suggestion.clone();
-                                //             }
-                                //
-                                //             // FIX: Move the cursor to the end of the newly completed string
-                                //             cursor_pos = target.len();
-                                //
-                                //             suggestion_idx = 0;
-                                //             continue;
-                                //         }
-                                //     }
-                                // }
                                 state.scroll_offset = 0;
                                 state.active_idx = (state.active_idx + 1).min(4);
                                 if state.active_idx < 4 {

@@ -433,70 +433,6 @@ pub fn fetch_emails(session: &mut MailSession, app: &mut App, items_per_page: u3
                     return;
                 }
             };
-            // MailSession::Imap(imap_sess) => {
-        //     app.page_emails.clear();
-        //
-        //     match imap_sess.select(&app.current_folder) {
-        //         Ok(m) => app.total_messages = m.exists,
-        //         Err(_) => { app.needs_reconnect = true; return; }
-        //     }
-        //
-        //     let sequence = if let Some(ref q) = app.search_query {
-        //         let query = if q.trim() == "*" {
-        //             String::from("FLAGGED")
-        //         } else if q.trim().eq_ignore_ascii_case("n") { // Intercept "N" or "n"
-        //             String::from("UNSEEN")
-        //         } else {
-        //             format!("OR FROM \"{}\" SUBJECT \"{}\"", q, q)
-        //         };
-        //
-        //         match imap_sess.search(&query) {
-        //             Ok(seq_ids) if !seq_ids.is_empty() => {
-        //                 app.total_messages = seq_ids.len() as u32;
-        //
-        //                 let mut sorted_seqs: Vec<u32> = seq_ids.into_iter().collect();
-        //                 sorted_seqs.sort();
-        //
-        //                 let mut end_idx = sorted_seqs.len().saturating_sub((app.current_page * items_per_page) as usize);
-        //                 let start_idx = end_idx.saturating_sub(items_per_page as usize - 1).max(1);
-        //
-        //                 // NEW: Populate the page fully if there are enough messages
-        //                 if start_idx == 1 {
-        //                     end_idx = (items_per_page as usize).min(sorted_seqs.len());
-        //                 }
-        //
-        //                 let page_seqs = &sorted_seqs[(start_idx - 1)..end_idx];
-        //                 page_seqs.iter().map(|id| id.to_string()).collect::<Vec<_>>().join(",")
-        //             }
-        //             _ => {
-        //                 app.total_messages = 0;
-        //                 return;
-        //             }
-        //         }
-        //     } else {
-        //         if app.total_messages > 0 {
-        //             let mut end_idx = app.total_messages.saturating_sub(app.current_page * items_per_page);
-        //             let start_idx = end_idx.saturating_sub(items_per_page - 1).max(1);
-        //
-        //             // NEW: Populate the page fully if there are enough messages
-        //             if start_idx == 1 {
-        //                 end_idx = items_per_page.min(app.total_messages);
-        //             }
-        //
-        //             format!("{}:{}", start_idx, end_idx)
-        //         } else {
-        //             return;
-        //         }
-        //     };
-            // } else {
-            //     if app.total_messages > 0 {
-            //         let end_idx = app.total_messages.saturating_sub(app.current_page * items_per_page);
-            //         let start_idx = end_idx.saturating_sub(items_per_page - 1).max(1);
-            //         format!("{}:{}", start_idx, end_idx)
-            //     } else {
-            //         return;
-            //     }
-            // };
 
             if !sequence.is_empty() {
                 if let Ok(messages) = imap_sess.fetch(&sequence, "(UID ENVELOPE FLAGS RFC822.SIZE INTERNALDATE)") {
@@ -532,18 +468,6 @@ pub fn fetch_emails(session: &mut MailSession, app: &mut App, items_per_page: u3
                             if let Some(s) = env.subject.as_ref() {
                                 subject = decode_mime_string(s);
                             }
-
-                            // if let Some(d) = env.date.as_ref() {
-                            //     let raw_date = String::from_utf8_lossy(d).into_owned();
-                            //     if let Ok(dt) = DateTime::parse_from_rfc2822(&raw_date) {
-                            //         let now = Utc::now().timestamp();
-                            //         let diff = now - dt.timestamp();
-                            //         let local_dt = dt.with_timezone(&Local);
-                            //         date = if diff < 7 * 24 * 3600 && diff >= -86400 { local_dt.format("%a %H:%M").to_string() } else { local_dt.format("%b %d").to_string() };
-                            //     } else {
-                            //         date = raw_date.split(" +").next().unwrap_or(&raw_date).to_string();
-                            //     }
-                            // }
 
                             if let Some(d) = env.date.as_ref() {
                                 let raw_date = String::from_utf8_lossy(d).into_owned();
@@ -626,7 +550,6 @@ pub fn fetch_emails(session: &mut MailSession, app: &mut App, items_per_page: u3
                     }
                 }
 
-                // --- UNIVERSAL SORTING AND PAGINATION CURSOR SYNC ---
                 if sort_newest_first {
                     app.page_emails.sort_by(|a, b| b.timestamp.cmp(&a.timestamp));
                 } else {
@@ -670,40 +593,6 @@ pub fn fetch_emails(session: &mut MailSession, app: &mut App, items_per_page: u3
                         app.selected_index = app.page_emails.len().saturating_sub(1);
                     }
                 }
-                // ----------------------------------------------------
-
-                // if sort_newest_first {
-                //     app.page_emails.sort_by(|a, b| b.timestamp.cmp(&a.timestamp));
-                // } else {
-                //     app.page_emails.sort_by(|a, b| a.timestamp.cmp(&b.timestamp));
-                // }
-                //
-                // if let Some(idx_from_end) = app.restore_index_from_end {
-                //     if sort_newest_first {
-                //         app.selected_index = if !app.page_emails.is_empty() { idx_from_end as usize } else { 0 };
-                //     } else {
-                //         app.selected_index = if !app.page_emails.is_empty() { app.page_emails.len().saturating_sub(1).saturating_sub(idx_from_end as usize) } else { 0 };
-                //     }
-                //     app.restore_index_from_end = None;
-                // } else {
-                //     // --- NEW: Skip over overlapping items on page transition ---
-                //     if app.selected_index == 0 && overlap_shift > 0 && sort_newest_first {
-                //         app.selected_index = overlap_shift as usize;
-                //     } else if app.selected_index >= app.page_emails.len() {
-                //         app.selected_index = app.page_emails.len().saturating_sub(1);
-                //     }
-                // }
-
-                // if let Some(idx_from_end) = app.restore_index_from_end {
-                //     if sort_newest_first {
-                //         app.selected_index = if !app.page_emails.is_empty() { idx_from_end as usize } else { 0 };
-                //     } else {
-                //         app.selected_index = if !app.page_emails.is_empty() { app.page_emails.len().saturating_sub(1).saturating_sub(idx_from_end as usize) } else { 0 };
-                //     }
-                //     app.restore_index_from_end = None;
-                // } else if app.selected_index >= app.page_emails.len() {
-                //     app.selected_index = app.page_emails.len().saturating_sub(1);
-                // }
             }
         },
 
@@ -746,37 +635,6 @@ pub fn fetch_emails(session: &mut MailSession, app: &mut App, items_per_page: u3
             }
 
             let mut is_text_search = false;
-
-            // let url = if let Some(ref q) = app.search_query {
-            //     if q.trim() == "*" {
-            //         let order = if sort_newest_first { "receivedDateTime%20DESC" } else { "receivedDateTime%20ASC" };
-            //         format!(
-            //             "https://graph.microsoft.com/v1.0/me/mailFolders/{}/messages?$count=true&$top={}&$skip={}&$orderby={}&$filter=flag/flagStatus%20eq%20'flagged'&$expand=singleValueExtendedProperties($filter=id%20eq%20'Integer%200x1081'%20or%20id%20eq%20'Long%200x0E08')",
-            //             folder, items_per_page, skip, order
-            //         )
-            //     } else if q.trim().eq_ignore_ascii_case("n") { // Intercept "N" or "n"
-            //         let order = if sort_newest_first { "receivedDateTime%20DESC" } else { "receivedDateTime%20ASC" };
-            //         format!(
-            //             "https://graph.microsoft.com/v1.0/me/mailFolders/{}/messages?$count=true&$top={}&$skip={}&$orderby={}&$filter=isRead%20eq%20false&$expand=singleValueExtendedProperties($filter=id%20eq%20'Integer%200x1081'%20or%20id%20eq%20'Long%200x0E08')",
-            //             folder, items_per_page, skip, order
-            //         )
-            //     } else {
-            //         is_text_search = true;
-            //         let search_str = format!("\"{}\"", q);
-            //         let encoded_q = urlencoding::encode(&search_str);
-            //
-            //         format!(
-            //             "https://graph.microsoft.com/v1.0/me/mailFolders/{}/messages?$top={}&$skip={}&$search={}&$expand=singleValueExtendedProperties($filter=id%20eq%20'Integer%200x1081'%20or%20id%20eq%20'Long%200x0E08')",
-            //             folder, items_per_page, skip, encoded_q
-            //         )
-            //     }
-            // } else {
-            //     let order = if sort_newest_first { "receivedDateTime%20DESC" } else { "receivedDateTime%20ASC" };
-            //     format!(
-            //         "https://graph.microsoft.com/v1.0/me/mailFolders/{}/messages?$count=true&$top={}&$skip={}&$orderby={}&$expand=singleValueExtendedProperties($filter=id%20eq%20'Integer%200x1081'%20or%20id%20eq%20'Long%200x0E08')",
-            //         folder, items_per_page, skip, order
-            //     )
-            // };
 
             let url = if let Some(ref q) = app.search_query {
                 if q.trim() == "*" {
@@ -977,36 +835,6 @@ pub fn fetch_emails(session: &mut MailSession, app: &mut App, items_per_page: u3
                                 app.selected_index = app.page_emails.len().saturating_sub(1);
                             }
                         }
-                    // ----------------------------------------------------
-
-                        // // Cursor safety-net
-                        // if let Some(idx_from_end) = app.restore_index_from_end {
-                        //     if sort_newest_first {
-                        //         app.selected_index = if !app.page_emails.is_empty() { idx_from_end as usize } else { 0 };
-                        //     } else {
-                        //         app.selected_index = if !app.page_emails.is_empty() { app.page_emails.len().saturating_sub(1).saturating_sub(idx_from_end as usize) } else { 0 };
-                        //     }
-                        //     app.restore_index_from_end = None;
-                        // } else {
-                        //     // --- NEW: Skip over overlapping items on page transition ---
-                        //     if app.selected_index == 0 && overlap_shift > 0 && sort_newest_first {
-                        //         app.selected_index = overlap_shift as usize;
-                        //     } else if app.selected_index >= app.page_emails.len() {
-                        //         app.selected_index = app.page_emails.len().saturating_sub(1);
-                        //     }
-                        // }
-                        // // Cursor safety-net
-                        // if let Some(idx_from_end) = app.restore_index_from_end {
-                        //     if sort_newest_first {
-                        //         app.selected_index = if !app.page_emails.is_empty() { idx_from_end as usize } else { 0 };
-                        //     } else {
-                        //         app.selected_index = if !app.page_emails.is_empty() { app.page_emails.len().saturating_sub(1).saturating_sub(idx_from_end as usize) } else { 0 };
-                        //     }
-                        //     app.restore_index_from_end = None;
-                        // } else if app.selected_index >= app.page_emails.len() {
-                        //     app.selected_index = app.page_emails.len().saturating_sub(1);
-                        // }
-
                     } else {
                         app.update_status("Failed to parse Graph JSON data.".to_string());
                     }

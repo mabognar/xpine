@@ -7,7 +7,7 @@ use std::path::PathBuf;
 use crossterm::style::Color;
 
 // Embed the entire 'themes' directory from the root of your project workspace
-// into your final compiled executable artifact binary
+// into the final compiled executable artifact binary
 static EMBEDDED_THEMES_DIR: Dir<'_> = include_dir!("$CARGO_MANIFEST_DIR/themes");
 
 pub trait ThemeExt {

@@ -2,6 +2,9 @@ use crate::config::Account;
 use crate::mail::EmailMeta;
 use std::time::{Duration, Instant};
 // use std::collections::{HashMap, HashSet};
+use std::thread;
+use reqwest::header::USER_AGENT;
+use serde::Deserialize;
 
 pub enum AppMode {
     AddressBook {
@@ -35,6 +38,11 @@ pub enum _BrowserAction {
     SaveEmail(String), // Holds the text_body to save
 }
 
+#[derive(Deserialize)]
+struct GithubRelease {
+    tag_name: String,
+}
+
 pub struct App {
     pub mode: AppMode,
     pub current_account_idx: usize,
@@ -55,6 +63,23 @@ pub struct App {
     pub accounts: Vec<Account>,
     pub menu_page: u8,
     pub search_query: Option<String>,
+    pub latest_version: Option<String>,
+}
+
+// Call this function when xpine starts
+pub fn spawn_update_checker(app_state_sender: std::sync::mpsc::Sender<String>) {
+    thread::spawn(move || {
+        let url = "https://api.github.com/repos/mabognar/xpine/releases/latest";
+        let client = reqwest::blocking::Client::new();
+
+        if let Ok(response) = client.get(url).header(USER_AGENT, "xpine-updater").send() {
+            if let Ok(release) = response.json::<GithubRelease>() {
+                let latest = release.tag_name.trim_start_matches('v').to_string();
+                // Send the version string back to your main event loop
+                let _ = app_state_sender.send(latest);
+            }
+        }
+    });
 }
 
 impl App {
@@ -101,6 +126,7 @@ impl App {
             accounts,
             menu_page: 1,
             search_query: None,
+            latest_version: None,
         };
 
         if is_empty {
