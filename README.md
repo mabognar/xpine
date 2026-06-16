@@ -1,5 +1,11 @@
 # xpine
 
+XPINE IS NOT READY FOR PRODUCTION USE. 
+UNDER HEAVY DEVELOPMENT.
+
+Linux users need gnome-keyring or kwallet installed. 
+Linux users also need the libdbus-1-dev package or a functioning Secret Service provider.
+
 A fast, lightweight, and fully-featured terminal-based email client written in Rust. Designed for speed, privacy, and productivity, `xpine` keeps your inbox right in the terminal without sacrificing modern features.
 
 ## Features

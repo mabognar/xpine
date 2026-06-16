@@ -27,11 +27,14 @@ pub struct Account {
     pub email: String,
 
     // Standard Auth
+    #[serde(skip)]
     pub password: Option<String>,
 
     // Google OAuth 2.0
     pub client_id: Option<String>,
     pub client_secret: Option<String>,
+
+    #[serde(skip)]
     pub refresh_token: Option<String>,
 
     #[serde(default = "default_imap")]
@@ -99,6 +102,8 @@ pub struct UiColors {
     pub is_dark: bool,
 }
 
+use keyring::Entry;
+
 pub fn load_config() -> AppConfig {
     let home = dirs::home_dir().expect("Could not find home directory.");
     let config_dir = home.join(".xpine");
@@ -106,19 +111,60 @@ pub fn load_config() -> AppConfig {
 
     if !config_path.exists() {
         fs::create_dir_all(&config_dir).expect("Failed to create .xpine directory.");
-        // Create an empty file with a TOML template so it can be written to later
-        let template = "[[accounts]]\nemail = \"\"\npassword = \"\"\n";
+        let template = "[[accounts]]\nemail = \"\"\n"; // Removed password from template
         fs::write(&config_path, template).expect("Failed to write xpinerc.");
         return AppConfig { accounts: Vec::new() };
     }
 
     let contents = fs::read_to_string(&config_path).expect("Failed to read xpinerc");
 
-    toml::from_str(&contents).unwrap_or_else(|e| {
+    let mut config: AppConfig = toml::from_str(&contents).unwrap_or_else(|e| {
         eprintln!("Failed to parse xpinerc: {}", e);
         AppConfig { accounts: Vec::new() }
-    })
+    });
+
+    // --- NEW: Populate secrets from the native OS Keyring ---
+    for account in &mut config.accounts {
+        if !account.email.is_empty() {
+            // Attempt to load standard password
+            if let Ok(entry) = Entry::new("xpine_password", &account.email) {
+                if let Ok(pw) = entry.get_password() {
+                    account.password = Some(pw);
+                }
+            }
+
+            // Attempt to load OAuth refresh token
+            if let Ok(entry) = Entry::new("xpine_refresh_token", &account.email) {
+                if let Ok(token) = entry.get_password() {
+                    account.refresh_token = Some(token);
+                }
+            }
+        }
+    }
+
+    config
 }
+
+// pub fn load_config() -> AppConfig {
+//     let home = dirs::home_dir().expect("Could not find home directory.");
+//     let config_dir = home.join(".xpine");
+//     let config_path = config_dir.join("xpinerc");
+//
+//     if !config_path.exists() {
+//         fs::create_dir_all(&config_dir).expect("Failed to create .xpine directory.");
+//         // Create an empty file with a TOML template so it can be written to later
+//         let template = "[[accounts]]\nemail = \"\"\npassword = \"\"\n";
+//         fs::write(&config_path, template).expect("Failed to write xpinerc.");
+//         return AppConfig { accounts: Vec::new() };
+//     }
+//
+//     let contents = fs::read_to_string(&config_path).expect("Failed to read xpinerc");
+//
+//     toml::from_str(&contents).unwrap_or_else(|e| {
+//         eprintln!("Failed to parse xpinerc: {}", e);
+//         AppConfig { accounts: Vec::new() }
+//     })
+// }
 
 pub trait ConfigExt {
     fn get_base_dir() -> Option<PathBuf>;
@@ -227,10 +273,50 @@ pub fn save_config(accounts: &[Account]) {
     let config_path = home.join(".xpine").join("xpinerc");
 
     let config = AppConfig { accounts: accounts.to_vec() };
+
+    // This will only write non-skipped fields to xpinerc
     if let Ok(toml_string) = toml::to_string_pretty(&config) {
         fs::write(config_path, toml_string).expect("Failed to write config file.");
     }
+
+    // --- NEW: Save secrets directly to the native OS Keyring ---
+    for account in accounts {
+        if !account.email.is_empty() {
+            // Save standard password
+            if let Some(pw) = &account.password {
+                if let Ok(entry) = Entry::new("xpine_password", &account.email) {
+                    let _ = entry.set_password(pw);
+                }
+            } else {
+                // Optional: Clear it from the keyring if it was removed in the app
+                if let Ok(entry) = Entry::new("xpine_password", &account.email) {
+                    let _ = entry.delete_credential();
+                }
+            }
+
+            // Save OAuth refresh token
+            if let Some(token) = &account.refresh_token {
+                if let Ok(entry) = Entry::new("xpine_refresh_token", &account.email) {
+                    let _ = entry.set_password(token);
+                }
+            } else {
+                if let Ok(entry) = Entry::new("xpine_refresh_token", &account.email) {
+                    let _ = entry.delete_credential();
+                }
+            }
+        }
+    }
 }
+
+// pub fn save_config(accounts: &[Account]) {
+//     let home = dirs::home_dir().expect("Could not find home directory.");
+//     let config_path = home.join(".xpine").join("xpinerc");
+//
+//     let config = AppConfig { accounts: accounts.to_vec() };
+//     if let Ok(toml_string) = toml::to_string_pretty(&config) {
+//         fs::write(config_path, toml_string).expect("Failed to write config file.");
+//     }
+// }
 
 pub fn load_signature() -> String {
     let home = dirs::home_dir().expect("Could not find home directory.");
