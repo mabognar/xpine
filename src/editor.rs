@@ -712,6 +712,9 @@ impl Editor {
         self.row_offset = 0;
         self.col_offset = 0;
 
+        // --- NEW: Wipe the ghost text from the previous editor state ---
+        self.highlight_cache.clear();
+
         let _ = self.scroll();
 
         self.status_message = String::new();
@@ -832,6 +835,9 @@ impl Editor {
         self.row_offset = prev_row_offset;
         self.desired_cursor_x = prev_cursor_x;
 
+        // --- NEW: Wipe the team emails so they don't ghost into the main composer ---
+        self.highlight_cache.clear();
+        
         self.status_message = prev_status_message;
         self.status_time = prev_status_time;
 
