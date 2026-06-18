@@ -276,10 +276,10 @@ fn handle_email_accounts_events(k: KeyEvent, app: &mut App, theme_provider: &mut
         KeyCode::Char('c') | KeyCode::Char('C') if k.modifiers.contains(KeyModifiers::CONTROL) => next_mode = Some(AppMode::MainMenu { selected_idx: 4 }),
         KeyCode::Char('a') | KeyCode::Char('A') => {
             let auth_options = vec![
-                "Microsoft Exchange (Graph API, OAuth2.0)".to_string(),
-                "Google Gmail (OAuth2.0)".to_string(),
-                "Google Gmail (App Password)".to_string(),
-                "Basic IMAP (Yahoo/Legacy)".to_string(),
+                "1. Microsoft Exchange (Graph API, OAuth2.0)".to_string(),
+                "2. Google Gmail (OAuth2.0)".to_string(),
+                "3. Google Gmail (App Password)".to_string(),
+                "4. Basic IMAP (Yahoo/Legacy/Other)".to_string(),
             ];
 
             if let Ok(Some(selection)) = theme_provider.prompt_select_item("Choose account type:", &auth_options) {

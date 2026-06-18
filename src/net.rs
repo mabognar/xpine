@@ -500,7 +500,7 @@ pub fn get_oauth_access_token(
         Ok(token_res.access_token)
     } else {
         let err_text = res.text().unwrap_or_default();
-        std::fs::write("oauth_debug.txt", format!("TOKEN FETCH FAILED: {}", err_text)).ok();
+        // std::fs::write("oauth_debug.txt", format!("TOKEN FETCH FAILED: {}", err_text)).ok();
         Err(format!("OAuth error: {:?}", err_text))
     }
 }
@@ -551,7 +551,7 @@ pub fn connect(account: &mut Account) -> Result<MailSession, String> {
                     match client.authenticate("XOAUTH2", &auth) {
                         Ok(session) => return Ok(MailSession::Imap(session)),
                         Err((e, _returned_client)) => {
-                            std::fs::write("oauth_debug.txt", format!("IMAP REJECTED TOKEN: {:?}", e)).ok();
+                            // std::fs::write("oauth_debug.txt", format!("IMAP REJECTED TOKEN: {:?}", e)).ok();
                             // It will naturally fall through to the password fallback below
                         }
                     }
