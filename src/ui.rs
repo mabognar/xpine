@@ -1030,7 +1030,7 @@ fn draw_main_menu(stdout: &mut std::io::Stdout, app: &App, cols: u16, rows: u16,
         ("A", "ADDRESS BOOK", "Update address book"),
         ("F", "FOLDER LIST", "Select folder"),
         ("S", "SETTINGS", "Configure xpine"),
-        ("E", "EMAIL ACCOUNTS", "Edit/Add email accounts"),
+        ("E", "EMAIL ACCOUNTS", "Add/Delete email accounts"),
         ("H", "HELP", "Get help using xpine"),
         ("U", "UPDATE XPINE", update_desc.as_str()), // ADDED
         ("Q", "QUIT", "Leave the xpine program"),    // Pushed down
@@ -1077,7 +1077,7 @@ fn draw_main_menu(stdout: &mut std::io::Stdout, app: &App, cols: u16, rows: u16,
 
     let m_col = (cols as usize / 6).max(1);
     Editor::draw_menu_line(stdout, rows - 2, cols, m_col,
-                           &[("", ""), ("P", " Prev"), (">", " Select"), ("", ""), ("", ""), ("", "")],
+                           &[(">", " Select"), ("P", " Prev"), ("", ""), ("", ""), ("", ""), ("", "")],
                            colors.menu_bg, colors.accent, colors.fg)?;
     Editor::draw_menu_line(stdout, rows - 1, cols, m_col,
                            &[("Q", " Quit"), ("N", " Next"), ("", ""), ("", ""), ("", ""), ("", "")],

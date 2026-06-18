@@ -5,7 +5,6 @@ use crate::ui::UiExt;
 use std::path::Path;
 use lettre::transport::smtp::authentication::{Credentials as SmtpCredentials, Mechanism};
 use lettre::{Message, SmtpTransport, Transport};
-// use lettre::message::Mailbox;
 use std;
 
 use crate::spell::SpellExt;

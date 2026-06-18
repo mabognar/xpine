@@ -233,127 +233,7 @@ pub fn run_microsoft_auth_flow(client_id: &str, client_secret: &str) -> Result<T
     Ok(token)
 }
 
-// pub fn run_generic_oauth_flow(email: &str) -> Result<(String, String, String), String> {
-//     let email_lower = email.to_lowercase();
-//     let redirect_uri = "http://127.0.0.1:8080";
-//
-//     // 1. Setup provider URLs based on the email domain
-//     let (client_id, client_secret, auth_url, token_endpoint) = if email_lower.ends_with("@gmail.com") {
-//         let cid = option_env!("XPINE_GOOGLE_CLIENT_ID").unwrap_or("YOUR_GOOGLE_CLIENT_ID").to_string();
-//         let sec = option_env!("XPINE_GOOGLE_CLIENT_SECRET").unwrap_or("YOUR_GOOGLE_CLIENT_SECRET").to_string();
-//         let url = format!(
-//             "https://accounts.google.com/o/oauth2/v2/auth?client_id={}&redirect_uri={}&response_type=code&scope=https://mail.google.com/&access_type=offline&prompt=consent",
-//             cid, redirect_uri
-//         );
-//         (cid, sec, url, "https://oauth2.googleapis.com/token")
-//
-//     } else if email_lower.ends_with("@yahoo.com") {
-//         let cid = option_env!("XPINE_YAHOO_CLIENT_ID").unwrap_or("YOUR_YAHOO_CLIENT_ID").to_string();
-//         let sec = option_env!("XPINE_YAHOO_CLIENT_SECRET").unwrap_or("YOUR_YAHOO_CLIENT_SECRET").to_string();
-//         let url = format!(
-//             "https://api.login.yahoo.com/oauth2/request_auth?client_id={}&redirect_uri={}&response_type=code",
-//             cid, redirect_uri
-//         );
-//         (cid, sec, url, "https://api.login.yahoo.com/oauth2/get_token")
-//     } else {
-//         return Err("OAuth is currently only implemented for Gmail and Yahoo accounts.".into());
-//     };
-//
-//     // 2. Clear the screen and draw the explicit UI
-//     let mut stdout = std::io::stdout();
-//     let _ = execute!(
-//         stdout,
-//         Clear(ClearType::All),
-//         cursor::MoveTo(0, 2),
-//         SetForegroundColor(Color::Cyan),
-//         Print(" xpine - OAuth2 Web Authorization\r\n\r\n"),
-//         ResetColor,
-//         Print("   Attempting to open your default web browser...\r\n\r\n"),
-//         Print("   If the browser does NOT open automatically, please manually\r\n"),
-//         Print("   Cmd+Click (or Ctrl+Click) the link below to authorize:\r\n\r\n"),
-//         SetForegroundColor(Color::Yellow),
-//         Print(format!("   {}\r\n\r\n", auth_url)),
-//         ResetColor,
-//         Print(format!("   Waiting for authorization code on {}...\r\n", redirect_uri))
-//     );
-//
-//     // 3. Attempt to open the browser automatically
-//     let _ = crate::browser::open_url(&auth_url);
-//
-//     // 4. Start the local server
-//     let listener = std::net::TcpListener::bind("127.0.0.1:8080").map_err(|e| format!("Failed to bind to port 8080: {}", e))?;
-//     let mut auth_code = String::new();
-//
-//     for stream in listener.incoming() {
-//         match stream {
-//             Ok(mut stream) => {
-//                 let mut buffer = [0; 2048];
-//                 if let Ok(bytes_read) = std::io::Read::read(&mut stream, &mut buffer) {
-//                     let request = String::from_utf8_lossy(&buffer[..bytes_read]);
-//
-//                     if request.starts_with("GET") {
-//                         if let Some(code_start) = request.find("code=") {
-//                             let code_part = &request[code_start + 5..];
-//                             if let Some(code_end) = code_part.find('&').or_else(|| code_part.find(' ')) {
-//                                 auth_code = code_part[..code_end].to_string();
-//
-//                                 let response = "HTTP/1.1 200 OK\r\nContent-Type: text/html\r\n\r\n<html><body style=\"font-family: sans-serif; text-align: center; margin-top: 50px;\"><h2>Authentication successful!</h2><p>You can close this window and return to the terminal.</p></body></html>";
-//                                 let _ = std::io::Write::write_all(&mut stream, response.as_bytes());
-//                                 break;
-//                             }
-//                         }
-//                     }
-//                 }
-//                 let error_response = "HTTP/1.1 400 Bad Request\r\nContent-Type: text/html\r\n\r\n<html><body><h2>Authentication failed!</h2><p>No authorization code found in the request.</p></body></html>";
-//                 let _ = std::io::Write::write_all(&mut stream, error_response.as_bytes());
-//                 break;
-//             }
-//             Err(e) => {
-//                 return Err(format!("Local server error: {}", e));
-//             }
-//         }
-//     }
-//
-//     if auth_code.is_empty() {
-//         return Err("Failed to retrieve the authorization code from the browser.".into());
-//     }
-//
-//     let _ = execute!(
-//         stdout,
-//         SetForegroundColor(Color::Green),
-//         Print("\r\n   Code received! Exchanging for tokens...\r\n"),
-//         ResetColor
-//     );
-//
-//     // 5. Exchange code for permanent token
-//     let client = reqwest::blocking::Client::new();
-//     let params = vec![
-//         ("client_id", client_id.as_str()),
-//         ("client_secret", client_secret.as_str()),
-//         ("code", auth_code.as_str()),
-//         ("grant_type", "authorization_code"),
-//         ("redirect_uri", redirect_uri),
-//     ];
-//
-//     let res = client.post(token_endpoint)
-//         .form(&params)
-//         .send()
-//         .map_err(|e| format!("Network error during token exchange: {}", e))?;
-//
-//     if res.status().is_success() {
-//         let token_res: TokenResponse = res.json().map_err(|e| format!("Parse error: {}", e))?;
-//         if let Some(refresh) = token_res.refresh_token {
-//             Ok((client_id, client_secret, refresh))
-//         } else {
-//             Err("Provider did not return a refresh token.".into())
-//         }
-//     } else {
-//         let err_text = res.text().unwrap_or_default();
-//         Err(format!("Token exchange failed: {}", err_text))
-//     }
-// }
-
-pub fn run_generic_oauth_flow(email: &str) -> Result<(String, String, String), String> {
+pub fn run_gmail_oauth_flow(email: &str) -> Result<(String, String, String), String> {
     let email_lower = email.to_lowercase();
 
     // For this phase, we are strictly targeting Gmail
@@ -370,8 +250,8 @@ pub fn run_generic_oauth_flow(email: &str) -> Result<(String, String, String), S
         .to_string();
     let redirect_uri = "http://127.0.0.1:8080";
 
-    // 1. Construct the Google Authorization URL
-    // We request 'offline' access and force 'consent' to guarantee Google gives us a refresh token
+    // Construct the Google Authorization URL
+    // 'offline' and 'consent' guarantee Google gives refresh token
     let auth_url = format!(
         "https://accounts.google.com/o/oauth2/v2/auth?client_id={}&redirect_uri={}&response_type=code&scope=https://mail.google.com/&access_type=offline&prompt=consent",
         client_id, redirect_uri
@@ -380,10 +260,10 @@ pub fn run_generic_oauth_flow(email: &str) -> Result<(String, String, String), S
     println!("   Opening default web browser for OAuth authentication...");
     println!("   If the browser does not open automatically, manually visit:\r\n\r\n{}\r\n", auth_url);
 
-    // Attempt to open the browser automatically using your existing browser module
+    // Attempt to open the browser automatically using existing browser module
     let _ = crate::browser::open_url(&auth_url);
 
-    // 2. Start the local server to catch the browser redirect
+    // Start the local server to catch the browser redirect
     println!("   Listening for authorization code on {}...", redirect_uri);
     let listener = TcpListener::bind("127.0.0.1:8080").map_err(|e| format!("Failed to bind to port 8080: {}", e))?;
 
@@ -430,7 +310,7 @@ pub fn run_generic_oauth_flow(email: &str) -> Result<(String, String, String), S
 
     println!("   Code received! Exchanging for tokens...");
 
-    // 3. Exchange the short-lived code for a permanent refresh token
+    // Exchange the short-lived code for a permanent refresh token
     let client = reqwest::blocking::Client::new();
     let params = vec![
         ("client_id", client_id.as_str()),
@@ -449,7 +329,7 @@ pub fn run_generic_oauth_flow(email: &str) -> Result<(String, String, String), S
         let token_res: TokenResponse = res.json().map_err(|e| format!("Parse error: {}", e))?;
 
         // Google only issues a refresh token on the very first authorization.
-        // We forced `prompt=consent` above to ensure it is always provided.
+        // Force `prompt=consent` to ensure it is always provided.
         if let Some(refresh) = token_res.refresh_token {
             Ok((client_id, client_secret, refresh))
         } else {
@@ -541,7 +421,6 @@ pub fn connect(account: &mut Account) -> Result<MailSession, String> {
                     let tls_stream = tls.connect(domain, tcp_stream).map_err(|e| e.to_string())?;
 
                     let client = imap::Client::new(tls_stream);
-                    // -----------------------------
 
                     let auth = OAuth2 {
                         user: account.email.clone(),
@@ -579,7 +458,6 @@ pub fn connect(account: &mut Account) -> Result<MailSession, String> {
     let tls_stream = tls.connect(domain, tcp_stream).map_err(|e| e.to_string())?;
 
     let client = imap::Client::new(tls_stream);
-    // -----------------------------
 
     if let Some(password) = &account.password {
         let session = client.login(&account.email, password).map_err(|(e, _)| e.to_string())?;
@@ -611,8 +489,6 @@ pub fn fetch_emails(session: &mut MailSession, app: &mut App, items_per_page: u3
                 Ok(m) => app.total_messages = m.exists,
                 Err(_) => { app.needs_reconnect = true; return; }
             }
-
-            // let mut overlap_shift = 0; // <-- 1. ADD THIS VARIABLE
 
             let sequence = if let Some(ref q) = app.search_query {
                 let query = if q.trim() == "*" {

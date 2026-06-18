@@ -194,7 +194,6 @@ impl PromptExt for Editor {
         let theme = &self.theme_set.themes[&self.current_theme];
         let ui_colors = derive_ui_colors(theme);
 
-        // Draw the prompt text right at column 0 without leading blank padding
         queue!(
             stdout_handle,
             cursor::MoveTo(0, rows.saturating_sub(3)),
@@ -206,7 +205,6 @@ impl PromptExt for Editor {
             SetForegroundColor(Color::Reset)
         )?;
 
-        // Draw the menu items on the bottom two lines
         let col_width = (cols as usize / 6).max(1);
         Self::draw_menu_line(
             &mut stdout_handle, rows.saturating_sub(2), cols, col_width,
@@ -402,103 +400,6 @@ impl PromptExt for Editor {
             }
         }
     }
-    
-    // fn prompt_with_autocomplete(&mut self, prompt_text: &str, suggestions: &[String]) -> io::Result<Option<String>> {
-    //     let mut stdout = stdout();
-    //     let mut input = String::new();
-    //
-    //     execute!(stdout, cursor::Show)?;
-    //     let theme = &self.theme_set.themes[&self.current_theme];
-    //     let colors = derive_ui_colors(theme);
-    //
-    //     loop {
-    //         // 1. Check screen size every loop in case the user resizes the terminal
-    //         let (cols, rows) = term_size().unwrap_or((80, 24));
-    //
-    //         // Calculate the current autocomplete hint
-    //         let mut hint = String::new();
-    //         if !input.is_empty() {
-    //             let last_part = input.split(',').last().unwrap_or("").trim_start();
-    //             if !last_part.is_empty() {
-    //                 for addr in suggestions {
-    //                     if addr.to_lowercase().starts_with(&last_part.to_lowercase()) {
-    //                         hint = addr[last_part.len()..].to_string();
-    //                         break;
-    //                     }
-    //                 }
-    //             }
-    //         }
-    //
-    //         // --- 2. HORIZONTAL WINDOWING LOGIC ---
-    //         let prompt_len = prompt_text.chars().count();
-    //         let hint_len = hint.chars().count();
-    //         let input_len = input.chars().count();
-    //
-    //         // Calculate the maximum space we have on screen for the typed input
-    //         // Subtracting prompt length, hint length, and a 1-character safety buffer
-    //         let max_input_display = (cols as usize).saturating_sub(prompt_len + hint_len + 1);
-    //
-    //         // If the user's input is wider than the available space, slice the string
-    //         let display_input = if input_len > max_input_display {
-    //             // Reserve 3 characters for the "..."
-    //             let start_idx = input_len.saturating_sub(max_input_display.saturating_sub(3));
-    //             let window: String = input.chars().skip(start_idx).collect();
-    //             format!("...{}", window)
-    //         } else {
-    //             input.clone()
-    //         };
-    //         // -------------------------------------
-    //
-    //         let prompt_y = rows.saturating_sub(3);
-    //
-    //         queue!(
-    //         stdout,
-    //         cursor::MoveTo(0, prompt_y),
-    //         SetBackgroundColor(colors.menu_bg),
-    //         Clear(ClearType::CurrentLine),
-    //         SetForegroundColor(colors.fg),
-    //         Print(prompt_text),
-    //         Print(&display_input), // Use the sliced display text here!
-    //         SetForegroundColor(colors.date_color),
-    //         Print(&hint),
-    //         ResetColor
-    //     )?;
-    //
-    //         // 3. Move the cursor to the end of the USER INPUT (not the end of the hint)
-    //         // Use the DISPLAY input length so the hardware cursor matches the screen!
-    //         let cursor_x = (prompt_len + display_input.chars().count()) as u16;
-    //         queue!(stdout, cursor::MoveTo(cursor_x, prompt_y))?;
-    //
-    //         stdout.flush()?;
-    //
-    //         if let Event::Key(key) = event::read()? {
-    //             if key.kind == KeyEventKind::Press {
-    //                 match key.code {
-    //                     KeyCode::Enter => {
-    //                         execute!(stdout, cursor::Hide)?; // Hide cursor before returning
-    //                         return Ok(Some(input));
-    //                     },
-    //                     KeyCode::Char('c') | KeyCode::Char('C') if key.modifiers.contains(KeyModifiers::CONTROL) => {
-    //                         execute!(stdout, cursor::Hide)?;
-    //                         return Ok(None);
-    //                     }
-    //                     KeyCode::Esc => {
-    //                         execute!(stdout, cursor::Hide)?;
-    //                         return Ok(None);
-    //                     },
-    //                     KeyCode::Backspace => { input.pop(); },
-    //                     KeyCode::Char(c) => input.push(c),
-    //                     KeyCode::Right | KeyCode::Tab => {
-    //                         if !hint.is_empty() {
-    //                             input.push_str(&hint);
-    //                         }
-    //                     }
-    //                     _ => {}
-    //                 }
-    //             }
-    //         }
-    //     }
-    // }
 
     fn prompt_edit(&mut self, prompt_text: &str, initial_text: &str) -> io::Result<Option<String>> {
         // Use a Vec<char> for safe, character-accurate insertions and deletions
@@ -933,50 +834,6 @@ pub fn find_email_suggestions(input: &str, address_book: &[String]) -> Vec<Strin
 
     matches
 }
-
-// pub fn find_email_suggestions(input: &str, address_book: &[String]) -> Vec<String> {
-//     let mut matches = Vec::new();
-//     if input.is_empty() { return matches; }
-//
-//     let last_part = input.split(',').last().unwrap_or("").trim_start();
-//     if last_part.is_empty() { return matches; }
-//
-//     let last_part_lower = last_part.to_lowercase();
-//     // Strip leading quote so typing 'm' or '"m' both successfully match '"Matt Bognar"'
-//     let search_term = last_part_lower.trim_start_matches('"');
-//
-//     for addr in address_book {
-//         if addr.trim().is_empty() { continue; } // Skip empty spacer lines
-//
-//         // If the address contains a colon, it's a team list
-//         if let Some((team_name, _)) = addr.split_once(':') {
-//             let team_name = team_name.trim();
-//             if team_name.to_lowercase().starts_with(search_term) {
-//                 // Return the formatted Team string instead of the raw file line
-//                 matches.push(format!("{} (Team)", team_name));
-//             }
-//         } else {
-//             // It's a standard individual email
-//             let addr_lower = addr.to_lowercase();
-//             let clean_name_lower = addr_lower.trim_start_matches('"');
-//
-//             // Extract the raw email address if it's wrapped in < >
-//             let mut email_part = "";
-//             if let Some(start) = addr_lower.find('<') {
-//                 if let Some(end) = addr_lower.find('>') {
-//                     email_part = addr_lower[start + 1..end].trim();
-//                 }
-//             }
-//
-//             // Match if the search term matches the beginning of the name OR the beginning of the email
-//             if clean_name_lower.starts_with(search_term) || email_part.starts_with(search_term) {
-//                 matches.push(addr.clone());
-//             }
-//         }
-//     }
-//
-//     matches
-// }
 
 pub fn find_folder_suggestions(input: &str, folders: &[String]) -> Vec<String> {
     let mut matches = Vec::new();
