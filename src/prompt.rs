@@ -768,7 +768,7 @@ impl PromptExt for Editor {
         let (cols, rows) = term_size()?;
         let theme = &self.theme_set.themes[&self.current_theme];
         let colors = derive_ui_colors(theme);
-        let col_width = (cols as usize / 6).max(1);
+        let col_width = (cols as usize / 5).max(1);
 
         let mut idx = 0;
 
@@ -801,14 +801,14 @@ impl PromptExt for Editor {
             // 2. Draw the upper menu line (Navigation hints)
             Self::draw_menu_line(
                 &mut stdout, rows.saturating_sub(2), cols, col_width,
-                &[("", ""), ("P", " Prev"), ("Enter", " Select"), ("", ""), ("", ""), ("", "")],
+                &[("   ^C", " Cancel"), ("P", " Prev"), ("", ""), ("", ""), ("", ""), ("", "")],
                 colors.menu_bg, colors.accent, colors.fg,
             )?;
 
             // 3. Draw the lower menu line
             Self::draw_menu_line(
                 &mut stdout, rows.saturating_sub(1), cols, col_width,
-                &[("^C", " Cancel"), ("N", " Next"), ("", ""), ("", ""), ("", ""), ("", "")],
+                &[("Enter", " Select"), ("N", " Next"), ("", ""), ("", ""), ("", ""), ("", "")],
                 colors.menu_bg, colors.accent, colors.fg,
             )?;
 

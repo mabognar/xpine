@@ -122,6 +122,8 @@ pub struct Account {
     pub password: Option<String>,
 
     pub client_id: Option<String>,
+
+    #[serde(skip_serializing)]
     pub client_secret: Option<String>,
 
     // Serde entirely ignores these fields for xpinerc TOML operations
@@ -149,6 +151,7 @@ struct SecretStore {
 struct SecretData {
     password: Option<String>,
     refresh_token: Option<String>,
+    client_secret: Option<String>,
 }
 
 fn get_or_create_key() -> Key<Aes256Gcm> {
@@ -248,15 +251,53 @@ pub fn load_config() -> AppConfig {
 
     // Merge the encrypted secrets back into the config in memory
     let secrets = load_secrets();
+    let mut needs_migration = false; // <--- NEW
+
     for account in &mut config.accounts {
+        let mut vault_has_secret = false;
+
         if let Some(secret_data) = secrets.accounts.get(&account.email) {
             account.password = secret_data.password.clone();
             account.refresh_token = secret_data.refresh_token.clone();
+
+            // Override TOML if the vault has the secret
+            if secret_data.client_secret.is_some() {
+                account.client_secret = secret_data.client_secret.clone();
+                vault_has_secret = true;
+            }
         }
+
+        // If TOML had a cleartext secret, but the secure vault didn't, trigger a migration
+        if account.client_secret.is_some() && !vault_has_secret {
+            needs_migration = true;
+        }
+    }
+
+    // Rewrite the files immediately to secure the secret and scrub xpinerc
+    if needs_migration {
+        save_config(&config.accounts);
     }
 
     config
 }
+//     let contents = fs::read_to_string(&config_path).expect("Failed to read xpinerc");
+//
+//     let mut config: AppConfig = toml::from_str(&contents).unwrap_or_else(|e| {
+//         eprintln!("Failed to parse xpinerc: {}", e);
+//         AppConfig { accounts: Vec::new() }
+//     });
+//
+//     // Merge the encrypted secrets back into the config in memory
+//     let secrets = load_secrets();
+//     for account in &mut config.accounts {
+//         if let Some(secret_data) = secrets.accounts.get(&account.email) {
+//             account.password = secret_data.password.clone();
+//             account.refresh_token = secret_data.refresh_token.clone();
+//         }
+//     }
+//
+//     config
+// }
 
 pub fn save_config(accounts: &[Account]) {
     let home = dirs::home_dir().expect("Could not find home directory.");
@@ -269,19 +310,34 @@ pub fn save_config(accounts: &[Account]) {
     }
 
     // 2. Encrypt and save the passwords to the secure binary file
+    // 2. Encrypt and save the passwords to the secure binary file
     let mut secrets = SecretStore::default();
     for account in accounts {
-        if !account.email.is_empty() && (account.password.is_some() || account.refresh_token.is_some()) {
+        if !account.email.is_empty() && (account.password.is_some() || account.refresh_token.is_some() || account.client_secret.is_some()) {
             secrets.accounts.insert(
                 account.email.clone(),
                 SecretData {
                     password: account.password.clone(),
                     refresh_token: account.refresh_token.clone(),
+                    client_secret: account.client_secret.clone(), // <--- NEW
                 }
             );
         }
     }
     save_secrets(&secrets);
+    // let mut secrets = SecretStore::default();
+    // for account in accounts {
+    //     if !account.email.is_empty() && (account.password.is_some() || account.refresh_token.is_some()) {
+    //         secrets.accounts.insert(
+    //             account.email.clone(),
+    //             SecretData {
+    //                 password: account.password.clone(),
+    //                 refresh_token: account.refresh_token.clone(),
+    //             }
+    //         );
+    //     }
+    // }
+    // save_secrets(&secrets);
 }
 
 // pub fn load_config() -> AppConfig {

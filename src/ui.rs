@@ -792,17 +792,16 @@ fn draw_email_accounts(stdout: &mut std::io::Stdout, app: &App, cols: u16, rows:
 
     let m_col = (cols as usize / 6).max(1);
     Editor::draw_menu_line(stdout, rows - 2, cols, m_col,
-                           &[(" <", " Back"), ("A", " Add Acct"), ("D", " Del Acct"), ("P", " Prev"), ("", ""), ("", "")],
+                           &[(" <", " Back"), ("A", " Add Acct"), ("P", " Prev"), ("", ""), ("", ""), ("", "")],
                            colors.menu_bg, colors.accent, colors.fg)?;
     Editor::draw_menu_line(stdout, rows - 1, cols, m_col,
-                           &[("", ""), ("E", " Edit Acct"), ("", ""), ("N", " Next"), ("", ""), ("", "")],
+                           &[("", ""), ("D", " Del Acct"), ("N", " Next"), ("", ""), ("", ""), ("", "")],
                            colors.menu_bg, colors.accent, colors.fg)?;
 
     queue!(
         stdout, SetBackgroundColor(colors.bg), SetForegroundColor(colors.accent),
-        cursor::MoveTo(0, rows - 6), Print("  - App Specific Passwords are required for Gmail & Yahoo"),
-        cursor::MoveTo(0, rows - 5), Print("  - Generate online with your email provider"),
-        cursor::MoveTo(0, rows - 4), Print("  - Enter the App Specific Password WITHOUT spaces"),
+        cursor::MoveTo(0, rows - 6), Print("  - App Specific Password is required for Yahoo; generate online"),
+        cursor::MoveTo(0, rows - 5), Print("  - Enter the App Specific Password WITHOUT spaces"),
         ResetColor
     )?;
     Ok(())

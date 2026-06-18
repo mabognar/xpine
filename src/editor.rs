@@ -837,7 +837,7 @@ impl Editor {
 
         // --- NEW: Wipe the team emails so they don't ghost into the main composer ---
         self.highlight_cache.clear();
-        
+
         self.status_message = prev_status_message;
         self.status_time = prev_status_time;
 
