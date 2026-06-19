@@ -4,7 +4,7 @@ use std::io::{self, BufRead, BufReader, Write};
 use crate::editor::{Editor, MenuState};
 use crate::ui::UiExt;
 use crate::config::ConfigExt;
-use crate::syntax::SyntaxExt; // Provides access to self.mark_modified()
+use crate::syntax::SyntaxExt; 
 use crate::prompt::PromptExt;
 
 pub trait SpellExt {
@@ -217,6 +217,7 @@ impl SpellExt for Editor {
     }
 }
 
+// metric to measure 'distance' of misspelled word from dictionary words
 pub fn edit_distance(a: &str, b: &str) -> usize {
     let a: Vec<char> = a.chars().collect();
     let b: Vec<char> = b.chars().collect();

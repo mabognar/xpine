@@ -10,12 +10,10 @@ pub fn enforce_quotes(address: &str) -> String {
             return trimmed.to_string();
         }
 
-        // If it's already properly quoted, leave it alone
         if name_part.starts_with('"') && name_part.ends_with('"') {
             return trimmed.to_string();
         }
 
-        // Remove any dangling outer quotes just in case, then explicitly wrap
         let clean_name = name_part.trim_matches('"');
         return format!("\"{}\" {}", clean_name, &trimmed[start..]);
     }
@@ -141,8 +139,6 @@ pub fn save_address_book(addresses: &[String]) -> std::io::Result<()> {
 pub fn clean_and_save_address_book(addresses: &mut Vec<String>) {
     addresses.retain(|a| !a.trim().is_empty());
 
-    // Expand any nested teams inside of teams before sorting/saving
-    // Expand any nested teams inside of teams before sorting/saving
     let current_book = addresses.clone();
     for a in addresses.iter_mut() {
         if let Some((team_name, emails)) = a.clone().split_once(':') {
@@ -154,21 +150,21 @@ pub fn clean_and_save_address_book(addresses: &mut Vec<String>) {
         }
     }
 
-    // Sort: Individuals first, Teams (containing ':') at the bottom
+    // sort: individuals first, Teams (containing ':') at bottom
     addresses.sort_by(|a, b| {
         let a_is_team = a.contains(':');
         let b_is_team = b.contains(':');
 
         if a_is_team == b_is_team {
-            a.cmp(b) // Sort alphabetically within their respective groups
+            a.cmp(b) // sort within groups
         } else if a_is_team {
-            std::cmp::Ordering::Greater // Teams are pushed to the bottom
+            std::cmp::Ordering::Greater // push Teams to bottom
         } else {
-            std::cmp::Ordering::Less    // Individuals are pulled to the top
+            std::cmp::Ordering::Less    // push individuals to top
         }
     });
 
-    // Insert the blank spacer line exactly before the first Team
+    // insert the blank line before first Team
     if let Some(first_team_idx) = addresses.iter().position(|a| a.contains(':')) {
         if first_team_idx > 0 {
             addresses.insert(first_team_idx, String::new());
@@ -182,8 +178,6 @@ pub fn clean_and_save_address_book(addresses: &mut Vec<String>) {
 }
 
 pub fn expand_address_lists(input: &str, address_book: &[String]) -> String {
-    // 1. Pre-process: (Kept for backward compatibility if you have drafts
-    // containing the old raw string insertion format)
     let mut processed_input = input.to_string();
     for addr in address_book {
         if let Some((_, emails)) = addr.split_once(':') {
@@ -193,15 +187,15 @@ pub fn expand_address_lists(input: &str, address_book: &[String]) -> String {
 
     let mut expanded = Vec::new();
 
-    // 2. Now it is safe to split by comma
+    // split by comma
     for part in processed_input.split(',') {
         let part = part.trim();
 
-        // --- NEW: Strip out the " (Team)" suffix safely before checking ---
+        // strip out the " (Team)" suffix
         let clean_part = part.strip_suffix(" (Team)").unwrap_or(part).trim();
         let mut matched_list = false;
 
-        // 3. Check if the cleaned name matches a team in the address book
+        // check if cleaned name matches a team in address book
         for addr in address_book {
             if let Some((list_name, emails)) = addr.split_once(':') {
                 if clean_part.to_lowercase() == list_name.trim().to_lowercase() {
@@ -213,7 +207,7 @@ pub fn expand_address_lists(input: &str, address_book: &[String]) -> String {
         }
 
         if !matched_list && !clean_part.is_empty() {
-            // If it wasn't a team, enforce quotes and push the cleaned part.
+            // if not a team, enforce quotes and push clean_part
             expanded.push(enforce_quotes(clean_part));
         }
     }

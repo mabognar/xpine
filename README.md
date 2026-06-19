@@ -3,8 +3,12 @@
 XPINE IS NOT READY FOR PRODUCTION USE. 
 UNDER HEAVY DEVELOPMENT.
 
-Linux users need gnome-keyring or kwallet installed. 
-Linux users also need the libdbus-1-dev package or a functioning Secret Service provider.
+MacOS users: In your Terminal settings, go to Profiles > select your profile > Keyboard and make sure 
+"Use Option as Meta key" is checked.
+
+Gmail users: In Gmail (on the web), go to Settings > See all settings > Forwarding and POP/IMAP and make sure
+"Auto-Expunge off - Wait for the client to update the server." is checked. 
+
 
 A fast, lightweight, and fully-featured terminal-based email client written in Rust. Designed for speed, privacy, and productivity, `xpine` keeps your inbox right in the terminal without sacrificing modern features.
 
@@ -31,6 +35,9 @@ The easiest way to install `xpine` on macOS is using the pre-compiled installer 
 4. Open your terminal and type `xpine` to launch the application!
 
 ### Linux
+
+Linux users need gnome-keyring or kwallet installed.
+Linux usrs also need the libdbus-1-dev package or a functioning Secret Service provider.
 
 #### Option 1: Debian/Ubuntu (.deb package)
 If you are using Debian, Ubuntu, Linux Mint, Pop!_OS, or any other Debian derivative:

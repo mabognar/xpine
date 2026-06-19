@@ -57,7 +57,7 @@ fn main() {
         net::reconnect(&mut app, &mut session);
     }
 
-    // Inside src/main.rs, right before `loop {`
+    // check for xpine update on github
     let (update_tx, update_rx) = mpsc::channel::<String>();
     thread::spawn(move || {
         let url = "https://api.github.com/repos/mabognar/xpine/releases/latest";
@@ -66,8 +66,7 @@ fn main() {
         if let Ok(response) = client.get(url).header(reqwest::header::USER_AGENT, "xpine-updater").send() {
             if let Ok(json) = response.json::<serde_json::Value>() {
                 if let Some(tag) = json["tag_name"].as_str() {
-                    // Strip the "v" if you tag releases like "v1.0.0"
-                    let latest = tag.trim_start_matches('v').to_string();
+                    let latest = tag.to_string();
                     let _ = update_tx.send(latest);
                 }
             }
@@ -75,13 +74,11 @@ fn main() {
     });
 
     loop {
-        // ADD THIS AT THE TOP OF THE LOOP: Check if the background thread has found the version
         if let Ok(version) = update_rx.try_recv() {
             app.latest_version = Some(version);
-            app.needs_fetch = true; // Trigger a UI redraw
+            app.needs_fetch = true;
         }
         
-        // 2. The Reconnect Block shrinks to this:
         if app.needs_reconnect {
             net::reconnect(&mut app, &mut session);
         }

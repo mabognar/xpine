@@ -5,6 +5,7 @@ use std::time::{Duration, Instant};
 use std::thread;
 use reqwest::header::USER_AGENT;
 use serde::Deserialize;
+use std::collections::HashSet;
 
 pub enum AppMode {
     AddressBook {
@@ -64,22 +65,7 @@ pub struct App {
     pub menu_page: u8,
     pub search_query: Option<String>,
     pub latest_version: Option<String>,
-}
-
-// Call this function when xpine starts
-pub fn spawn_update_checker(app_state_sender: std::sync::mpsc::Sender<String>) {
-    thread::spawn(move || {
-        let url = "https://api.github.com/repos/mabognar/xpine/releases/latest";
-        let client = reqwest::blocking::Client::new();
-
-        if let Ok(response) = client.get(url).header(USER_AGENT, "xpine-updater").send() {
-            if let Ok(release) = response.json::<GithubRelease>() {
-                let latest = release.tag_name.trim_start_matches('v').to_string();
-                // Send the version string back to your main event loop
-                let _ = app_state_sender.send(latest);
-            }
-        }
-    });
+    pub graph_pending_deleted: HashSet<String>,
 }
 
 impl App {
@@ -127,6 +113,7 @@ impl App {
             menu_page: 1,
             search_query: None,
             latest_version: None,
+            graph_pending_deleted: HashSet::new(),
         };
 
         if is_empty {

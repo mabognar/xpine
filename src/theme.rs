@@ -6,8 +6,7 @@ use std::fs;
 use std::path::PathBuf;
 use crossterm::style::Color;
 
-// Embed the entire 'themes' directory from the root of your project workspace
-// into the final compiled executable artifact binary
+// embed the entire 'themes' project directory into executable binary
 static EMBEDDED_THEMES_DIR: Dir<'_> = include_dir!("$CARGO_MANIFEST_DIR/themes");
 
 pub trait ThemeExt {
@@ -102,20 +101,18 @@ pub fn ensure_themes_unpacked() -> std::io::Result<PathBuf> {
     let home = dirs::home_dir().expect("Could not find home directory.");
     let xpine_themes_dir = home.join(".xpine").join("themes");
 
-    // If the folder doesn't exist, create it and extract embedded themes
+    // if folder does not exist, create folder and extract embedded themes
     if !xpine_themes_dir.exists() {
         fs::create_dir_all(&xpine_themes_dir)?;
 
-        // Extract each embedded theme asset file structure to disk
+        // extract each embedded theme file to disk
         for file in EMBEDDED_THEMES_DIR.files() {
             let file_path = xpine_themes_dir.join(file.path());
 
-            // Ensure any inner structural subdirectories exist
             if let Some(parent) = file_path.parent() {
                 fs::create_dir_all(parent)?;
             }
 
-            // Write binary content of theme to user's local disk environment
             fs::write(file_path, file.contents())?;
         }
     }

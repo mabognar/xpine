@@ -815,7 +815,7 @@ fn draw_email_list(stdout: &mut std::io::Stdout, app: &App, cols: u16, rows: u16
     queue!(stdout, cursor::MoveTo(0, 0), SetBackgroundColor(colors.menu_bg), terminal::Clear(ClearType::UntilNewLine), cursor::MoveTo(0, 0), SetForegroundColor(colors.accent), Print(header_title))?;
 
     if let Some(ref query) = app.search_query {
-        queue!(stdout, SetForegroundColor(colors.flag_star), Print(format!("   Search Results: {}", query)))?;
+        queue!(stdout, SetForegroundColor(colors.flag_star), Print(format!("   Search: {}", query)))?;
     }
 
     let items_per_page = (rows.saturating_sub(3) as u32).max(1);

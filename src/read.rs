@@ -33,7 +33,6 @@ pub fn view_email(
 
     let wrap_width = (cols as usize).saturating_sub(2);
     let wrapped_text = crate::mail::wrap_email_body(text_body, wrap_width);
-    // let wrapped_text = wrap_email_body(&text_body, wrap_width);
 
     reader.buffer = Rope::from_str(&wrapped_text);
     reader.current_theme = settings_provider.current_theme.clone();
@@ -163,23 +162,23 @@ pub fn view_email(
                     continue;
                 }
 
-                // --- Handle Alt+Number to save attachments ---
+                // implement Alt+Number to save attachments
                 if key.modifiers.contains(event::KeyModifiers::ALT) {
                     if let event::KeyCode::Char(c) = key.code {
-                        // NEW: Catch Alt+0 to save all attachments
+                        // Alt+0 to save all attachments
                         if c == '0' {
                             if !attachments.is_empty() {
-                                // Pass the special flag to trigger directory-only selection
+                                // flag to trigger directory-only selection
                                 if let Ok(Some(save_dir)) = reader.run_file_browser(true, Some("<DIR_ONLY>")) {
 
-                                    // --- NEW: Add the Confirmation Prompt ---
+                                    // confirmation prompt
                                     let prompt_msg = format!("Save all attachments to '{}'?", save_dir);
 
                                     if let Ok(Some(true)) = reader.prompt_yn(&prompt_msg) {
                                         let mut success_count = 0;
                                         let target_dir = std::path::Path::new(&save_dir);
 
-                                        // Save each attachment into the chosen directory
+                                        // save each attachment into chosen directory
                                         for (filename, data) in attachments {
                                             let file_path = target_dir.join(filename);
                                             if std::fs::write(&file_path, data).is_ok() {
@@ -195,7 +194,6 @@ pub fn view_email(
                                     } else {
                                         reader.set_status("Save all cancelled.".to_string());
                                     }
-                                    // ----------------------------------------
 
                                 } else {
                                     reader.set_status("Save all cancelled.".to_string());
@@ -270,7 +268,7 @@ pub fn view_email(
                             mail::extract_email(&reply_to)
                         };
 
-                        // ONLY apply the 'Answered' flag if compose_email returns a success status
+                        // apply the 'A' flag if compose_email sucessfully sends
                         if let Some(s) = compose::compose_email(
                             &app.active_account,
                             Some(&raw_reply),
@@ -287,7 +285,7 @@ pub fn view_email(
                                 }
                             }
 
-                            // Update the local UI state immediately after sending
+                            // update local state right after sending
                             app.page_emails[app.selected_index].is_answered = true;
 
                             reader.set_status(s);

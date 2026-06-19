@@ -14,6 +14,16 @@ use aes_gcm::{
 use rand::{rngs::OsRng, RngCore};
 use std::collections::HashMap;
 
+pub trait ConfigExt {
+    fn get_base_dir() -> Option<PathBuf>;
+    fn get_settings_path() -> Option<PathBuf>;
+    fn get_theme_dir() -> Option<PathBuf>;
+    fn load_settings() -> (String, bool, bool, bool, bool);
+    fn save_settings(&self);
+    fn cycle_theme(&mut self);
+    fn update_cursor_color(&self);
+}
+
 pub struct ProviderDefaults {
     pub imap: &'static str,
     pub smtp: &'static str,
@@ -38,19 +48,6 @@ pub struct EditorSettings {
     pub sort_newest_first: bool,
     #[serde(default)]
     pub spellcheck_before_send: bool,
-}
-
-
-impl Default for EditorSettings {
-    fn default() -> Self {
-        Self {
-            theme: default_theme(),
-            line_numbers: false,
-            soft_wrap: false,
-            sort_newest_first: false,
-            spellcheck_before_send: false,
-        }
-    }
 }
 
 #[derive(Clone, Copy)]
@@ -102,15 +99,24 @@ struct SecretData {
     client_secret: Option<String>,
 }
 
-pub trait ConfigExt {
-    fn get_base_dir() -> Option<PathBuf>;
-    fn get_settings_path() -> Option<PathBuf>;
-    fn get_theme_dir() -> Option<PathBuf>;
-    fn load_settings() -> (String, bool, bool, bool, bool);
-    fn save_settings(&self);
-    fn cycle_theme(&mut self);
-    fn update_cursor_color(&self);
+fn default_imap() -> String { "imap.gmail.com".to_string() }
+fn default_imap_port() -> u16 { 993 }
+fn default_smtp() -> String { "smtp.gmail.com".to_string() }
+fn default_smtp_port() -> u16 { 587 }
+fn default_theme() -> String { "Default-Dark".to_string() }
+
+impl Default for EditorSettings {
+    fn default() -> Self {
+        Self {
+            theme: default_theme(),
+            line_numbers: false,
+            soft_wrap: false,
+            sort_newest_first: false,
+            spellcheck_before_send: false,
+        }
+    }
 }
+
 
 impl ConfigExt for Editor {
     fn get_base_dir() -> Option<PathBuf> {
@@ -215,12 +221,6 @@ pub fn save_signature(sig: &str) {
     let path = home.join(".xpine").join("signature");
     let _ = std::fs::write(path, sig);
 }
-
-fn default_imap() -> String { "imap.gmail.com".to_string() }
-fn default_imap_port() -> u16 { 993 }
-fn default_smtp() -> String { "smtp.gmail.com".to_string() }
-fn default_smtp_port() -> u16 { 587 }
-fn default_theme() -> String { "Default-Dark".to_string() }
 
 pub fn get_provider_defaults(email: &str) -> Option<ProviderDefaults> {
     if email.ends_with("@gmail.com") {
@@ -349,7 +349,7 @@ pub fn load_config() -> AppConfig {
         }
     }
 
-    // Rewrite the files immediately to secure the secret and scrub xpinerc
+    // rewrite the files immediately to secure the secret and scrub xpinerc
     if needs_migration {
         save_config(&config.accounts);
     }
@@ -361,13 +361,13 @@ pub fn save_config(accounts: &[Account]) {
     let home = dirs::home_dir().expect("Could not find home directory.");
     let config_path = home.join(".xpine").join("xpinerc");
 
-    // 1. Write the safe TOML file (#[serde(skip)] ensures no passwords go here)
+    // write the safe TOML file (#[serde(skip)] ensures no passwords go here)
     let config = AppConfig { accounts: accounts.to_vec() };
     if let Ok(toml_string) = toml::to_string_pretty(&config) {
         fs::write(config_path, toml_string).expect("Failed to write config file.");
     }
 
-    // Encrypt and save the passwords/keys to the secure binary file
+    // encrypt and save the passwords/keys to the secure binary file
     let mut secrets = SecretStore::default();
     for account in accounts {
         if !account.email.is_empty() && (account.password.is_some() || account.refresh_token.is_some() || account.client_secret.is_some()) {
@@ -376,7 +376,7 @@ pub fn save_config(accounts: &[Account]) {
                 SecretData {
                     password: account.password.clone(),
                     refresh_token: account.refresh_token.clone(),
-                    client_secret: account.client_secret.clone(), // <--- NEW
+                    client_secret: account.client_secret.clone(),
                 }
             );
         }

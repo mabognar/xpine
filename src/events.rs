@@ -17,7 +17,8 @@ fn check_and_expunge_outlook(app: &mut App, session: &mut Option<MailSession>, t
 
     if !is_outlook { return; }
 
-    let has_pending = app.page_emails.iter().any(|e| e.is_deleted);
+    // Check if there are deletes on this page OR stored in the Graph tracking set
+    let has_pending = app.page_emails.iter().any(|e| e.is_deleted) || !app.graph_pending_deleted.is_empty();
     if !has_pending { return; }
 
     if let Ok(Some(yes)) = theme_provider.prompt_yn("Expunge emails marked for deletion?") {
@@ -41,6 +42,7 @@ fn check_and_expunge_outlook(app: &mut App, session: &mut Option<MailSession>, t
             for email in &mut app.page_emails {
                 email.is_deleted = false;
             }
+            app.graph_pending_deleted.clear(); // Clear Graph tracking if cancelled
         }
     }
 }
@@ -706,6 +708,14 @@ fn handle_email_list_events(k: KeyEvent, app: &mut App, session: &mut Option<Mai
                 if !app.page_emails.is_empty() {
                     let idx = app.selected_index;
                     app.page_emails[idx].is_deleted = !app.page_emails[idx].is_deleted;
+
+                    // Add/Remove from the Graph tracking set
+                    let email_id = app.page_emails[idx].id.clone();
+                    if app.page_emails[idx].is_deleted {
+                        app.graph_pending_deleted.insert(email_id);
+                    } else {
+                        app.graph_pending_deleted.remove(&email_id);
+                    }
                 }
             } else {
                 if let Some(sess) = session {
@@ -721,11 +731,11 @@ fn handle_email_list_events(k: KeyEvent, app: &mut App, session: &mut Option<Mai
         KeyCode::Char('x') | KeyCode::Char('X') => {
             if !app.page_emails.is_empty() {
                 if let Some(sess) = session {
-                    let has_deleted = app.page_emails.iter().any(|e| e.is_deleted);
+                    // Include the Graph tracking set when checking for deleted emails
+                    let has_deleted = app.page_emails.iter().any(|e| e.is_deleted) || !app.graph_pending_deleted.is_empty();
 
                     if !has_deleted {
                         app.update_status("Nothing to expunge - no messages marked for deletion".to_string());
-                        app.list_status_duration = std::time::Duration::from_secs(3);
                     } else {
                         let is_outlook = app.active_account.imap_server.to_lowercase().contains("outlook") ||
                             app.active_account.email.to_lowercase().contains("outlook") ||

@@ -8,9 +8,8 @@ use ropey::Rope;
 use syntect::highlighting::{Style, ThemeSet};
 use syntect::parsing::SyntaxSet;
 use crossterm::{terminal, event::{self, KeyCode, KeyModifiers}};
-use crate::prompt::PromptExt;
 
-// Extension Traits
+use crate::prompt::PromptExt;
 use crate::config::ConfigExt;
 use crate::spell::SpellExt;
 use crate::ui::UiExt;
@@ -277,15 +276,16 @@ impl Editor {
                 self.desired_cursor_x = self.cursor_x;
                 self.mark_modified();
 
-                // Alpine/Pico style automatic wrapping at a set margin (e.g., 72 columns)
+                // automatic wrapping at 72
                 let wrap_margin = 72;
                 if self.cursor_x > wrap_margin && c != ' ' {
-                    // Look backward for the closest space character in the current line to break on a word boundary
+                    // look backward for the closest space character in the current line
+                    // to break on a word boundary
                     let line_start_idx = self.buffer.line_to_char(self.cursor_y);
                     let current_idx = self.get_cursor_char_idx();
 
                     let mut space_idx = None;
-                    // Search backwards from the current position to the start of the line
+                    // search backwards from the current position to the start of the line
                     for i in (line_start_idx..current_idx).rev() {
                         if self.buffer.char(i) == ' ' {
                             space_idx = Some(i);
@@ -294,12 +294,12 @@ impl Editor {
                     }
 
                     if let Some(idx_to_break) = space_idx {
-                        // Replace the space character with a newline character
+                        // replace space character with newline character
                         self.buffer.remove(idx_to_break..(idx_to_break + 1));
                         self.buffer.insert_char(idx_to_break, '\n');
 
-                        // Recalculate the precise cursor positions after splitting the line
-                        let new_cursor_idx = current_idx; // index shifts match perfectly since 1 char removed, 1 char inserted
+                        // recalculate cursor positions after splitting line
+                        let new_cursor_idx = current_idx;
                         self.cursor_y = self.buffer.char_to_line(new_cursor_idx);
                         self.cursor_x = new_cursor_idx - self.buffer.line_to_char(self.cursor_y);
                         self.desired_cursor_x = self.cursor_x;
@@ -335,8 +335,6 @@ impl Editor {
 
     pub(crate) fn scroll(&mut self) -> io::Result<()> {
         let (cols, _) = terminal::size()?;
-        // let visible_rows = rows.saturating_sub(4 + self.top_margin) as usize;
-
         let (_, rows) = terminal::size().unwrap_or((80, 24));
 
         let has_status = !self.status_message.trim().is_empty();
@@ -466,10 +464,10 @@ impl Editor {
         let (_, rows) = terminal::size()?;
         let visible_rows = rows.saturating_sub(4 + self.top_margin) as usize;
 
-        // Move the cursor up by a page
+        // move the cursor up one page
         self.cursor_y = self.cursor_y.saturating_sub(visible_rows);
 
-        // Explicitly move the viewport up by a page
+        // move the viewport up one page
         self.row_offset = self.row_offset.saturating_sub(visible_rows);
 
         self.cursor_x = self.desired_cursor_x.min(self.line_len(self.cursor_y));
@@ -480,11 +478,11 @@ impl Editor {
         let (_, rows) = terminal::size()?;
         let visible_rows = rows.saturating_sub(4 + self.top_margin) as usize;
 
-        // Move the cursor down by a page
+        // move cursor down one page
         let max_y = self.buffer.len_lines().saturating_sub(1);
         self.cursor_y = (self.cursor_y + visible_rows).min(max_y);
 
-        // Explicitly move the viewport down by a page
+        // move viewport down one page
         let max_offset = self.buffer.len_lines().saturating_sub(visible_rows);
         self.row_offset = (self.row_offset + visible_rows).min(max_offset);
 
@@ -541,7 +539,7 @@ impl Editor {
         let mut end_line = self.cursor_y;
         while end_line < max_y && self.buffer.line(end_line).chars().any(|c| !c.is_whitespace()) { end_line += 1; }
 
-        // FIX: If end_line advanced onto an empty line, step it back so it stops exactly on the paragraph's last text line.
+        // if end_line advanced onto an empty line, step back so it stops exactly on the paragraphs last text line
         if end_line > start_line && !self.buffer.line(end_line).chars().any(|c| !c.is_whitespace()) {
             end_line -= 1;
         }
@@ -557,9 +555,8 @@ impl Editor {
         let mut new_text = String::new();
         let mut current_line_len = 0;
 
-        // Upgraded loop to fix the byte-count / early wrap issue
         for word in words {
-            let word_len = word.chars().count(); // Use character count instead of byte length
+            let word_len = word.chars().count();
             let space_needed = if current_line_len > 0 { 1 } else { 0 };
 
             if current_line_len + word_len + space_needed > 72 {
@@ -696,23 +693,19 @@ impl Editor {
         let prev_col_offset = self.col_offset;
         let prev_row_offset = self.row_offset;
 
-        // FIX 1: Save the lingering status message state
         let prev_status_message = self.status_message.clone();
         let prev_status_time = self.status_time;
 
-        // 2. SANDBOX SETUP
         self.buffer = ropey::Rope::from_str(initial_content);
-        self.menu_state = editor_type; // <-- USE THE PASSED STATE
+        self.menu_state = editor_type;
         self.top_margin = 1;
 
-        // FIX: Calculate exact cursor position for multiline text
         self.cursor_y = self.buffer.len_lines().saturating_sub(1);
         self.cursor_x = self.line_len(self.cursor_y);
         self.desired_cursor_x = self.cursor_x;
         self.row_offset = 0;
         self.col_offset = 0;
 
-        // --- NEW: Wipe the ghost text from the previous editor state ---
         self.highlight_cache.clear();
 
         let _ = self.scroll();
@@ -723,7 +716,6 @@ impl Editor {
         let mut stdout = std::io::stdout();
         let mut result = None;
 
-        // 3. MINI TUI LOOP
         loop {
             let (cols, rows) = crossterm::terminal::size().unwrap_or((80, 24));
             let theme = &self.theme_set.themes[&self.current_theme];
@@ -783,7 +775,6 @@ impl Editor {
                 if let crossterm::event::Event::Key(key_event) = crossterm::event::read()? {
                     if key_event.kind == crossterm::event::KeyEventKind::Press {
 
-                        // Check for our exit and custom conditions
                         if key_event.modifiers.contains(crossterm::event::KeyModifiers::CONTROL) {
                             if key_event.code == crossterm::event::KeyCode::Char('x') {
                                 result = Some(self.buffer.to_string());
@@ -792,7 +783,6 @@ impl Editor {
                             if key_event.code == crossterm::event::KeyCode::Char('c') {
                                 break;
                             }
-                            // --- NEW: Add Email Intercept ---
                             if key_event.code == crossterm::event::KeyCode::Char('a') && self.menu_state == MenuState::TeamEditor {
                                 let raw_addrs = crate::address::load_address_book();
                                 let mut addrs = Vec::new();
@@ -815,7 +805,7 @@ impl Editor {
                                     self.mark_modified();
                                     let _ = self.scroll();
                                 }
-                                continue; // Skip standard keypress handler
+                                continue;
                             }
                         }
 
@@ -825,7 +815,6 @@ impl Editor {
             }
         }
 
-        // 4. RESTORE STATE
         self.buffer = prev_buffer;
         self.menu_state = prev_menu_state;
         self.top_margin = prev_top_margin;
@@ -835,7 +824,6 @@ impl Editor {
         self.row_offset = prev_row_offset;
         self.desired_cursor_x = prev_cursor_x;
 
-        // --- NEW: Wipe the team emails so they don't ghost into the main composer ---
         self.highlight_cache.clear();
 
         self.status_message = prev_status_message;

@@ -59,7 +59,7 @@ pub fn compose_email(account: &Account, default_to: Option<&str>, default_subjec
     let mut suggestion_idx = 0;
     let mut cursor_pos = state.to.len(); // Starts at the end of the To: field
 
-    // NEW: Wipe the email list away completely before starting the composer
+    // clear before starting the composer
     execute!(stdout, Clear(ClearType::All)).unwrap();
 
     loop {
@@ -67,7 +67,7 @@ pub fn compose_email(account: &Account, default_to: Option<&str>, default_subjec
         let theme = &editor.theme_set.themes[&editor.current_theme];
         let colors = derive_ui_colors(theme);
 
-        // Macro to print strings with highlighted "(Team)"
+        // print strings with highlighted "(Team)"
         macro_rules! print_highlighted {
             ($out:expr, $text:expr, $base_color:expr, $accent_color:expr) => {
                 let mut parts = $text.split("(Team)");
@@ -118,7 +118,7 @@ pub fn compose_email(account: &Account, default_to: Option<&str>, default_subjec
             ).unwrap();
 
             if is_active {
-                // 1. Calculate the hint FIRST so we know its width
+                // calculate the hint to get width
                 let mut hint_str = String::new();
                 if i < 3 {
                     let suggestions = crate::prompt::find_email_suggestions(val, &address_book);
@@ -127,36 +127,36 @@ pub fn compose_email(account: &Account, default_to: Option<&str>, default_subjec
                         let last_part = val.split(',').last().unwrap_or("").trim_start();
 
                         if last_part.to_lowercase() != current_suggestion.to_lowercase() {
-                            // NEW: Calculate how many matches exist to hint at scrolling
+                            // calculate how many matches exist to hint at scrolling
                             let match_indicator = if suggestions.len() > 1 {
                                 format!(" ({} of {})", (suggestion_idx % suggestions.len()) + 1, suggestions.len())
                             } else {
-                                String::new() // Don't show anything if there is only 1 match
+                                String::new() // do not show anything if there is only 1 match
                             };
 
                             hint_str = if current_suggestion.to_lowercase().starts_with(&last_part.to_lowercase()) {
-                                // Append the indicator to the inline remainder
+                                // append the indicator to the inline remainder
                                 format!(" {}{}", &current_suggestion[last_part.len()..], match_indicator)
                             } else {
-                                // Append the indicator to the fallback substring match
+                                // append the indicator to the fallback substring match
                                 format!("  -> {}{}", current_suggestion, match_indicator)
                             };
                         }
                     }
                 }
 
-                // 2. Wrap text & calculate accurate cursor mapping
+                // wrap text & calculate accurate cursor mapping
                 let (wrapped_lines, cursor_row, cursor_col) = wrap_text(val, available_width, hint_str.chars().count(), cursor_pos);
                 let viewport_height = wrapped_lines.len().min(8);
 
-                // 3. Auto-scroll logic: Keep cursor within viewport
+                // auto-scroll logic: Keep cursor within viewport
                 if cursor_row < state.scroll_offset {
                     state.scroll_offset = cursor_row;
                 } else if cursor_row >= state.scroll_offset + viewport_height {
                     state.scroll_offset = cursor_row - viewport_height + 1;
                 }
 
-                // 4. Render only the visible viewport slice
+                // render only the visible viewport slice
                 let end_idx = (state.scroll_offset + viewport_height).min(wrapped_lines.len());
                 let visible_lines = &wrapped_lines[state.scroll_offset..end_idx];
 
@@ -180,7 +180,7 @@ pub fn compose_email(account: &Account, default_to: Option<&str>, default_subjec
                     print_highlighted!(stdout, line, colors.fg, colors.accent);
                 }
 
-                // 5. Render the Autocomplete hint (now guaranteed to render on the same line)
+                // render the autocomplete hint on same line
                 if !hint_str.is_empty() {
                     let last_line_idx = wrapped_lines.len().saturating_sub(1);
                     if last_line_idx >= state.scroll_offset && last_line_idx < state.scroll_offset + viewport_height {
@@ -204,14 +204,14 @@ pub fn compose_email(account: &Account, default_to: Option<&str>, default_subjec
                     }
                 }
 
-                // 6. Calculate hardware cursor position
+                // calculate hardware cursor position
                 let relative_row = (cursor_row - state.scroll_offset) as u16;
                 active_cursor_x = label_width + cursor_col as u16;
                 active_cursor_y = current_y + relative_row;
 
                 current_y += viewport_height as u16;
             } else {
-                // COLLAPSED STATE: Truncate to one line
+                // truncate to one line
                 let display_text = if val.len() > available_width {
                     // Show as much as possible, ending with an ellipsis
                     format!("{}...", &val[..available_width.saturating_sub(3)])
@@ -230,9 +230,7 @@ pub fn compose_email(account: &Account, default_to: Option<&str>, default_subjec
             }
         }
 
-        // queue!(stdout, cursor::MoveTo(0, 5), SetBackgroundColor(colors.menu_bg), SetForegroundColor(colors.accent), Print(" Attach: "), SetForegroundColor(colors.fg)).unwrap();
         queue!(stdout, cursor::MoveTo(0, current_y), Clear(ClearType::UntilNewLine), SetBackgroundColor(colors.menu_bg), SetForegroundColor(colors.accent), Print(" Attach: "), SetForegroundColor(colors.fg)).unwrap();
-        // ... print attachment names ...
         current_y += 1;
 
         if state.attachments.is_empty() {
@@ -250,7 +248,7 @@ pub fn compose_email(account: &Account, default_to: Option<&str>, default_subjec
 
         editor.top_margin = current_y;
 
-        // Now draw the editor body
+        // draw the editor body
         editor.draw_screen().unwrap();
 
         if state.active_idx < 4 {
@@ -276,7 +274,7 @@ pub fn compose_email(account: &Account, default_to: Option<&str>, default_subjec
                     if key_event.modifiers.contains(KeyModifiers::CONTROL) {
                         if key_event.code == KeyCode::Char('x') {
                             if editor.spellcheck_before_send {
-                                // If the spellcheck is cancelled, return to the composer
+                                // if spellcheck is cancelled, return to the composer
                                 if let Ok(false) = editor.spell_check() {
                                     continue;
                                 }
@@ -293,7 +291,7 @@ pub fn compose_email(account: &Account, default_to: Option<&str>, default_subjec
                             continue;
                         }
 
-                        // --- NEW: Insert Signature Hotkey ---
+                        // insert signature at cursor
                         if key_event.code == KeyCode::Char('g') {
                             if state.active_idx == 4 { // Ensure they are typing in the body
                                 let signature = crate::config::load_signature();
@@ -303,16 +301,15 @@ pub fn compose_email(account: &Account, default_to: Option<&str>, default_subjec
                                     let idx = editor.get_cursor_char_idx();
                                     editor.buffer.insert(idx, &sig_block);
 
-                                    // --- NEW FIX: Update the cursor and force the screen to redraw ---
+                                    // update the cursor and force redraw
                                     let new_idx = idx + sig_block.chars().count();
                                     editor.cursor_y = editor.buffer.char_to_line(new_idx);
                                     editor.cursor_x = new_idx - editor.buffer.line_to_char(editor.cursor_y);
                                     editor.desired_cursor_x = editor.cursor_x;
 
-                                    // Invalidate the visual cache so the pasted text appears instantly
+                                    // invalidate the visual cache so the pasted text appears instantly
                                     editor.highlight_cache.clear();
                                     editor.is_modified = true;
-                                    // -----------------------------------------------------------------
 
                                     editor.set_status("Signature inserted".to_string());
                                 } else {
@@ -323,23 +320,22 @@ pub fn compose_email(account: &Account, default_to: Option<&str>, default_subjec
                             }
                             continue;
                         }
-                        // ------------------------------------
                     }
 
                     if state.active_idx == 4 {
-                        // --- NEW: Treat both physical Up arrow and Ctrl+P as an upward jump command ---
+                        // treat both physical Up arrow and Ctrl+P as upward jump command
                         let is_up_cmd = key_event.code == KeyCode::Up ||
                             (key_event.code == KeyCode::Char('p') && key_event.modifiers.contains(KeyModifiers::CONTROL));
 
                         if is_up_cmd && editor.cursor_y == 0 {
                             state.active_idx = 3;
-                            cursor_pos = state.subject.len(); // Reset cursor to end of Subject
+                            cursor_pos = state.subject.len(); // reset cursor to end of subject
                             continue;
                         }
                         match editor.handle_keypress(key_event).unwrap() {
                             EditorResult::Send => {
                                 if editor.spellcheck_before_send {
-                                    // If the spellcheck is cancelled, return to the composer
+                                    // if the spellcheck is cancelled, return to the composer
                                     if let Ok(false) = editor.spell_check() {
                                         continue;
                                     }
@@ -377,12 +373,12 @@ pub fn compose_email(account: &Account, default_to: Option<&str>, default_subjec
                                 } else {
                                     let mut scrolled_suggestion = false;
 
-                                    // --- NEW: Scroll suggestions UP ---
+                                    // scroll suggestions up
                                     if state.active_idx < 3 {
                                         let target = match state.active_idx { 0 => &state.to, 1 => &state.cc, 2 => &state.bcc, _ => unreachable!() };
                                         let suggestions = crate::prompt::find_email_suggestions(target, &address_book);
                                         if suggestions.len() > 1 {
-                                            // Wrap around to the end of the list if we hit the top
+                                            // wrap around to the end of the list if we hit the top
                                             suggestion_idx = if suggestion_idx == 0 { suggestions.len() - 1 } else { suggestion_idx - 1 };
                                             scrolled_suggestion = true;
                                         }
@@ -393,7 +389,7 @@ pub fn compose_email(account: &Account, default_to: Option<&str>, default_subjec
                                             state.active_idx -= 1;
                                             let new_target = match state.active_idx { 0 => &state.to, 1 => &state.cc, 2 => &state.bcc, 3 => &state.subject, _ => unreachable!() };
                                             cursor_pos = new_target.len();
-                                            state.scroll_offset = 0; // Reset scroll
+                                            state.scroll_offset = 0; // reset scroll
                                         } else {
                                             cursor_pos = 0;
                                         }
@@ -402,7 +398,7 @@ pub fn compose_email(account: &Account, default_to: Option<&str>, default_subjec
                                 }
                             }
                             KeyCode::Down => {
-                                // Move down one wrapped line
+                                // move down one wrapped line
                                 let target = match state.active_idx { 0 => &state.to, 1 => &state.cc, 2 => &state.bcc, 3 => &state.subject, _ => "" };
                                 if cursor_pos + available_width <= target.len() {
                                     cursor_pos += available_width;
@@ -436,7 +432,7 @@ pub fn compose_email(account: &Account, default_to: Option<&str>, default_subjec
                                     if !suggestions.is_empty() {
                                         let suggestion = &suggestions[suggestion_idx % suggestions.len()];
 
-                                        // FIX: Strip hidden newlines/carriage returns
+                                        // strip hidden newlines/carriage returns
                                         let clean_suggestion = suggestion.trim_end();
 
                                         let last_part = target.split(',').last().unwrap_or("").trim_start();
@@ -445,9 +441,9 @@ pub fn compose_email(account: &Account, default_to: Option<&str>, default_subjec
                                             if let Some(last_comma_idx) = target.rfind(',') {
                                                 target.truncate(last_comma_idx + 1);
                                                 target.push(' ');
-                                                target.push_str(clean_suggestion); // Append the cleaned version
+                                                target.push_str(clean_suggestion); // append cleaned version
                                             } else {
-                                                *target = clean_suggestion.to_string(); // Replace with the cleaned version
+                                                *target = clean_suggestion.to_string(); // replace with cleaned version
                                             }
 
                                             cursor_pos = target.len();
@@ -478,7 +474,6 @@ pub fn compose_email(account: &Account, default_to: Option<&str>, default_subjec
                             KeyCode::Backspace => {
                                 let target = match state.active_idx { 0 => &mut state.to, 1 => &mut state.cc, 2 => &mut state.bcc, 3 => &mut state.subject, _ => unreachable!() };
                                 if cursor_pos > 0 {
-                                    // Remove the character exactly before the cursor
                                     if let Some(c) = target[..cursor_pos].chars().next_back() {
                                         cursor_pos -= c.len_utf8();
                                         target.remove(cursor_pos);
@@ -537,8 +532,7 @@ pub fn compose_email(account: &Account, default_to: Option<&str>, default_subjec
     builder = parse_and_add(builder, &final_cc, "cc");
     builder = parse_and_add(builder, &final_bcc, "bcc");
 
-    // let formatted_body = crate::mail::justify_all_text(&final_body);
-    // --- NEW: Protect the signature from being squashed by the text wrapper ---
+    // protect the signature from being squashed by the text wrapper
     let signature = crate::config::load_signature();
     let clean_sig = signature.trim();
 
@@ -548,7 +542,6 @@ pub fn compose_email(account: &Account, default_to: Option<&str>, default_subjec
             let justified_top = crate::mail::justify_all_text(top);
             let justified_bottom = crate::mail::justify_all_text(bottom);
 
-            // Re-glue them together with the untouched signature safely in the middle
             format!("{}{}{}", justified_top, clean_sig, justified_bottom)
         } else {
             crate::mail::justify_all_text(&final_body)
@@ -556,7 +549,6 @@ pub fn compose_email(account: &Account, default_to: Option<&str>, default_subjec
     } else {
         crate::mail::justify_all_text(&final_body)
     };
-    // --------------------------------------------------------------------------
 
     let mut multipart = lettre::message::MultiPart::mixed().singlepart(lettre::message::SinglePart::plain(formatted_body));
 
@@ -583,11 +575,8 @@ pub fn compose_email(account: &Account, default_to: Option<&str>, default_subjec
 
     match builder.multipart(multipart) {
         Ok(email_msg) => {
-            // ... inside the Ok(email_msg) block ...
 
             let is_microsoft = account.email.ends_with("@outlook.com") || account.email.ends_with("@hotmail.com");
-
-            // let target_scope = if is_microsoft { Some("https://graph.microsoft.com/Mail.Send") } else { None };
 
             let token_or_pass = if let Some(ref rt) = account.refresh_token {
                 let target_scope = if is_microsoft { Some("https://graph.microsoft.com/Mail.Send") } else { None };
@@ -601,7 +590,6 @@ pub fn compose_email(account: &Account, default_to: Option<&str>, default_subjec
                 ) {
                     Ok(token) => token,
                     Err(_) if is_microsoft => {
-                        // The refresh failed because the user hasn't consented to Mail.Send yet.
                         execute!(stdout, Clear(ClearType::All), cursor::MoveTo(0, 0)).unwrap();
                         queue!(stdout, Print("Microsoft requires separate authorization to send emails.\r\n")).unwrap();
                         queue!(stdout, Print("Initiating a one-time sending authorization...\r\n\n")).unwrap();
@@ -614,7 +602,6 @@ pub fn compose_email(account: &Account, default_to: Option<&str>, default_subjec
                         return None;
                     }
                     Err(_) => {
-                        // Handle standard Google/Network errors...
                         return None;
                     }
                 }
@@ -623,13 +610,11 @@ pub fn compose_email(account: &Account, default_to: Option<&str>, default_subjec
             };
 
             if is_microsoft && account.refresh_token.is_some() {
-                // Submit the raw MIME as a base64 encoded text/plain string to the Graph API
-
+                // submit raw MIME as a base64 encoded text to Graph API
                 use base64::{Engine as _, engine::general_purpose::STANDARD as base64_engine};
                 let email_bytes = email_msg.formatted();
                 let base64_content = base64_engine.encode(&email_bytes);
 
-                // Assuming you have reqwest or ureq available in your dependencies
                 let client = reqwest::blocking::Client::new();
                 let res = client.post("https://graph.microsoft.com/v1.0/me/sendMail")
                     .header("Authorization", format!("Bearer {}", token_or_pass))
@@ -659,7 +644,6 @@ pub fn compose_email(account: &Account, default_to: Option<&str>, default_subjec
                     }
                 }
             } else {
-                // STANDARD LETTRE SMTP (Used for Google / Custom SMTP / Enabled Enterprise Accounts)
                 let creds = SmtpCredentials::new(account.email.clone(), token_or_pass);
                 let mut mailer = SmtpTransport::starttls_relay(&account.smtp_server)
                     .unwrap()
@@ -704,7 +688,7 @@ fn wrap_text(text: &str, width: usize, hint_len: usize, cursor_pos: usize) -> (V
     let mut c_col = 0;
     let mut char_idx = 0;
 
-    // Split by spaces to keep "email@domain.com," together as a single word block
+    // split by spaces to keep "email@domain.com," together
     let words: Vec<&str> = clean_text.split(' ').collect();
     let num_words = words.len();
 
@@ -712,7 +696,7 @@ fn wrap_text(text: &str, width: usize, hint_len: usize, cursor_pos: usize) -> (V
         let word_len = word.chars().count();
         let space_needed = if current_line.is_empty() { 0 } else { 1 };
 
-        // Add the hint length to the LAST word to preemptively wrap it if the hint won't fit
+        // add the hint length to last word to preemptively wrap it if the hint won't fit
         let effective_len = if i == num_words - 1 { word_len + hint_len } else { word_len };
 
         if current_line.chars().count() + space_needed + effective_len > width {
@@ -721,7 +705,6 @@ fn wrap_text(text: &str, width: usize, hint_len: usize, cursor_pos: usize) -> (V
                 current_line = String::new();
             }
 
-            // Step over the absorbed space
             if space_needed > 0 {
                 if char_idx == cursor_pos { c_row = lines.len(); c_col = 0; }
                 char_idx += 1;
@@ -730,8 +713,7 @@ fn wrap_text(text: &str, width: usize, hint_len: usize, cursor_pos: usize) -> (V
             for c in word.chars() {
                 if char_idx == cursor_pos { c_row = lines.len(); c_col = current_line.chars().count(); }
                 current_line.push(c);
-                char_idx += c.len_utf8(); // FIX: Advance by byte length, not 1
-                // char_idx += 1;
+                char_idx += c.len_utf8();
             }
         } else {
             if space_needed > 0 {
@@ -742,14 +724,13 @@ fn wrap_text(text: &str, width: usize, hint_len: usize, cursor_pos: usize) -> (V
             for c in word.chars() {
                 if char_idx == cursor_pos { c_row = lines.len(); c_col = current_line.chars().count(); }
                 current_line.push(c);
-                // char_idx += 1;
                 char_idx += c.len_utf8();
             }
         }
     }
     lines.push(current_line);
 
-    // Edge case for when the cursor is at the very end of the string
+    // edge case for when the cursor is at the very end of the string
     if char_idx == cursor_pos {
         c_row = lines.len().saturating_sub(1);
         c_col = lines.last().unwrap().chars().count();
