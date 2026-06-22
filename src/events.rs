@@ -964,22 +964,25 @@ fn handle_folder_list_events(k: KeyEvent, app: &mut App, session: &mut Option<Ma
             }
         }
         KeyCode::Char('a') | KeyCode::Char('A') => {
-            if let Ok(Some(folder_name)) = theme_provider.prompt("New Folder Name: ", false) {
-                let clean_name = folder_name.trim();
+            // NEW: Only trigger the prompt if we are actually viewing folders (step != 0)
+            if step != 0 {
+                if let Ok(Some(folder_name)) = theme_provider.prompt("New Folder Name: ", false) {
+                    let clean_name = folder_name.trim();
 
-                if !clean_name.is_empty() {
-                    if let Some(sess) = session {
-                        match net::create_folder(sess, clean_name) {
-                            Ok(_) => {
-                                app.update_status(format!("Created folder: {}", clean_name));
-                                if let Ok(new_folders) = net::list_folders(sess) {
-                                    folders = new_folders;
+                    if !clean_name.is_empty() {
+                        if let Some(sess) = session {
+                            match net::create_folder(sess, clean_name) {
+                                Ok(_) => {
+                                    app.update_status(format!("Created folder: {}", clean_name));
+                                    if let Ok(new_folders) = net::list_folders(sess) {
+                                        folders = new_folders;
+                                    }
                                 }
+                                Err(e) => { app.update_status(e); }
                             }
-                            Err(e) => { app.update_status(e); }
+                        } else {
+                            app.update_status("Offline: Cannot create folder".to_string());
                         }
-                    } else {
-                        app.update_status("Offline: Cannot create folder".to_string());
                     }
                 }
             }

@@ -273,15 +273,36 @@ impl UiExt for Editor {
                         ui_bg, menu_key_fg, menu_text_fg)?;
                 }
             }
+            // MenuState::EmailReader => {
+            //     Self::draw_menu_line(
+            //         &mut stdout, rows - 2, cols, col_width,
+            //         &[("<", " Back"), ("R", " Reply"), ("P", " Prev"), ("Y", " Prev Pg"), ("A", " Add Addr"), ("B"," Browser")],
+            //         ui_bg, menu_key_fg, menu_text_fg)?;
+            //     Self::draw_menu_line(
+            //         &mut stdout, rows - 1, cols, col_width,
+            //         &[("", ""), ("F", " Forward"), ("N", " Next"), ("V", " Next Pg"), ("S", " Save"), ("", "") ],
+            //         ui_bg, menu_key_fg, menu_text_fg)?;
+            // }
             MenuState::EmailReader => {
-                Self::draw_menu_line(
-                    &mut stdout, rows - 2, cols, col_width,
-                    &[("<", " Back"), ("R", " Reply"), ("P", " Prev"), ("Y", " Prev Pg"), ("A", " Add Addr"), ("B"," Browser")],
-                    ui_bg, menu_key_fg, menu_text_fg)?;
-                Self::draw_menu_line(
-                    &mut stdout, rows - 1, cols, col_width,
-                    &[("", ""), ("F", " Forward"), ("N", " Next"), ("V", " Next Pg"), ("S", " Save"), ("", "") ],
-                    ui_bg, menu_key_fg, menu_text_fg)?;
+                if self.menu_page == 1 {
+                    Self::draw_menu_line(
+                        &mut stdout, rows - 2, cols, col_width,
+                        &[("<", " Back"), ("R", " Reply"), ("  Y", " Prv Pg"), ("^P", " Prv Msg"), ("D", " Delete"), ("O", " Other (1/2)")],
+                        ui_bg, menu_key_fg, menu_text_fg)?;
+                    Self::draw_menu_line(
+                        &mut stdout, rows - 1, cols, col_width,
+                        &[("B", " Browser"), ("F", " Forward"), ("Spc", " Nxt Pg"), ("^N", " Nxt Msg"), ("A", " Add Addr"), ("H", " Help")],
+                        ui_bg, menu_key_fg, menu_text_fg)?;
+                } else {
+                    Self::draw_menu_line(
+                        &mut stdout, rows - 2, cols, col_width,
+                        &[("P", " Scroll Up"), (" S", " Save Txt"), ("", ""), ("", ""), ("", ""), ("O", " Other (2/2)")],
+                        ui_bg, menu_key_fg, menu_text_fg)?;
+                    Self::draw_menu_line(
+                        &mut stdout, rows - 1, cols, col_width,
+                        &[("N", " Scroll Dn"), ("^Y", " Copy Txt"), ("", ""), ("", ""), ("", ""), ("H", " Help")],
+                        ui_bg, menu_key_fg, menu_text_fg)?;
+                }
             }
             MenuState::YesNoCancel => {
                 Self::draw_menu_line(
@@ -541,6 +562,35 @@ impl UiExt for Editor {
                 Cmd1("Meta+M, Alt+M", "Move email to folder"),
                 Cmd1("Meta+T, Alt+T", "Cycle Theme"),
             ],
+            "email_reader" => vec![
+                Title("xpine - Email Reader Help"),
+                Blank,
+                Text("This screen allows you to read an email and manage its attachments."),
+                Blank,
+                Header("NAVIGATION (PAGE 1)"),
+                Cmd1("Y, PgUp", "Page Up"),
+                Cmd1("V, Spc, PgDn", "Page Down"),
+                Cmd1("^P", "Read previous message"),
+                Cmd1("^N", "Read next message"),
+                Cmd1("<, Left, Esc", "Go Back to folder"),
+                Blank,
+                Header("ACTIONS (PAGE 1)"),
+                Cmd1("R", "Reply to email"),
+                Cmd1("F", "Forward email"),
+                Cmd1("D", "Mark email for deletion"),
+                Cmd1("A", "Add sender/recipients to Address Book"),
+                Cmd1("B", "Open HTML/Text version in Web Browser"),
+                Cmd1("O", "Toggle Menu Page"),
+                Blank,
+                Header("NAVIGATION & ACTIONS (PAGE 2)"),
+                Cmd1("P, Up", "Scroll up one line"),
+                Cmd1("N, Down", "Scroll down one line"),
+                Cmd1("1-9", "Open Attachment # in default app"),
+                Cmd1("Alt+1-9", "Save Attachment # to disk"),
+                Cmd1("Alt+0", "Save ALL attachments to a folder"),
+                Cmd1("S", "Save the email text to disk"),
+                Cmd1("^Y", "Copy email text to clipboard"),
+            ],
             _ => vec![
                 Title("xpine - Help"),
                 Text("No specific help documentation is available for this screen."),
@@ -746,10 +796,10 @@ fn draw_address_book(stdout: &mut std::io::Stdout, cols: u16, rows: u16, theme_p
 
     let m_col = (cols as usize / 6).max(1);
     Editor::draw_menu_line(stdout, rows - 2, cols, m_col,
-                           &[("<", " Back"), ("P", " Prev"), ("Y", " Prev Pg"), ("A", " Add Email"), ("E", " Edit"), ("I", " Import")],
+                           &[("<", " Back"), ("P", " Prev"), ("  Y", " Prev Pg"), ("A", " Add Email"), ("E", " Edit"), ("I", " Import")],
                            colors.menu_bg, colors.accent, colors.fg)?;
     Editor::draw_menu_line(stdout, rows - 1, cols, m_col,
-                           &[("", ""), ("N", " Next"), ("V", " Next Pg"), ("T", " Team"), ("D", " Delete"), ("?", " Help")],
+                           &[("", ""), ("N", " Next"), ("Spc", " Next Pg"), ("T", " Team"), ("D", " Delete"), ("H", " Help")],
                            colors.menu_bg, colors.accent, colors.fg)?;
 
     queue!(stdout, cursor::Hide)?;
@@ -1002,11 +1052,14 @@ fn draw_folder_list(stdout: &mut std::io::Stdout, app: &App, cols: u16, rows: u1
     let rename_opt = if is_selected_folder_custom { ("R", " Rename") } else { ("", "") };
     let del_opt = if is_selected_folder_custom { ("D", " Del Fldr") } else { ("", "") };
 
+    // NEW: Conditionally show "Add Fldr" only if we are actually looking at folders (step != 0)
+    let add_fldr_opt = if step == 0 { ("", "") } else { ("A", " Add Fldr") };
+
     Editor::draw_menu_line(stdout, rows - 2, cols, m_col,
-                           &[("<", " Back"), (">", " Select"),  ("P", " Prev"), ("A", " Add Fldr"), rename_opt, ("","")],
+                           &[("<", " Back"), (">", " Select"),  ("P", " Prev"), add_fldr_opt, rename_opt, ("","")],
                            colors.menu_bg, colors.accent, colors.fg)?;
     Editor::draw_menu_line(stdout, rows - 1, cols, m_col,
-                           &[("Q", " Quit"), ("M", " Main Menu"), ("N", " Next"), ("", ""), del_opt, ("?", " Help")],
+                           &[("Q", " Quit"), ("M", " Main Menu"), ("N", " Next"), ("", ""), del_opt, ("H", " Help")],
                            colors.menu_bg, colors.accent, colors.fg)?;
     Ok(())
 }
@@ -1131,7 +1184,7 @@ fn draw_settings(stdout: &mut std::io::Stdout, cols: u16, rows: u16, theme_provi
 
     let m_col = (cols as usize / 6).max(1);
     Editor::draw_menu_line(stdout, rows - 2, cols, m_col,
-                           &[("<", " Back"), ("P", " Prev"), ("X", " Select"), ("", ""), ("", ""), ("", "")],
+                           &[("<", " Back"), ("P", " Prev"), ("     X", " Select"), ("", ""), ("", ""), ("", "")],
                            colors.menu_bg, colors.accent, colors.fg)?;
     Editor::draw_menu_line(stdout, rows - 1, cols, m_col,
                            &[("", ""), ("N", " Next"), ("Meta+T", " Theme"), ("", ""), ("", ""), ("", "")],

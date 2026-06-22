@@ -3,6 +3,7 @@ use crate::app::{App, AppMode};
 use crate::editor::{Editor, MenuState, EditorResult};
 use crate::ui::UiExt;
 
+
 use ropey::Rope;
 use crossterm::{
     cursor, event, queue,
@@ -606,6 +607,14 @@ pub fn view_email(
                                 continue;
                             }
                         }
+                    }
+                    if key.code == event::KeyCode::Char('h') || key.code == event::KeyCode::Char('H') || key.code == event::KeyCode::Char('?') {
+                        let _ = reader.show_help("email_reader");
+
+                        // Clear the terminal when returning from the help screen
+                        // so the email reader redraws cleanly without visual artifacts
+                        queue!(stdout, Clear(ClearType::All)).unwrap();
+                        continue;
                     }
                 }
 
