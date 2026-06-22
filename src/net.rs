@@ -76,6 +76,8 @@ pub struct GraphMessage {
     pub reply_to: Option<Vec<GraphRecipient>>,
     #[serde(rename = "isRead")]
     pub is_read: bool,
+    #[serde(rename = "hasAttachments")]
+    pub has_attachments: Option<bool>,
     pub flag: Option<GraphFlag>,
     #[serde(rename = "singleValueExtendedProperties")]
     pub single_value_extended_properties: Option<Vec<GraphExtendedProperty>>,
@@ -509,9 +511,7 @@ pub fn fetch_emails(session: &mut MailSession, app: &mut App, items_per_page: u3
                         let start_idx = end_idx.saturating_sub(items_per_page as usize - 1).max(1);
 
                         if start_idx == 1 {
-                            // let original_end = end_idx; // <-- 2. TRACK SHIFT
                             end_idx = (items_per_page as usize).min(sorted_seqs.len());
-                            // overlap_shift = (end_idx.saturating_sub(original_end)) as u32;
                         }
 
                         let page_seqs = &sorted_seqs[(start_idx - 1)..end_idx];
@@ -538,12 +538,22 @@ pub fn fetch_emails(session: &mut MailSession, app: &mut App, items_per_page: u3
             };
 
             if !sequence.is_empty() {
-                if let Ok(messages) = imap_sess.fetch(&sequence, "(UID ENVELOPE FLAGS RFC822.SIZE INTERNALDATE)") {
+                // Requesting BODYSTRUCTURE in order to accurately detect if an attachment is present!
+                if let Ok(messages) = imap_sess.fetch(&sequence, "(UID ENVELOPE FLAGS RFC822.SIZE INTERNALDATE BODYSTRUCTURE)") {
                     for message in messages.iter() {
                         let size = message.size.unwrap_or(0);
                         let mut is_seen = false; let mut is_deleted = false;
                         let mut is_flagged = false;
                         let mut is_answered = false;
+                        let mut has_attachments = false;
+
+                        // Identify attachments reliably by quickly walking the formatted enum
+                        if let Some(bs) = message.bodystructure() {
+                            let bs_str = format!("{:?}", bs).to_lowercase();
+                            if bs_str.contains("attachment") || bs_str.contains("filename") {
+                                has_attachments = true;
+                            }
+                        }
 
                         for flag in message.flags() {
                             match flag {
@@ -640,7 +650,6 @@ pub fn fetch_emails(session: &mut MailSession, app: &mut App, items_per_page: u3
                             subject,
                             from,
                             reply_to,
-                            // reply_to_display: String::new(),
                             to_addr,
                             cc,
                             date,
@@ -649,6 +658,7 @@ pub fn fetch_emails(session: &mut MailSession, app: &mut App, items_per_page: u3
                             is_deleted,
                             is_flagged,
                             is_answered,
+                            has_attachments,
                         });
                     }
                 }
@@ -702,8 +712,6 @@ pub fn fetch_emails(session: &mut MailSession, app: &mut App, items_per_page: u3
         MailSession::Graph { access_token } => {
             app.page_emails.clear();
 
-            // let folder = if app.current_folder == "INBOX" { "inbox" } else { &app.current_folder };
-
             let folder_id = match app.current_folder.as_str() {
                 "INBOX" => "inbox".to_string(),
                 "Sent Items" => "sentitems".to_string(),
@@ -732,7 +740,7 @@ pub fn fetch_emails(session: &mut MailSession, app: &mut App, items_per_page: u3
 
             let mut skip = app.current_page * items_per_page;
 
-            // NEW: Shift the skip offset back to populate the page fully if there are enough messages
+            // Shift the skip offset back to populate the page fully if there are enough messages
             if app.current_page > 0 && skip + items_per_page > app.total_messages && app.total_messages >= items_per_page {
                 skip = app.total_messages - items_per_page;
             }
@@ -743,21 +751,16 @@ pub fn fetch_emails(session: &mut MailSession, app: &mut App, items_per_page: u3
                 is_search = true; // Flag ALL searches to use local pagination
 
                 if q.trim() == "*" {
-                    // FIX: Removed both $count=true and $orderby=receivedDateTime%20DESC.
-                    // This bypasses the Advanced Query requirement, allowing $expand to work
-                    // flawlessly. The emails will be correctly sorted by your local app logic anyway!
                     format!(
                         "https://graph.microsoft.com/v1.0/me/mailFolders/{}/messages?$top=250&$filter=flag/flagStatus%20eq%20'flagged'&$expand=singleValueExtendedProperties($filter=id%20eq%20'Integer%200x1081'%20or%20id%20eq%20'Long%200x0E08')",
                         folder
                     )
                 } else if q.trim().eq_ignore_ascii_case("n") {
-                    // isRead is a simple property, so it can natively handle $orderby without needing $count=true
                     format!(
                         "https://graph.microsoft.com/v1.0/me/mailFolders/{}/messages?$top=250&$orderby=receivedDateTime%20DESC&$filter=isRead%20eq%20false&$expand=singleValueExtendedProperties($filter=id%20eq%20'Integer%200x1081'%20or%20id%20eq%20'Long%200x0E08')",
                         folder
                     )
                 } else {
-                    // Normal text search
                     let search_str = format!("\"{}\"", q);
                     let encoded_q = urlencoding::encode(&search_str);
 
@@ -767,126 +770,12 @@ pub fn fetch_emails(session: &mut MailSession, app: &mut App, items_per_page: u3
                     )
                 }
             } else {
-                // Normal Inbox view (No active search)
                 let order = "receivedDateTime%20DESC";
                 format!(
                     "https://graph.microsoft.com/v1.0/me/mailFolders/{}/messages?$count=true&$top={}&$skip={}&$orderby={}&$expand=singleValueExtendedProperties($filter=id%20eq%20'Integer%200x1081'%20or%20id%20eq%20'Long%200x0E08')",
                     folder, items_per_page, skip, order
                 )
             };
-
-            // let mut is_search = false;
-            //
-            // let url = if let Some(ref q) = app.search_query {
-            //     is_search = true; // Flag ALL searches to use local pagination
-            //
-            //     if q.trim() == "*" {
-            //         // FIX: Restored $count=true. Filtering on `flag/flagStatus` is an "Advanced Query"
-            //         // and Microsoft strictly requires $count=true to prevent a 400 Bad Request.
-            //         format!(
-            //             "https://graph.microsoft.com/v1.0/me/mailFolders/{}/messages?$count=true&$top=250&$orderby=receivedDateTime%20DESC&$filter=flag/flagStatus%20eq%20'flagged'&$expand=singleValueExtendedProperties($filter=id%20eq%20'Integer%200x1081'%20or%20id%20eq%20'Long%200x0E08')",
-            //             folder
-            //         )
-            //     } else if q.trim().eq_ignore_ascii_case("n") {
-            //         // Restored $count=true here as well for consistency
-            //         format!(
-            //             "https://graph.microsoft.com/v1.0/me/mailFolders/{}/messages?$count=true&$top=250&$orderby=receivedDateTime%20DESC&$filter=isRead%20eq%20false&$expand=singleValueExtendedProperties($filter=id%20eq%20'Integer%200x1081'%20or%20id%20eq%20'Long%200x0E08')",
-            //             folder
-            //         )
-            //     } else {
-            //         // Normal text search (DO NOT use $count or $expand here!)
-            //         let search_str = format!("\"{}\"", q);
-            //         let encoded_q = urlencoding::encode(&search_str);
-            //
-            //         format!(
-            //             "https://graph.microsoft.com/v1.0/me/mailFolders/{}/messages?$top=250&$search={}",
-            //             folder, encoded_q
-            //         )
-            //     }
-            // } else {
-            //     // Normal Inbox view (No active search)
-            //     let order = "receivedDateTime%20DESC";
-            //     format!(
-            //         "https://graph.microsoft.com/v1.0/me/mailFolders/{}/messages?$count=true&$top={}&$skip={}&$orderby={}&$expand=singleValueExtendedProperties($filter=id%20eq%20'Integer%200x1081'%20or%20id%20eq%20'Long%200x0E08')",
-            //         folder, items_per_page, skip, order
-            //     )
-            // };
-
-            // let mut is_search = false;
-            //
-            // let url = if let Some(ref q) = app.search_query {
-            //     is_search = true; // Flag ALL searches to use local pagination
-            //
-            //     if q.trim() == "*" {
-            //         // Fetch top 250 flagged emails
-            //         format!(
-            //             "https://graph.microsoft.com/v1.0/me/mailFolders/{}/messages?$top=250&$orderby=receivedDateTime%20DESC&$filter=flag/flagStatus%20eq%20'flagged'&$expand=singleValueExtendedProperties($filter=id%20eq%20'Integer%200x1081'%20or%20id%20eq%20'Long%200x0E08')",
-            //             folder
-            //         )
-            //     } else if q.trim().eq_ignore_ascii_case("n") {
-            //         // Fetch top 250 unread emails
-            //         format!(
-            //             "https://graph.microsoft.com/v1.0/me/mailFolders/{}/messages?$top=250&$orderby=receivedDateTime%20DESC&$filter=isRead%20eq%20false&$expand=singleValueExtendedProperties($filter=id%20eq%20'Integer%200x1081'%20or%20id%20eq%20'Long%200x0E08')",
-            //             folder
-            //         )
-            //     } else {
-            //         // Normal text search
-            //         let search_str = format!("\"{}\"", q);
-            //         let encoded_q = urlencoding::encode(&search_str);
-            //
-            //         format!(
-            //             "https://graph.microsoft.com/v1.0/me/mailFolders/{}/messages?$top=250&$search={}",
-            //             folder, encoded_q
-            //         )
-            //     }
-            // } else {
-            //     // Normal Inbox view (No active search)
-            //     let order = "receivedDateTime%20DESC";
-            //     format!(
-            //         "https://graph.microsoft.com/v1.0/me/mailFolders/{}/messages?$count=true&$top={}&$skip={}&$orderby={}&$expand=singleValueExtendedProperties($filter=id%20eq%20'Integer%200x1081'%20or%20id%20eq%20'Long%200x0E08')",
-            //         folder, items_per_page, skip, order
-            //     )
-            // };
-
-            // let mut is_text_search = false;
-            //
-            // let url = if let Some(ref q) = app.search_query {
-            //     if q.trim() == "*" {
-            //         // FIX: Always fetch newest first from the server
-            //         let order = "receivedDateTime%20DESC";
-            //         format!(
-            //             "https://graph.microsoft.com/v1.0/me/mailFolders/{}/messages?$count=true&$top={}&$skip={}&$orderby={}&$filter=flag/flagStatus%20eq%20'flagged'&$expand=singleValueExtendedProperties($filter=id%20eq%20'Integer%200x1081'%20or%20id%20eq%20'Long%200x0E08')",
-            //             folder, items_per_page, skip, order
-            //         )
-            //     } else if q.trim().eq_ignore_ascii_case("n") { // Intercept "N" or "n"
-            //         // FIX: Always fetch newest first from the server
-            //         let order = "receivedDateTime%20DESC";
-            //         format!(
-            //             "https://graph.microsoft.com/v1.0/me/mailFolders/{}/messages?$count=true&$top={}&$skip={}&$orderby={}&$filter=isRead%20eq%20false&$expand=singleValueExtendedProperties($filter=id%20eq%20'Integer%200x1081'%20or%20id%20eq%20'Long%200x0E08')",
-            //             folder, items_per_page, skip, order
-            //         )
-            //     } else {
-            //         is_text_search = true;
-            //         let search_str = format!("\"{}\"", q);
-            //         let encoded_q = urlencoding::encode(&search_str);
-            //
-            //         // format!(
-            //         //     "https://graph.microsoft.com/v1.0/me/mailFolders/{}/messages?$top={}&$skip={}&$search={}&$expand=singleValueExtendedProperties($filter=id%20eq%20'Integer%200x1081'%20or%20id%20eq%20'Long%200x0E08')",
-            //         //     folder, items_per_page, skip, encoded_q
-            //         // )
-            //         format!(
-            //             "https://graph.microsoft.com/v1.0/me/mailFolders/{}/messages?$top=250&$search={}",
-            //             folder, encoded_q
-            //         )
-            //     }
-            // } else {
-            //     // FIX: Always fetch newest first from the server
-            //     let order = "receivedDateTime%20DESC";
-            //     format!(
-            //         "https://graph.microsoft.com/v1.0/me/mailFolders/{}/messages?$count=true&$top={}&$skip={}&$orderby={}&$expand=singleValueExtendedProperties($filter=id%20eq%20'Integer%200x1081'%20or%20id%20eq%20'Long%200x0E08')",
-            //         folder, items_per_page, skip, order
-            //     )
-            // };
 
             let client = reqwest::blocking::Client::new();
             let res = client.get(&url)
@@ -904,55 +793,7 @@ pub fn fetch_emails(session: &mut MailSession, app: &mut App, items_per_page: u3
                             app.total_messages = graph_data.value.len() as u32; // Fallback
                         }
 
-                        // let messages_iter: Box<dyn Iterator<Item = GraphMessage>> = if is_text_search {
-                            // app.total_messages = graph_data.value.len() as u32;
-                            // let mut all_msgs = graph_data.value;
-                            //
-                            // if sort_newest_first {
-                            //     all_msgs.sort_by(|a, b| b.received_date_time.cmp(&a.received_date_time));
-                            // } else {
-                            //     all_msgs.sort_by(|a, b| a.received_date_time.cmp(&b.received_date_time));
-                            // }
-                            //
-                            // let start = (app.current_page * items_per_page) as usize;
-                            // Box::new(all_msgs.into_iter().skip(start).take(items_per_page as usize))
-                        // } else {
-                        //     if let Some(total) = graph_data.count {
-                        //         app.total_messages = total;
-                        //     }
-                        //     Box::new(graph_data.value.into_iter())
-                        // };
-
-                        // let messages_iter: Box<dyn Iterator<Item = GraphMessage>> = if is_text_search {
-                        //     // Graph returns up to 250 items total, so this becomes our true total_messages
-                        //     app.total_messages = graph_data.value.len() as u32;
-                        //     let mut all_msgs = graph_data.value;
-                        //
-                        //     // Graph API doesn't allow $orderby with $search, so we sort locally
-                        //     if sort_newest_first {
-                        //         all_msgs.sort_by(|a, b| b.received_date_time.cmp(&a.received_date_time));
-                        //     } else {
-                        //         all_msgs.sort_by(|a, b| a.received_date_time.cmp(&b.received_date_time));
-                        //     }
-                        //
-                        //     let mut local_start = (app.current_page * items_per_page) as usize;
-                        //
-                        //     // Re-apply the page-shifting math locally so the last page fills the screen
-                        //     if app.current_page > 0 && local_start + (items_per_page as usize) > all_msgs.len() && all_msgs.len() >= (items_per_page as usize) {
-                        //         local_start = all_msgs.len() - (items_per_page as usize);
-                        //     }
-                        //
-                        //     // Slice the 250 results down to just the current page
-                        //     Box::new(all_msgs.into_iter().skip(local_start).take(items_per_page as usize))
-                        // } else {
-                        //     if let Some(total) = graph_data.count {
-                        //         app.total_messages = total;
-                        //     }
-                        //     Box::new(graph_data.value.into_iter())
-                        // };
-
                         let messages_iter: Box<dyn Iterator<Item = GraphMessage>> = if is_search {
-                            // Use the true count from the server if available, otherwise fallback to local length
                             if let Some(total) = graph_data.count {
                                 app.total_messages = total;
                             } else {
@@ -985,17 +826,14 @@ pub fn fetch_emails(session: &mut MailSession, app: &mut App, items_per_page: u3
                         };
 
                         for msg in messages_iter {
-                            // --- PARSING LOGIC START ---
                             let mut is_answered = false;
-                            let mut msg_size = 0; // Initialize size to 0
+                            let mut msg_size = 0;
 
                             if let Some(props) = &msg.single_value_extended_properties {
                                 for prop in props {
-                                    // 102 is the MAPI code for "Replied"
                                     if prop.id == "Integer 0x1081" && prop.value == "102" {
                                         is_answered = true;
                                     }
-                                    // Make the check robust against 'Long' or 'Integer' and missing leading zeros
                                     else if prop.id.to_lowercase().contains("0x0e08") || prop.id.to_lowercase().contains("0xe08") {
                                         if let Ok(parsed_size) = prop.value.parse::<u32>() {
                                             msg_size = parsed_size;
@@ -1054,6 +892,8 @@ pub fn fetch_emails(session: &mut MailSession, app: &mut App, items_per_page: u3
 
                             let is_deleted_locally = app.graph_pending_deleted.contains(&msg.id);
 
+                            let has_attachments = msg.has_attachments.unwrap_or(false);
+
                             app.page_emails.push(EmailMeta {
                                 id: msg.id,
                                 uid: 0,
@@ -1064,21 +904,15 @@ pub fn fetch_emails(session: &mut MailSession, app: &mut App, items_per_page: u3
                                 to_addr,
                                 cc,
                                 date: date_str,
-                                size: msg_size, // Successfully parsed MAPI property!
+                                size: msg_size,
                                 is_read: msg.is_read,
                                 is_deleted: is_deleted_locally,
                                 is_flagged,
                                 is_answered,
+                                has_attachments,
                             });
                         }
 
-                        if sort_newest_first {
-                            app.page_emails.sort_by(|a, b| b.timestamp.cmp(&a.timestamp));
-                        } else {
-                            app.page_emails.sort_by(|a, b| a.timestamp.cmp(&b.timestamp));
-                        }
-
-                        // --- UNIVERSAL SORTING AND PAGINATION CURSOR SYNC ---
                         if sort_newest_first {
                             app.page_emails.sort_by(|a, b| b.timestamp.cmp(&a.timestamp));
                         } else {
@@ -1216,14 +1050,13 @@ pub fn expunge_deleted(session: &mut MailSession, app: &mut App) -> Result<(), S
         MailSession::Graph { access_token } => {
             let client = reqwest::blocking::Client::new();
 
-            // Iterate over the global Graph tracking set instead of just page_emails
             for id in &app.graph_pending_deleted {
                 let url = format!("https://graph.microsoft.com/v1.0/me/messages/{}", id);
                 let _ = client.delete(&url)
                     .header("Authorization", format!("Bearer {}", access_token))
                     .send();
             }
-            app.graph_pending_deleted.clear(); // Clear it out after expunging
+            app.graph_pending_deleted.clear();
             app.needs_fetch = true;
             Ok(())
         }
@@ -1256,7 +1089,6 @@ pub fn fetch_email_body(session: &mut MailSession, fetch_seq: &str) -> (String, 
             let mut html_body = None;
             let mut attachments = Vec::new();
 
-            // The /$value endpoint returns the raw MIME/RFC822 bytes of the email!
             let url = format!("https://graph.microsoft.com/v1.0/me/messages/{}/$value", fetch_seq);
             let client = reqwest::blocking::Client::new();
 
@@ -1266,7 +1098,6 @@ pub fn fetch_email_body(session: &mut MailSession, fetch_seq: &str) -> (String, 
 
                 if res.status().is_success() {
                     if let Ok(bytes) = res.bytes() {
-                        // Because it's raw RFC822, we can re-use your exact IMAP parser!
                         let (t, h, a) = parse_email_body(&bytes);
                         text_body = t;
                         html_body = h;
@@ -1285,14 +1116,12 @@ pub fn fetch_email_body(session: &mut MailSession, fetch_seq: &str) -> (String, 
 pub fn create_folder(session: &mut MailSession, folder_name: &str) -> Result<(), String> {
     match session {
         MailSession::Imap(imap_sess) => {
-            // IMAP standard CREATE command
             imap_sess.create(folder_name).map_err(|e| format!("Failed to create folder: {}", e))?;
             Ok(())
         }
         MailSession::Graph { access_token } => {
             let client = reqwest::blocking::Client::new();
 
-            // Graph API expects a simple JSON body with the displayName
             let body = serde_json::json!({
                 "displayName": folder_name
             });
@@ -1317,7 +1146,6 @@ pub fn create_folder(session: &mut MailSession, folder_name: &str) -> Result<(),
 pub fn delete_folder(session: &mut MailSession, folder_name: &str) -> Result<(), String> {
     match session {
         MailSession::Imap(imap_sess) => {
-            // IMAP standard DELETE command
             imap_sess.delete(folder_name).map_err(|e| format!("Failed to delete folder: {}", e))?;
             Ok(())
         }
@@ -1326,7 +1154,7 @@ pub fn delete_folder(session: &mut MailSession, folder_name: &str) -> Result<(),
 
             let filter_query = format!("displayName eq '{}'", folder_name);
             let res = client.get("https://graph.microsoft.com/v1.0/me/mailFolders")
-                .query(&[("$filter", filter_query)]) // .query() safely URL-encodes spaces!
+                .query(&[("$filter", filter_query)])
                 .header("Authorization", format!("Bearer {}", access_token))
                 .send()
                 .map_err(|e| e.to_string())?;
@@ -1538,3 +1366,5 @@ pub fn reconnect(app: &mut App, session: &mut Option<MailSession>) {
     app.needs_reconnect = false;
     app.last_fetch_time = std::time::Instant::now();
 }
+
+

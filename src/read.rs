@@ -23,16 +23,21 @@ pub fn view_email(
     html_body: &Option<String>,
     attachments: &[(String, Vec<u8>)]
 ) {
+    // Shadow the immutable arguments as mutable local state so we can switch emails seamlessly
+    let mut text_body = text_body.to_string();
+    let mut html_body = html_body.clone();
+    let mut attachments = attachments.to_vec();
+
     let mut reader = Editor::new(None);
     reader.menu_state = MenuState::EmailReader;
 
-    let attach_lines = if attachments.is_empty() { 1 } else { 1 + attachments.len() };
+    let mut attach_lines = if attachments.is_empty() { 1 } else { 1 + attachments.len() };
     reader.top_margin = (5 + attach_lines) as u16;
 
     let (cols, _) = term_size().unwrap_or((80, 24));
 
     let wrap_width = (cols as usize).saturating_sub(2);
-    let wrapped_text = crate::mail::wrap_email_body(text_body, wrap_width);
+    let wrapped_text = crate::mail::wrap_email_body(&text_body, wrap_width);
 
     reader.buffer = Rope::from_str(&wrapped_text);
     reader.current_theme = settings_provider.current_theme.clone();
@@ -45,15 +50,16 @@ pub fn view_email(
         }
     }
 
-    let email_from = app.page_emails[app.selected_index].from.clone();
-    let email_to = app.page_emails[app.selected_index].to_addr.clone();
-    let email_cc = app.page_emails[app.selected_index].cc.clone();
-    let email_subject = app.page_emails[app.selected_index].subject.clone();
+    // Shadow headers as mutable state
+    let mut email_from = app.page_emails[app.selected_index].from.clone();
+    let mut email_to = app.page_emails[app.selected_index].to_addr.clone();
+    let mut email_cc = app.page_emails[app.selected_index].cc.clone();
+    let mut email_subject = app.page_emails[app.selected_index].subject.clone();
     let active_email = app.active_account.email.clone();
 
-    let reply_to = app.page_emails[app.selected_index].reply_to.clone();
-    let date = app.page_emails[app.selected_index].date.clone();
-    let fetch_seq = app.page_emails[app.selected_index].id.to_string();
+    let mut reply_to = app.page_emails[app.selected_index].reply_to.clone();
+    let mut date = app.page_emails[app.selected_index].date.clone();
+    let mut fetch_seq = app.page_emails[app.selected_index].id.to_string();
 
     loop {
         let r_theme = &reader.theme_set.themes[&reader.current_theme];
@@ -66,54 +72,65 @@ pub fn view_email(
         let header_title = format!("View Email ({})", active_email);
         queue!(stdout, cursor::MoveTo(0, 0), SetForegroundColor(r_colors.accent), Print(header_title)).unwrap();
 
+        // Render the "Deleted" visual indicator on the title bar
+        if app.page_emails[app.selected_index].is_deleted {
+            queue!(
+                stdout,
+                cursor::MoveTo(cols.saturating_sub(9), 0),
+                SetBackgroundColor(Color::Red),
+                SetForegroundColor(r_colors.fg),
+                Print("[Deleted]")
+            ).unwrap();
+        }
+
         let fields = ["From:", "To:", "Cc:", "Subject:"];
         let vals = [&email_from, &email_to, &email_cc, &email_subject];
 
         for i in 0..4 {
             queue!(
-                        stdout,
-                        cursor::MoveTo(0, (i + 1) as u16),
-                        SetBackgroundColor(r_colors.menu_bg),
-                        SetForegroundColor(r_colors.accent),
-                        Print(format!("{:>8}", fields[i])),
-                        SetForegroundColor(r_colors.fg),
-                        Print(" "),
-                        Print(vals[i]),
-                        Clear(ClearType::UntilNewLine)
-                    ).unwrap();
+                stdout,
+                cursor::MoveTo(0, (i + 1) as u16),
+                SetBackgroundColor(r_colors.menu_bg),
+                SetForegroundColor(r_colors.accent),
+                Print(format!("{:>8}", fields[i])),
+                SetForegroundColor(r_colors.fg),
+                Print(" "),
+                Print(vals[i]),
+                Clear(ClearType::UntilNewLine)
+            ).unwrap();
         }
 
         queue!(
-                    stdout,
-                    cursor::MoveTo(0, 5),
-                    SetBackgroundColor(r_colors.menu_bg),
-                    SetForegroundColor(r_colors.accent),
-                    Print(" Attach: "),
-                    Clear(ClearType::UntilNewLine)
-                ).unwrap();
+            stdout,
+            cursor::MoveTo(0, 5),
+            SetBackgroundColor(r_colors.menu_bg),
+            SetForegroundColor(r_colors.accent),
+            Print(" Attach: "),
+            Clear(ClearType::UntilNewLine)
+        ).unwrap();
 
         if attachments.is_empty() {
             queue!(
-                        stdout,
-                        cursor::MoveTo(0, 5),
-                        SetBackgroundColor(r_colors.menu_bg),
-                        SetForegroundColor(r_colors.accent),
-                        Print(" Attach: "),
-                        SetForegroundColor(if r_colors.is_dark { Color::DarkGrey } else { Color::Grey }),
-                        Print("None"),
-                        Clear(ClearType::UntilNewLine)
-                    ).unwrap();
+                stdout,
+                cursor::MoveTo(0, 5),
+                SetBackgroundColor(r_colors.menu_bg),
+                SetForegroundColor(r_colors.accent),
+                Print(" Attach: "),
+                SetForegroundColor(if r_colors.is_dark { Color::DarkGrey } else { Color::Grey }),
+                Print("None"),
+                Clear(ClearType::UntilNewLine)
+            ).unwrap();
         } else {
             queue!(
-                        stdout,
-                        cursor::MoveTo(0, 5),
-                        SetBackgroundColor(r_colors.menu_bg),
-                        SetForegroundColor(r_colors.accent),
-                        Print(" Attach: "),
-                        SetForegroundColor(if r_colors.is_dark { Color::DarkGrey } else { Color::Grey }),
-                        Print("'1' to open, 'Meta+1' (ALT+1) to save, 'Meta+0' to save all"),
-                        Clear(ClearType::UntilNewLine)
-                    ).unwrap();
+                stdout,
+                cursor::MoveTo(0, 5),
+                SetBackgroundColor(r_colors.menu_bg),
+                SetForegroundColor(r_colors.accent),
+                Print(" Attach: "),
+                SetForegroundColor(if r_colors.is_dark { Color::DarkGrey } else { Color::Grey }),
+                Print("'1' to open, 'Meta+1' (ALT+1) to save, 'Meta+0' to save all"),
+                Clear(ClearType::UntilNewLine)
+            ).unwrap();
 
             let att_color = if r_colors.is_dark {
                 Color::Rgb { r: 255, g: 80, b: 80 }
@@ -124,17 +141,16 @@ pub fn view_email(
             for (i, (n, data)) in attachments.iter().enumerate() {
                 let size_kb = (data.len() as f32 / 1024.0).max(1.0);
                 let size_str = if size_kb < 1024.0 { format!("{:.0}K", size_kb) } else { format!("{:.1}M", size_kb / 1024.0) };
-                // Indent the list so it aligns nicely under the header
                 let att_str = format!("         {}. {} ({})", i + 1, n, size_str);
 
                 queue!(
-                            stdout,
-                            cursor::MoveTo(0, (6 + i) as u16),
-                            SetBackgroundColor(r_colors.menu_bg),
-                            SetForegroundColor(att_color),
-                            Print(att_str),
-                            Clear(ClearType::UntilNewLine)
-                        ).unwrap();
+                    stdout,
+                    cursor::MoveTo(0, (6 + i) as u16),
+                    SetBackgroundColor(r_colors.menu_bg),
+                    SetForegroundColor(att_color),
+                    Print(att_str),
+                    Clear(ClearType::UntilNewLine)
+                ).unwrap();
             }
         }
 
@@ -157,9 +173,176 @@ pub fn view_email(
         if event::poll(timeout).unwrap() {
             let ev = event::read().unwrap();
             if let event::Event::Key(key) = ev {
-                if key.modifiers.contains(event::KeyModifiers::CONTROL) && key.code == event::KeyCode::Char('y') {
-                    reader.set_status("Text copied to clipboard".to_string());
-                    continue;
+                // Handle CTRL Modifiers (^Y, ^N, ^P)
+                if key.modifiers.contains(event::KeyModifiers::CONTROL) {
+                    if key.code == event::KeyCode::Char('y') {
+                        reader.set_status("Text copied to clipboard".to_string());
+                        continue;
+                    } else if key.code == event::KeyCode::Char('n') || key.code == event::KeyCode::Char('p') {
+                        let is_next = key.code == event::KeyCode::Char('n');
+                        let mut can_move = false;
+
+                        // Dynamically calculate page parameters
+                        let sort_newest = settings_provider.sort_newest_first;
+                        let (_, rows) = term_size().unwrap_or((80, 24));
+                        let items_per_page = (rows.saturating_sub(3) as u32).max(1);
+                        let total_pages = if app.total_messages == 0 { 1 } else { (app.total_messages + items_per_page - 1) / items_per_page };
+                        let max_idx = (items_per_page as usize).saturating_sub(1);
+
+                        let mut fetch_new_page = false;
+
+                        if is_next {
+                            if app.selected_index + 1 < app.page_emails.len() {
+                                app.selected_index += 1;
+                                can_move = true;
+                            } else {
+                                // Crossed BOTTOM boundary of current visual page
+                                if sort_newest {
+                                    if app.current_page + 1 < total_pages {
+                                        app.current_page += 1;
+                                        app.selected_index = 0;
+                                        fetch_new_page = true;
+                                    } else {
+                                        reader.set_status("This is the oldest email".to_string());
+                                    }
+                                } else {
+                                    if app.current_page > 0 {
+                                        app.current_page -= 1;
+                                        app.selected_index = 0;
+                                        fetch_new_page = true;
+                                    } else {
+                                        reader.set_status("This is the newest email".to_string());
+                                    }
+                                }
+                            }
+                        } else {
+                            if app.selected_index > 0 {
+                                app.selected_index -= 1;
+                                can_move = true;
+                            } else {
+                                // Crossed TOP boundary of current visual page
+                                if sort_newest {
+                                    if app.current_page > 0 {
+                                        app.current_page -= 1;
+                                        app.selected_index = max_idx;
+                                        fetch_new_page = true;
+                                    } else {
+                                        reader.set_status("Already at the newest email.".to_string());
+                                    }
+                                } else {
+                                    if app.current_page + 1 < total_pages {
+                                        app.current_page += 1;
+                                        app.selected_index = max_idx;
+                                        fetch_new_page = true;
+                                    } else {
+                                        reader.set_status("Already at the oldest email.".to_string());
+                                    }
+                                }
+                            }
+                        }
+
+                        if fetch_new_page {
+                            if let Some(sess) = session.as_mut() {
+                                let loading_msg = if is_next { "Fetching next page..." } else { "Fetching previous page..." };
+                                reader.set_status(loading_msg.to_string());
+                                reader.draw_screen().unwrap();
+
+                                // Keep a backup in case the network request completely fails
+                                let backup_page = if is_next {
+                                    if sort_newest { app.current_page.saturating_sub(1) } else { app.current_page + 1 }
+                                } else {
+                                    if sort_newest { app.current_page + 1 } else { app.current_page.saturating_sub(1) }
+                                };
+                                let backup_index = if is_next { app.page_emails.len().saturating_sub(1) } else { 0 };
+
+                                // Let net.rs run the exact logic. Since we pre-set the selected_index to 0 or max_idx,
+                                // net.rs will automatically apply the correct overlap padding dynamically!
+                                net::fetch_emails(sess, app, items_per_page, sort_newest);
+
+                                if !app.page_emails.is_empty() {
+                                    // Safety bound to ensure we don't index out of bounds
+                                    if app.selected_index >= app.page_emails.len() {
+                                        app.selected_index = app.page_emails.len().saturating_sub(1);
+                                    }
+                                    can_move = true;
+                                } else {
+                                    app.current_page = backup_page;
+                                    app.selected_index = backup_index;
+                                    reader.set_status("Failed to fetch page.".to_string());
+                                }
+                            }
+                        }
+
+                        if can_move {
+                            if let Some(sess) = session.as_mut() {
+                                fetch_seq = app.page_emails[app.selected_index].id.to_string();
+
+                                // Mark as seen
+                                if !app.page_emails[app.selected_index].is_read {
+                                    match sess {
+                                        MailSession::Imap(imap_sess) => {
+                                            let _ = imap_sess.store(&fetch_seq, "+FLAGS (\\Seen)");
+                                        }
+                                        MailSession::Graph { .. } => {
+                                            net::toggle_flag(sess, &mut app.page_emails, app.selected_index, "\\Seen");
+                                        }
+                                    }
+                                    app.page_emails[app.selected_index].is_read = true;
+                                }
+
+                                // Inform user of the active network operation
+                                reader.set_status("Fetching email...".to_string());
+                                reader.draw_screen().unwrap();
+
+                                // Fetch the next/prev email body
+                                let (t_body, h_body, atts) = net::fetch_email_body(sess, &fetch_seq);
+
+                                text_body = t_body;
+                                html_body = h_body;
+                                attachments = atts;
+
+                                // Update local headers to reflect the new email
+                                email_from = app.page_emails[app.selected_index].from.clone();
+                                email_to = app.page_emails[app.selected_index].to_addr.clone();
+                                email_cc = app.page_emails[app.selected_index].cc.clone();
+                                email_subject = app.page_emails[app.selected_index].subject.clone();
+                                reply_to = app.page_emails[app.selected_index].reply_to.clone();
+                                date = app.page_emails[app.selected_index].date.clone();
+
+                                // Readjust header size layout for attachments
+                                attach_lines = if attachments.is_empty() { 1 } else { 1 + attachments.len() };
+                                reader.top_margin = (5 + attach_lines) as u16;
+
+                                // Re-wrap the body
+                                let (cols, _) = term_size().unwrap_or((80, 24));
+                                let wrap_width = (cols as usize).saturating_sub(2);
+                                let wrapped_text = crate::mail::wrap_email_body(&text_body, wrap_width);
+
+                                // Wipe the screen so old headers don't ghost
+                                queue!(stdout, Clear(ClearType::All)).unwrap();
+
+                                // Give the editor the new text, clear cache, and reset scroll
+                                reader.buffer = Rope::from_str(&wrapped_text);
+                                reader.row_offset = 0;
+                                reader.col_offset = 0;
+                                reader.cursor_y = 0;
+                                reader.cursor_x = 0;
+                                reader.desired_cursor_x = 0;
+                                reader.highlight_cache.clear();
+
+                                if let Some(html) = &html_body {
+                                    if !html.is_empty() {
+                                        reader.set_status("Email contains HTML. Type 'B' to view in browser".to_string());
+                                    } else {
+                                        reader.clear_status();
+                                    }
+                                } else {
+                                    reader.clear_status();
+                                }
+                            }
+                        }
+                        continue;
+                    }
                 }
 
                 // implement Alt+Number to save attachments
@@ -179,7 +362,7 @@ pub fn view_email(
                                         let target_dir = std::path::Path::new(&save_dir);
 
                                         // save each attachment into chosen directory
-                                        for (filename, data) in attachments {
+                                        for (filename, data) in &attachments {
                                             let file_path = target_dir.join(filename);
                                             if std::fs::write(&file_path, data).is_ok() {
                                                 success_count += 1;
@@ -221,6 +404,58 @@ pub fn view_email(
                 }
 
                 if !key.modifiers.contains(event::KeyModifiers::CONTROL) && !key.modifiers.contains(event::KeyModifiers::ALT) {
+
+                    // Mark as deleted toggle
+                    if key.code == event::KeyCode::Char('d') || key.code == event::KeyCode::Char('D') {
+                        let is_outlook = app.active_account.imap_server.to_lowercase().contains("outlook") ||
+                            app.active_account.email.to_lowercase().contains("outlook") ||
+                            app.active_account.email.to_lowercase().contains("hotmail");
+
+                        if is_outlook {
+                            if !app.page_emails.is_empty() {
+                                let idx = app.selected_index;
+                                app.page_emails[idx].is_deleted = !app.page_emails[idx].is_deleted;
+
+                                // Sync the internal tracking set
+                                let email_id = app.page_emails[idx].id.clone();
+                                if app.page_emails[idx].is_deleted {
+                                    app.graph_pending_deleted.insert(email_id);
+                                } else {
+                                    app.graph_pending_deleted.remove(&email_id);
+                                }
+                            }
+                        } else {
+                            if let Some(sess) = session.as_mut() {
+                                if !app.page_emails.is_empty() {
+                                    net::toggle_flag(sess, &mut app.page_emails, app.selected_index, "\\Deleted");
+
+                                    // Sync tracking set for IMAP too!
+                                    let idx = app.selected_index;
+                                    let email_id = app.page_emails[idx].id.clone();
+                                    if app.page_emails[idx].is_deleted {
+                                        app.graph_pending_deleted.insert(email_id);
+                                    } else {
+                                        app.graph_pending_deleted.remove(&email_id);
+                                    }
+                                }
+                            }
+                        }
+
+                        let status_msg = if app.page_emails[app.selected_index].is_deleted {
+                            "Message marked for deletion."
+                        } else {
+                            "Message unmarked for deletion."
+                        };
+                        reader.set_status(status_msg.to_string());
+                        continue;
+                    }
+
+                    // Menu toggling
+                    if key.code == event::KeyCode::Char('o') || key.code == event::KeyCode::Char('O') {
+                        reader.menu_page = if reader.menu_page == 1 { 2 } else { 1 };
+                        continue;
+                    }
+
                     if key.code == event::KeyCode::Char('a') || key.code == event::KeyCode::Char('A') {
                         let combined_addrs = format!("{}, {}, {}", email_from, email_to, email_cc);
 
@@ -295,7 +530,7 @@ pub fn view_email(
                     }
                     if key.code == event::KeyCode::Char('f') || key.code == event::KeyCode::Char('F') {
                         let sub = if email_subject.to_lowercase().starts_with("fwd:") { email_subject.clone() } else { format!("Fwd: {}", email_subject) };
-                        let fwd_body = format!("\n\n--- Forwarded message ---\nFrom: {}\nDate: {}\nSubject: {}\n\n{}", email_from, date, email_subject, text_body);
+                        let fwd_body = format!("--- Forwarded message ---\nFrom: {}\nDate: {}\nSubject: {}\n\n{}", email_from, date, email_subject, text_body);
                         if let Some(s) = compose::compose_email(&app.active_account, None, Some(&sub), Some(&fwd_body), &mut reader.current_theme) {
                             reader.set_status(s);
                         }
@@ -327,7 +562,7 @@ pub fn view_email(
 
                         if !opened {
                             let file_path = temp_dir.join("email_view.txt");
-                            if std::fs::write(&file_path, text_body).is_ok() {
+                            if std::fs::write(&file_path, &text_body).is_ok() {
                                 if webbrowser::open(file_path.to_str().unwrap()).is_ok() {
                                     reader.set_status("Opened text version in browser.".to_string());
                                 } else {
@@ -378,7 +613,9 @@ pub fn view_email(
                     EditorResult::Cancel => break,
                     _ => {}
                 }
-            } else if let event::Event::Resize(_, _) = ev {}
+            } else if let event::Event::Resize(_, _) = ev {
+                queue!(stdout, Clear(ClearType::All)).unwrap();
+            }
         }
     }
     settings_provider.current_theme = reader.current_theme;
@@ -391,3 +628,5 @@ pub fn view_email(
 
     app.mode = AppMode::EmailList;
 }
+
+

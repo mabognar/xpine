@@ -56,7 +56,8 @@ pub fn handle_event(event: Event, app: &mut App, session: &mut Option<MailSessio
                 AppMode::AddressBook { .. } => handle_address_book_events(k, app, theme_provider, stdout),
                 AppMode::EmailAccounts { .. } => handle_email_accounts_events(k, app, theme_provider, stdout),
                 AppMode::EmailList => handle_email_list_events(k, app, session, theme_provider, stdout, &mut quit),
-                AppMode::FolderList { .. } => handle_folder_list_events(k, app, session, theme_provider, stdout),
+                // AppMode::FolderList { .. } => handle_folder_list_events(k, app, session, theme_provider, stdout),
+                AppMode::FolderList { .. } => handle_folder_list_events(k, app, session, theme_provider, stdout, &mut quit),
                 AppMode::MainMenu { .. } => handle_main_menu_events(k, app, session, theme_provider, &mut quit),
                 AppMode::Settings { .. } => handle_settings_events(k, app, theme_provider),
                 AppMode::EmailRead { .. } => {} // Handled completely in src/read.rs
@@ -122,7 +123,6 @@ fn handle_address_book_events(k: KeyEvent, app: &mut App, theme_provider: &mut E
                 if let Ok(Some(team_name)) = theme_provider.prompt("Team Name (e.g. My Team): ", false) {
                     let team_name = team_name.trim();
                     if !team_name.is_empty() {
-                        // REVERTED: Using prompt_with_autocomplete to keep email hints!
                         if let Ok(Some(emails)) = theme_provider.prompt_with_autocomplete("Emails (comma separated): ", &addresses) {
                             let mut unique_emails = Vec::new();
                             for email in emails.split(',') {
@@ -154,9 +154,7 @@ fn handle_address_book_events(k: KeyEvent, app: &mut App, theme_provider: &mut E
             if !addresses.is_empty() && !addresses[selected_idx].trim().is_empty() {
                 let current_val = &addresses[selected_idx];
 
-                // Check if this is a Team (contains a colon)
                 if current_val.contains(':') {
-                    // --- TEAM EDITING: Use Multiline Editor ---
                     let (prefix, emails_part) = if let Some(colon_idx) = current_val.find(':') {
                         let prefix = &current_val[..colon_idx];
                         let emails = current_val[colon_idx + 1..].trim_end_matches(';').trim();
@@ -172,20 +170,12 @@ fn handle_address_book_events(k: KeyEvent, app: &mut App, theme_provider: &mut E
                         .collect::<Vec<&str>>()
                         .join("\n");
 
-                    // Inside handle_address_book_events() for the Team editing block:
-
                     let title = format!("Edit Team: {}", prefix);
 
-                    // 1. CLEAR BEFORE: Ensure no lingering ghost text enters the editor
                     let _ = execute!(std::io::stdout(), crossterm::terminal::Clear(crossterm::terminal::ClearType::All));
-
-                    // 2. Capture the result
                     let edit_result = theme_provider.edit_buffer(&title, &multiline_emails, crate::editor::MenuState::TeamEditor);
-
-                    // 3. CLEAR AFTER: Wipe the editor away before redrawing the menu
                     let _ = execute!(std::io::stdout(), crossterm::terminal::Clear(crossterm::terminal::ClearType::All));
 
-                    // 4. Process the result normally
                     if let Ok(Some(edited_text)) = edit_result {
                         let normalized_text = edited_text.replace('\n', ",").replace(';', ",");
 
@@ -206,7 +196,6 @@ fn handle_address_book_events(k: KeyEvent, app: &mut App, theme_provider: &mut E
                     }
 
                 } else {
-                    // --- SINGLE ADDRESS EDITING: Use one-line prompt_edit ---
                     if let Ok(Some(new_val)) = theme_provider.prompt_edit("Edit: ", current_val) {
                         if !new_val.trim().is_empty() {
                             addresses[selected_idx] = new_val.trim().to_string();
@@ -220,19 +209,14 @@ fn handle_address_book_events(k: KeyEvent, app: &mut App, theme_provider: &mut E
             let _ = theme_provider.show_help("address_book");
         }
         KeyCode::Char('i') | KeyCode::Char('I') => {
-            // Trigger the file browser
             if let Ok(Some(filepath)) = theme_provider.run_file_browser(false, None) {
                 let expanded_path = crate::editor::Editor::expand_tilde(&filepath);
 
-                // Attempt to read the selected file
                 match std::fs::read_to_string(&expanded_path) {
                     Ok(contents) => {
                         let mut added_count = 0;
-
-                        // Normalize the file by turning all newlines and semicolons into commas
                         let normalized = contents.replace('\n', ",").replace('\r', "").replace(';', ",");
 
-                        // Split by comma and filter out duplicates
                         for email in normalized.split(',') {
                             let trimmed = email.trim();
                             if !trimmed.is_empty() && !addresses.iter().any(|a| a.trim() == trimmed) {
@@ -241,16 +225,12 @@ fn handle_address_book_events(k: KeyEvent, app: &mut App, theme_provider: &mut E
                             }
                         }
 
-                        // Save if anything new was added
                         if added_count > 0 {
                             crate::address::clean_and_save_address_book(&mut addresses);
                         }
-
-                        // Flash the 3-second success status at the bottom of the screen
                         theme_provider.set_status(format!("Import successful - {} emails added to address book", added_count));
                     }
                     Err(_) => {
-                        // Flash the failure message
                         theme_provider.set_status("Import not successful".to_string());
                     }
                 }
@@ -286,7 +266,6 @@ fn handle_email_accounts_events(k: KeyEvent, app: &mut App, theme_provider: &mut
 
             if let Ok(Some(selection)) = theme_provider.prompt_select_item("Choose account type:", &auth_options) {
 
-                // Prompt for email first since every method requires it
                 if let Ok(Some(email)) = theme_provider.prompt("Email: ", false) {
                     let email_lower = email.trim().to_lowercase();
 
@@ -344,6 +323,7 @@ fn handle_email_accounts_events(k: KeyEvent, app: &mut App, theme_provider: &mut
                         app.needs_reconnect = true;
 
                         app.current_folder = "INBOX".to_string();
+                        app.graph_pending_deleted.clear();
                         app.current_page = 0;
                         app.restore_index_from_end = Some(0);
                         selected_idx = app.current_account_idx;
@@ -379,7 +359,6 @@ fn handle_email_accounts_events(k: KeyEvent, app: &mut App, theme_provider: &mut
 
                                         println!("Starting OAuth2 flow for {}...", new_acc.email);
 
-                                        // Uses the generic OAuth function we built previously
                                         match net::run_gmail_oauth_flow(&email_lower) {
                                             Ok((client_id, secret, token)) => {
                                                 new_acc.client_id = Some(client_id);
@@ -411,6 +390,7 @@ fn handle_email_accounts_events(k: KeyEvent, app: &mut App, theme_provider: &mut
                                         app.needs_reconnect = true;
 
                                         app.current_folder = "INBOX".to_string();
+                                        app.graph_pending_deleted.clear();
                                         app.current_page = 0;
                                         app.restore_index_from_end = Some(0);
                                         selected_idx = app.current_account_idx;
@@ -456,6 +436,7 @@ fn handle_email_accounts_events(k: KeyEvent, app: &mut App, theme_provider: &mut
                                             app.needs_reconnect = true;
 
                                             app.current_folder = "INBOX".to_string();
+                                            app.graph_pending_deleted.clear();
                                             app.current_page = 0;
                                             app.restore_index_from_end = Some(0);
                                             selected_idx = app.current_account_idx;
@@ -474,10 +455,7 @@ fn handle_email_accounts_events(k: KeyEvent, app: &mut App, theme_provider: &mut
                 let account_email = &app.accounts[selected_idx].email;
                 let prompt_msg = format!("Delete account '{}'?", account_email);
 
-                // First confirmation
                 if let Ok(Some(true)) = theme_provider.prompt_yn(&prompt_msg) {
-
-                    // Second "Are you sure?" confirmation
                     if let Ok(Some(true)) = theme_provider.prompt_yn("Are you absolutely sure?") {
                         app.accounts.remove(selected_idx);
                         crate::config::save_config(&app.accounts);
@@ -571,7 +549,6 @@ fn handle_email_list_events(k: KeyEvent, app: &mut App, session: &mut Option<Mai
                 let email = &app.accounts[app.current_account_idx].email;
                 app.update_status(format!("Switching to {}...", email));
 
-                // Force an immediate UI redraw before the network blocks the thread
                 let _ = crate::ui::draw_app(stdout, app, theme_provider);
             }
         }
@@ -605,7 +582,6 @@ fn handle_email_list_events(k: KeyEvent, app: &mut App, session: &mut Option<Mai
                     let email = &app.accounts[app.current_account_idx].email;
                     app.update_status(format!("Switching to {}...", email));
 
-                    // Force an immediate UI redraw before the network blocks the thread
                     let _ = crate::ui::draw_app(stdout, app, theme_provider);
                 }
             }
@@ -709,7 +685,6 @@ fn handle_email_list_events(k: KeyEvent, app: &mut App, session: &mut Option<Mai
                     let idx = app.selected_index;
                     app.page_emails[idx].is_deleted = !app.page_emails[idx].is_deleted;
 
-                    // Add/Remove from the Graph tracking set
                     let email_id = app.page_emails[idx].id.clone();
                     if app.page_emails[idx].is_deleted {
                         app.graph_pending_deleted.insert(email_id);
@@ -721,6 +696,15 @@ fn handle_email_list_events(k: KeyEvent, app: &mut App, session: &mut Option<Mai
                 if let Some(sess) = session {
                     if !app.page_emails.is_empty() {
                         net::toggle_flag(sess, &mut app.page_emails, app.selected_index, "\\Deleted");
+
+                        // Track standard IMAP deletes identically, allowing cross-page expunge detection
+                        let idx = app.selected_index;
+                        let email_id = app.page_emails[idx].id.clone();
+                        if app.page_emails[idx].is_deleted {
+                            app.graph_pending_deleted.insert(email_id);
+                        } else {
+                            app.graph_pending_deleted.remove(&email_id);
+                        }
                     }
                 }
             }
@@ -731,7 +715,7 @@ fn handle_email_list_events(k: KeyEvent, app: &mut App, session: &mut Option<Mai
         KeyCode::Char('x') | KeyCode::Char('X') => {
             if !app.page_emails.is_empty() {
                 if let Some(sess) = session {
-                    // Include the Graph tracking set when checking for deleted emails
+                    // Unified check precisely leverages our cross-page ID array for both protocols
                     let has_deleted = app.page_emails.iter().any(|e| e.is_deleted) || !app.graph_pending_deleted.is_empty();
 
                     if !has_deleted {
@@ -756,6 +740,9 @@ fn handle_email_list_events(k: KeyEvent, app: &mut App, session: &mut Option<Mai
 
                         if let Ok(Some(true)) = theme_provider.prompt_yn("Expunge?") {
                             if net::expunge_deleted(sess, app).is_ok() {
+                                // Clear the tracker to reset system logic
+                                app.graph_pending_deleted.clear();
+
                                 let offset = if theme_provider.sort_newest_first {
                                     app.current_page * items_per_page + app.selected_index as u32
                                 } else {
@@ -810,7 +797,6 @@ fn handle_email_list_events(k: KeyEvent, app: &mut App, session: &mut Option<Mai
 
                     if k.code == KeyCode::Char('f') || k.code == KeyCode::Char('F') {
                         let sub = if subject.to_lowercase().starts_with("fwd:") { subject.clone() } else { format!("Fwd: {}", subject) };
-                        // CHANGED: Removed the \n\n from the very beginning of the string format
                         let fwd_body = format!("--- Forwarded message ---\nFrom: {}\nDate: {}\nSubject: {}\n\n{}", from, date, subject, t_body);
                         if let Some(s) = compose_email(&app.active_account, None, Some(&sub), Some(&fwd_body), &mut theme_provider.current_theme) {
                             app.update_status(s);
@@ -895,7 +881,7 @@ fn handle_email_list_events(k: KeyEvent, app: &mut App, session: &mut Option<Mai
     }
 }
 
-fn handle_folder_list_events(k: KeyEvent, app: &mut App, session: &mut Option<MailSession>, theme_provider: &mut Editor, _stdout: &mut std::io::Stdout) {
+fn handle_folder_list_events(k: KeyEvent, app: &mut App, session: &mut Option<MailSession>, theme_provider: &mut Editor, _stdout: &mut std::io::Stdout, quit: &mut bool) {
     let (mut step, mut selected_idx, mut folders) = match std::mem::replace(&mut app.mode, AppMode::EmailList) {
         AppMode::FolderList { step, selected_idx, folders } => (step, selected_idx, folders),
         other => { app.mode = other; return; }
@@ -961,6 +947,7 @@ fn handle_folder_list_events(k: KeyEvent, app: &mut App, session: &mut Option<Ma
             } else if step == 1 {
                 if !folders.is_empty() {
                     app.current_folder = folders[selected_idx].clone();
+                    app.graph_pending_deleted.clear(); // Wiping memory for pure folder integrity
                     app.current_page = 0;
                     app.restore_index_from_end = Some(0);
                     app.needs_fetch = true;
@@ -1087,6 +1074,10 @@ fn handle_folder_list_events(k: KeyEvent, app: &mut App, session: &mut Option<Ma
         KeyCode::Char('h') | KeyCode::Char('H') | KeyCode::Char('?') => {
             let _ = theme_provider.show_help("folders_list");
         }
+        KeyCode::Char('q') | KeyCode::Char('Q') => {
+            check_and_expunge_outlook(app, session, theme_provider);
+            *quit = true;
+        }
         _ => {}
     }
 
@@ -1111,6 +1102,7 @@ fn handle_main_menu_events(k: KeyEvent, app: &mut App, session: &mut Option<Mail
             match selected_idx {
                 0 => {
                     app.current_folder = "INBOX".to_string();
+                    app.graph_pending_deleted.clear();
                     app.current_page = 0;
                     app.restore_index_from_end = Some(0);
                     app.needs_fetch = true;
@@ -1155,6 +1147,7 @@ fn handle_main_menu_events(k: KeyEvent, app: &mut App, session: &mut Option<Mail
         }
         KeyCode::Char('i') | KeyCode::Char('I') => {
             app.current_folder = "INBOX".to_string();
+            app.graph_pending_deleted.clear();
             app.current_page = 0;
             app.restore_index_from_end = Some(0);
             app.needs_fetch = true;
@@ -1163,7 +1156,7 @@ fn handle_main_menu_events(k: KeyEvent, app: &mut App, session: &mut Option<Mail
         KeyCode::Char('a') | KeyCode::Char('A') => next_mode = Some(AppMode::AddressBook { selected_idx: 0, addresses: crate::address::load_address_book() }),
         KeyCode::Char('f') | KeyCode::Char('F') => next_mode = Some(AppMode::FolderList { step: 0, selected_idx: app.current_account_idx, folders: Vec::new() }),
         KeyCode::Char('s') | KeyCode::Char('S') => next_mode = Some(AppMode::Settings { selected_idx: 0 }),
-        KeyCode::Char('h') | KeyCode::Char('H') | KeyCode::Char('?') => { let _ = theme_provider.show_help("main_menu"); }, // <-- UPDATED
+        KeyCode::Char('h') | KeyCode::Char('H') | KeyCode::Char('?') => { let _ = theme_provider.show_help("main_menu"); },
         KeyCode::Char('q') | KeyCode::Char('Q') => {
             check_and_expunge_outlook(app, session, theme_provider);
             *quit = true;
@@ -1185,7 +1178,7 @@ fn handle_settings_events(k: KeyEvent, app: &mut App, theme_provider: &mut Edito
 
     match k.code {
         KeyCode::Up | KeyCode::Char('p') | KeyCode::Char('P') => selected_idx = selected_idx.saturating_sub(1),
-        KeyCode::Down | KeyCode::Char('n') | KeyCode::Char('N') => selected_idx = (selected_idx + 1).min(4), // <-- Increased to 4
+        KeyCode::Down | KeyCode::Char('n') | KeyCode::Char('N') => selected_idx = (selected_idx + 1).min(4),
         KeyCode::Left | KeyCode::Char('<') | KeyCode::Char('q') | KeyCode::Char('Q') | KeyCode::Char('s') | KeyCode::Char('S') => next_mode = Some(AppMode::MainMenu { selected_idx: 3 }),
         KeyCode::Char('x') | KeyCode::Char('X') | KeyCode::Right | KeyCode::Enter => {
             if selected_idx == 0 { theme_provider.soft_wrap = !theme_provider.soft_wrap; theme_provider.save_settings(); }
@@ -1201,14 +1194,8 @@ fn handle_settings_events(k: KeyEvent, app: &mut App, theme_provider: &mut Edito
             }
             else if selected_idx == 4 {
                 let current_sig = crate::config::load_signature();
-
-                // 1. Capture the result
                 let edit_result = theme_provider.edit_buffer("Edit Email Signature (leave blank for no signature)", &current_sig, crate::editor::MenuState::EmailComposer);
-
-                // 2. NEW: Force a full screen clear
                 let _ = execute!(std::io::stdout(), crossterm::terminal::Clear(crossterm::terminal::ClearType::All));
-
-                // 3. Save if changes were made
                 if let Ok(Some(new_sig)) = edit_result {
                     crate::config::save_signature(&new_sig);
                 }
@@ -1235,4 +1222,5 @@ fn handle_settings_events(k: KeyEvent, app: &mut App, theme_provider: &mut Edito
     if let Some(mode) = next_mode { app.mode = mode; }
     else { app.mode = AppMode::Settings { selected_idx }; }
 }
+
 
