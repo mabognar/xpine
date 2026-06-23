@@ -300,7 +300,7 @@ impl UiExt for Editor {
                         ui_bg, menu_key_fg, menu_text_fg)?;
                     Self::draw_menu_line(
                         &mut stdout, rows - 1, cols, col_width,
-                        &[("N", " Scroll Dn"), (" S", " Save Txt"), ("", ""), ("", ""), ("", ""), ("H", " Help")],
+                        &[("N", " Scroll Dn"), (" S", " SaveMsg"), ("", ""), ("", ""), ("", ""), ("H", " Help")],
                         ui_bg, menu_key_fg, menu_text_fg)?;
                 }
             }
