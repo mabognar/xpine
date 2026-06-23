@@ -179,7 +179,33 @@ pub fn view_email(
                     if key.code == event::KeyCode::Char('y') {
                         reader.set_status("Text copied to clipboard".to_string());
                         continue;
-                    } else if key.code == event::KeyCode::Char('n') || key.code == event::KeyCode::Char('p') {
+                    } else if key.code == event::KeyCode::Char('r') {
+                        // NEW: Handle ^R (Reply All) inside the reader
+                        let reply_body = mail::format_reply_text(&text_body, &date, &email_from);
+                        let sub = if email_subject.to_lowercase().starts_with("re:") { email_subject.clone() } else { format!("Re: {}", email_subject) };
+                        let raw_reply = if reply_to.trim().is_empty() { mail::extract_email(&email_from) } else { mail::extract_email(&reply_to) };
+
+                        let (all_to, all_cc) = mail::build_reply_all_addresses(&active_email, &raw_reply, &email_to, &email_cc);
+
+                        if let Some(s) = compose::compose_email(
+                            &app.active_account,
+                            Some(&all_to),
+                            Some(&all_cc),
+                            Some(&sub),
+                            Some(&reply_body),
+                            &mut reader.current_theme
+                        ) {
+                            if let Some(sess) = session.as_mut() {
+                                match sess {
+                                    net::MailSession::Imap(imap_sess) => { let _ = imap_sess.store(&fetch_seq, "+FLAGS (\\Answered)"); }
+                                    net::MailSession::Graph { .. } => {}
+                                }
+                            }
+                            app.page_emails[app.selected_index].is_answered = true;
+                            reader.set_status(s);
+                        }
+                        continue;
+                } else if key.code == event::KeyCode::Char('n') || key.code == event::KeyCode::Char('p') {
                         let is_next = key.code == event::KeyCode::Char('n');
                         let mut can_move = false;
 
@@ -508,6 +534,7 @@ pub fn view_email(
                         if let Some(s) = compose::compose_email(
                             &app.active_account,
                             Some(&raw_reply),
+                            None,
                             Some(&sub),
                             Some(&reply_body),
                             &mut reader.current_theme
@@ -532,7 +559,7 @@ pub fn view_email(
                     if key.code == event::KeyCode::Char('f') || key.code == event::KeyCode::Char('F') {
                         let sub = if email_subject.to_lowercase().starts_with("fwd:") { email_subject.clone() } else { format!("Fwd: {}", email_subject) };
                         let fwd_body = format!("--- Forwarded message ---\nFrom: {}\nDate: {}\nSubject: {}\n\n{}", email_from, date, email_subject, text_body);
-                        if let Some(s) = compose::compose_email(&app.active_account, None, Some(&sub), Some(&fwd_body), &mut reader.current_theme) {
+                        if let Some(s) = compose::compose_email(&app.active_account, None, None, Some(&sub), Some(&fwd_body), &mut reader.current_theme) {
                             reader.set_status(s);
                         }
                         continue;

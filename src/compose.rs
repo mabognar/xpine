@@ -32,18 +32,18 @@ struct ComposeState {
     scroll_offset: usize,
 }
 
-pub fn compose_email(account: &Account, default_to: Option<&str>, default_subject: Option<&str>, default_body: Option<&str>, current_theme: &mut String) -> Option<String> {
+pub fn compose_email(account: &Account, default_to: Option<&str>, default_cc: Option<&str>, default_subject: Option<&str>, default_body: Option<&str>, current_theme: &mut String) -> Option<String> {
     let mut state = ComposeState {
         // Strip out hidden newlines from folded headers
         to: default_to.unwrap_or("").replace('\r', "").replace('\n', ""),
-        cc: String::new(),
+        cc: default_cc.unwrap_or("").replace('\r', "").replace('\n', ""), // <-- UPDATE THIS LINE
         bcc: String::new(),
         subject: default_subject.unwrap_or("").replace('\r', "").replace('\n', ""),
         attachments: Vec::new(),
         active_idx: if default_to.is_some() { 4 } else { 0 },
         scroll_offset: 0,
     };
-    
+
     let mut editor = Editor::new(None);
     editor.menu_state = MenuState::EmailComposer;
     editor.top_margin = 6;

@@ -778,7 +778,8 @@ fn handle_email_list_events(k: KeyEvent, app: &mut App, session: &mut Option<Mai
         }
         KeyCode::Char('c') | KeyCode::Char('C') => {
             if !app.accounts.is_empty() {
-                if let Some(status) = compose_email(&app.active_account, None, None, None, &mut theme_provider.current_theme) {
+                // Notice the extra `None` passed for default_cc
+                if let Some(status) = compose_email(&app.active_account, None, None, None, None, &mut theme_provider.current_theme) {
                     app.update_status(status);
                 }
             } else {
@@ -788,9 +789,10 @@ fn handle_email_list_events(k: KeyEvent, app: &mut App, session: &mut Option<Mai
         KeyCode::Char('f') | KeyCode::Char('F') | KeyCode::Char('r') | KeyCode::Char('R') => {
             if !app.page_emails.is_empty() {
                 if let Some(sess) = session {
-                    let (fetch_seq, from, date, subject, reply_to) = {
+                    // Extract to_addr and cc from the selected email
+                    let (fetch_seq, from, date, subject, reply_to, to_addr, cc) = {
                         let current = &app.page_emails[app.selected_index];
-                        (current.id.to_string(), current.from.clone(), current.date.clone(), current.subject.clone(), current.reply_to.clone())
+                        (current.id.to_string(), current.from.clone(), current.date.clone(), current.subject.clone(), current.reply_to.clone(), current.to_addr.clone(), current.cc.clone())
                     };
 
                     let (t_body, _, _) = net::fetch_email_body(sess, &fetch_seq);
@@ -798,11 +800,14 @@ fn handle_email_list_events(k: KeyEvent, app: &mut App, session: &mut Option<Mai
                     if k.code == KeyCode::Char('f') || k.code == KeyCode::Char('F') {
                         let sub = if subject.to_lowercase().starts_with("fwd:") { subject.clone() } else { format!("Fwd: {}", subject) };
                         let fwd_body = format!("--- Forwarded message ---\nFrom: {}\nDate: {}\nSubject: {}\n\n{}", from, date, subject, t_body);
-                        if let Some(s) = compose_email(&app.active_account, None, Some(&sub), Some(&fwd_body), &mut theme_provider.current_theme) {
+                        if let Some(s) = compose_email(&app.active_account, None, None, Some(&sub), Some(&fwd_body), &mut theme_provider.current_theme) {
                             app.update_status(s);
                         }
                     }
                     else {
+                        // Determine if Ctrl is pressed for Reply All
+                        let is_reply_all = k.modifiers.contains(KeyModifiers::CONTROL);
+
                         let raw_reply = if reply_to.trim().is_empty() {
                             crate::mail::extract_email(&from)
                         } else {
@@ -812,7 +817,15 @@ fn handle_email_list_events(k: KeyEvent, app: &mut App, session: &mut Option<Mai
                         let sub = if subject.to_lowercase().starts_with("re:") { subject.clone() } else { format!("Re: {}", subject) };
                         let reply_body = crate::mail::format_reply_text(&t_body, &date, &from);
 
-                        if let Some(_) = compose_email(&app.active_account, Some(&raw_reply), Some(&sub), Some(&reply_body), &mut theme_provider.current_theme) {
+                        // Generate appropriate TO and CC headers
+                        let (final_to, final_cc) = if is_reply_all {
+                            let (all_to, all_cc) = crate::mail::build_reply_all_addresses(&app.active_account.email, &raw_reply, &to_addr, &cc);
+                            (all_to, Some(all_cc))
+                        } else {
+                            (raw_reply, None)
+                        };
+
+                        if let Some(_) = compose_email(&app.active_account, Some(&final_to), final_cc.as_deref(), Some(&sub), Some(&reply_body), &mut theme_provider.current_theme) {
                             match sess {
                                 MailSession::Imap(imap_sess) => {
                                     let _ = imap_sess.store(&fetch_seq, "+FLAGS (\\Answered)");
