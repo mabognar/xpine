@@ -84,13 +84,28 @@ fn handle_address_book_events(k: KeyEvent, app: &mut App, theme_provider: &mut E
         KeyCode::Char('<') | KeyCode::Left | KeyCode::Esc => next_mode = Some(AppMode::MainMenu { selected_idx: 1 }),
         KeyCode::Char('d') | KeyCode::Char('D') => {
             if !addresses.is_empty() {
-                let prompt_msg = format!("Delete '{}'?", addresses[selected_idx]);
+                let current_val = addresses[selected_idx].clone();
+                let is_team = current_val.contains(':');
+
+                let prompt_msg = format!("Delete {}?", current_val);
+
+                // First prompt
                 if let Ok(Some(true)) = theme_provider.prompt_yn(&prompt_msg) {
-                    if let Ok(Some(true)) = theme_provider.prompt_yn("Are you sure?") {
+                    let mut should_delete = true;
+
+                    // Second prompt for Team deletion
+                    if is_team {
+                        if let Ok(Some(false)) | Ok(None) = theme_provider.prompt_yn("Are you sure?") {
+                            should_delete = false;
+                        }
+                    }
+
+                    // Execute
+                    if should_delete {
                         addresses.remove(selected_idx);
                         let _ = crate::address::save_address_book(&addresses);
 
-                        if selected_idx >= addresses.len() {
+                        if !addresses.is_empty() && selected_idx >= addresses.len() {
                             selected_idx = addresses.len().saturating_sub(1);
                         }
                     }
@@ -143,18 +158,38 @@ fn handle_address_book_events(k: KeyEvent, app: &mut App, theme_provider: &mut E
             }
         }
         KeyCode::Char('a') | KeyCode::Char('A') => {
-            if let Ok(Some(new_val)) = theme_provider.prompt("Add address: ", false) {
-                let trimmed = new_val.trim();
-                if !trimmed.is_empty() && !addresses.iter().any(|a| a.trim() == trimmed) {
-                    addresses.push(trimmed.to_string());
-                    crate::address::clean_and_save_address_book(&mut addresses);                }
+            // Prompt for Name (with grey placeholder)
+            if let Ok(Some(name_val)) = theme_provider.prompt_with_placeholder("Name: ", "None") {
+
+                // Prompt for the Email
+                if let Ok(Some(email_val)) = theme_provider.prompt("Email: ", false) {
+                    let email_trimmed = email_val.trim();
+
+                    if !email_trimmed.is_empty() {
+                        let name_trimmed = name_val.trim();
+
+                        // Combine based on whether a name was provided
+                        let final_entry = if name_trimmed.is_empty() || name_trimmed.eq_ignore_ascii_case("none") {
+                            email_trimmed.to_string()
+                        } else {
+                            format!("{} <{}>", name_trimmed, email_trimmed)
+                        };
+
+                        // Avoid duplicates
+                        if !addresses.iter().any(|a| a.trim().eq_ignore_ascii_case(&final_entry)) {
+                            addresses.push(final_entry);
+                            crate::address::clean_and_save_address_book(&mut addresses);
+                        }
+                    }
+                }
             }
         }
         KeyCode::Char('e') | KeyCode::Char('E') => {
             if !addresses.is_empty() && !addresses[selected_idx].trim().is_empty() {
-                let current_val = &addresses[selected_idx];
+                let current_val = addresses[selected_idx].clone();
 
                 if current_val.contains(':') {
+                    // --- EXISTING TEAM EDIT LOGIC ---
                     let (prefix, emails_part) = if let Some(colon_idx) = current_val.find(':') {
                         let prefix = &current_val[..colon_idx];
                         let emails = current_val[colon_idx + 1..].trim_end_matches(';').trim();
@@ -196,10 +231,44 @@ fn handle_address_book_events(k: KeyEvent, app: &mut App, theme_provider: &mut E
                     }
 
                 } else {
-                    if let Ok(Some(new_val)) = theme_provider.prompt_edit("Edit: ", current_val) {
-                        if !new_val.trim().is_empty() {
-                            addresses[selected_idx] = new_val.trim().to_string();
-                            crate::address::clean_and_save_address_book(&mut addresses);
+                    // --- NEW TWO-STEP INDIVIDUAL EDIT LOGIC ---
+
+                    // 1. Extract existing name and email from the saved string
+                    let mut existing_name = String::new();
+                    let mut existing_email = current_val.clone();
+
+                    if let Some(start) = current_val.find('<') {
+                        if let Some(end) = current_val.find('>') {
+                            existing_name = current_val[..start].trim().trim_matches('"').trim().to_string();
+                            existing_email = current_val[start + 1..end].trim().to_string();
+                        }
+                    }
+
+                    // 2. Prompt for Name (hybrid: use edit if exists, use placeholder if empty)
+                    let name_result = if existing_name.is_empty() {
+                        theme_provider.prompt_with_placeholder("Edit Name: ", "None")
+                    } else {
+                        theme_provider.prompt_edit("Edit Name: ", &existing_name)
+                    };
+
+                    if let Ok(Some(new_name)) = name_result {
+                        // 3. Prompt for Email
+                        if let Ok(Some(new_email)) = theme_provider.prompt_edit("Edit Email: ", &existing_email) {
+                            let email_trimmed = new_email.trim();
+
+                            if !email_trimmed.is_empty() {
+                                let name_trimmed = new_name.trim();
+
+                                // Format and save exactly like the Add process
+                                let final_entry = if name_trimmed.is_empty() || name_trimmed.eq_ignore_ascii_case("none") {
+                                    email_trimmed.to_string()
+                                } else {
+                                    format!("{} <{}>", name_trimmed, email_trimmed)
+                                };
+
+                                addresses[selected_idx] = final_entry;
+                                crate::address::clean_and_save_address_book(&mut addresses);
+                            }
                         }
                     }
                 }
@@ -820,7 +889,7 @@ fn handle_email_list_events(k: KeyEvent, app: &mut App, session: &mut Option<Mai
                         } else {
                             crate::mail::clean_display_addresses(&reply_to)
                         };
-                        
+
                         let sub = if subject.to_lowercase().starts_with("re:") { subject.clone() } else { format!("Re: {}", subject) };
                         let reply_body = crate::mail::format_reply_text(&t_body, &date, &from);
 

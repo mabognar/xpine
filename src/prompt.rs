@@ -17,6 +17,7 @@ pub trait PromptExt {
     fn prompt_edit(&mut self, prompt_text: &str, initial_text: &str) -> io::Result<Option<String>>;
     fn prompt_for_folder(&mut self, prompt_text: &str, folders: &[String]) -> io::Result<Option<String>>;
     fn prompt_select_item(&mut self, prompt_text: &str, items: &[String]) -> io::Result<Option<String>>;
+    fn prompt_with_placeholder(&mut self, prompt_text: &str, placeholder: &str) -> io::Result<Option<String>>;
 }
 
 impl PromptExt for Editor {
@@ -743,6 +744,134 @@ impl PromptExt for Editor {
                         }
                         _ => {}
                     }
+                }
+            }
+        }
+    }
+
+    fn prompt_with_placeholder(&mut self, prompt_text: &str, placeholder: &str) -> io::Result<Option<String>> {
+        let previous_state = self.menu_state;
+        let mut input = String::new();
+        let mut cursor_idx = 0;
+
+        self.menu_state = MenuState::CancelOnly;
+
+        loop {
+            self.set_status(format!("{}{}", prompt_text, input));
+
+            let mut stdout_handle = stdout();
+            let (cols, rows) = term_size()?;
+            let theme = &self.theme_set.themes[&self.current_theme];
+            let ui_colors = derive_ui_colors(theme);
+
+            queue!(
+                stdout_handle,
+                cursor::MoveTo(0, rows.saturating_sub(3)),
+                SetBackgroundColor(ui_colors.menu_bg),
+                Clear(ClearType::CurrentLine),
+                SetForegroundColor(ui_colors.fg),
+                Print(prompt_text),
+            )?;
+
+            // NEW LOGIC: Draw the grey placeholder if input is empty
+            if input.is_empty() {
+                let placeholder_color = if ui_colors.is_dark { Color::DarkGrey } else { Color::Grey };
+                queue!(
+                    stdout_handle,
+                    SetForegroundColor(placeholder_color),
+                    Print(placeholder),
+                    SetForegroundColor(ui_colors.fg)
+                )?;
+            } else {
+                queue!(stdout_handle, Print(&input))?;
+            }
+
+            queue!(
+                stdout_handle,
+                SetBackgroundColor(Color::Reset),
+                SetForegroundColor(Color::Reset)
+            )?;
+
+            let col_width = (cols as usize / 5).max(1);
+
+            Self::draw_menu_line(
+                &mut stdout_handle, rows.saturating_sub(2), cols, col_width,
+                &[("", ""), ("", ""), ("", ""), ("", ""), ("", ""), ("", "")],
+                ui_colors.menu_bg, ui_colors.accent, ui_colors.fg,
+            )?;
+            Self::draw_menu_line(
+                &mut stdout_handle, rows.saturating_sub(1), cols, col_width,
+                &[("^C", " Cancel"), ("", ""), ("", ""), ("", ""), ("", ""), ("", "")],
+                ui_colors.menu_bg, ui_colors.accent, ui_colors.fg,
+            )?;
+
+            let prompt_len = prompt_text.chars().count();
+            let input_chars_before_cursor = input.chars().take(cursor_idx).count();
+            let cursor_x = prompt_len as u16 + input_chars_before_cursor as u16;
+
+            queue!(
+                stdout_handle,
+                cursor::MoveTo(cursor_x, rows.saturating_sub(3)),
+                cursor::Show
+            )?;
+            stdout_handle.flush()?;
+
+            if let Event::Key(key) = event::read()? {
+                if key.kind != KeyEventKind::Press { continue; }
+
+                let is_ctrl = key.modifiers.contains(KeyModifiers::CONTROL);
+                let is_alt = key.modifiers.contains(KeyModifiers::ALT);
+
+                match key.code {
+                    KeyCode::Enter => {
+                        queue!(stdout_handle, cursor::Hide)?;
+                        stdout_handle.flush()?;
+                        self.clear_status();
+                        self.menu_state = previous_state;
+                        return Ok(Some(input));
+                    }
+                    KeyCode::Esc => {
+                        queue!(stdout_handle, cursor::Hide)?;
+                        stdout_handle.flush()?;
+                        self.clear_status();
+                        self.menu_state = previous_state;
+                        return Ok(None);
+                    }
+                    KeyCode::Char('c') | KeyCode::Char('g') if is_ctrl => {
+                        queue!(stdout_handle, cursor::Hide)?;
+                        stdout_handle.flush()?;
+                        self.clear_status();
+                        self.menu_state = previous_state;
+                        return Ok(None);
+                    }
+                    KeyCode::Left => { if cursor_idx > 0 { cursor_idx -= 1; } }
+                    KeyCode::Char('b') if is_ctrl => { if cursor_idx > 0 { cursor_idx -= 1; } }
+                    KeyCode::Right => { if cursor_idx < input.chars().count() { cursor_idx += 1; } }
+                    KeyCode::Char('f') if is_ctrl => { if cursor_idx < input.chars().count() { cursor_idx += 1; } }
+                    KeyCode::Backspace => {
+                        if cursor_idx > 0 {
+                            let mut chars: Vec<char> = input.chars().collect();
+                            chars.remove(cursor_idx - 1);
+                            input = chars.into_iter().collect();
+                            cursor_idx -= 1;
+                        }
+                    }
+                    KeyCode::Delete => {
+                        if cursor_idx < input.chars().count() {
+                            let mut chars: Vec<char> = input.chars().collect();
+                            chars.remove(cursor_idx);
+                            input = chars.into_iter().collect();
+                        }
+                    }
+                    KeyCode::Char(c) => {
+                        if !is_ctrl && !is_alt {
+                            let mut chars: Vec<char> = input.chars().collect();
+                            chars.insert(cursor_idx, c);
+                            input = chars.into_iter().collect();
+                            cursor_idx += 1;
+                        }
+                    }
+                    _ => {}
                 }
             }
         }

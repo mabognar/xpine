@@ -789,8 +789,30 @@ fn draw_address_book(stdout: &mut std::io::Stdout, cols: u16, rows: u16, theme_p
                     SetForegroundColor(colors.fg), Print(":"), Print(emails_display)
                 )?;
             } else {
-                queue!(stdout, SetForegroundColor(colors.fg), Print(display_str))?;
+                // --- NEW: Split Name and Email for contrast ---
+                if let Some(start) = display_str.find('<') {
+                    if let Some(_end) = display_str.find('>') {
+                        let name_part = &display_str[..start]; // Captures "Matt Bognar "
+                        let email_part = &display_str[start..]; // Captures "<statgod1@outlook.com>"
+
+                        let hint_color = if colors.is_dark { Color::DarkGrey } else { Color::Grey };
+
+                        queue!(
+                            stdout,
+                            SetForegroundColor(colors.date_color), Print(name_part),
+                            SetForegroundColor(colors.fg), Print(email_part)
+                        )?;
+                    } else {
+                        queue!(stdout, SetForegroundColor(colors.fg), Print(display_str))?;
+                    }
+                } else {
+                    // Fallback for simple emails without names
+                    queue!(stdout, SetForegroundColor(colors.fg), Print(display_str))?;
+                }
             }
+            // } else {
+            //     queue!(stdout, SetForegroundColor(colors.fg), Print(display_str))?;
+            // }
         }
     }
 

@@ -15,6 +15,120 @@ use crate::{address, compose, mail, net, ui};
 use crate::prompt::PromptExt;
 use crate::browser::BrowserExt;
 
+// use crossterm::style::Color;
+use std::io::Write;
+
+// Helper to colorize "Name <email>" strings dynamically, handling line breaks and truncation seamlessly
+fn print_colorized_emails(
+    stdout: &mut std::io::Stdout,
+    text: &str,
+    name_color: Color,
+    email_color: Color,
+    mut current_y: u16,
+    menu_bg: Color,
+    is_expanded: bool,
+    max_len: Option<usize> // <--- NEW PARAMETER
+) -> std::io::Result<u16> {
+    let mut tokens = Vec::new();
+    let mut current_idx = 0;
+
+    // 1. Parse the ENTIRE unwrapped string to lock in the colors
+    while let Some(start) = text[current_idx..].find('<') {
+        let absolute_start = current_idx + start;
+        let chunk = &text[current_idx..absolute_start];
+
+        let mut in_quotes = false;
+        let mut last_comma_idx = None;
+        for (i, c) in chunk.char_indices() {
+            if c == '"' { in_quotes = !in_quotes; }
+            if c == ',' && !in_quotes { last_comma_idx = Some(i); }
+        }
+
+        if let Some(comma_pos) = last_comma_idx {
+            let plain_emails_part = &chunk[..comma_pos + 1];
+            tokens.push((plain_emails_part.to_string(), email_color));
+            let name_part = &chunk[comma_pos + 1..];
+            tokens.push((name_part.to_string(), name_color));
+        } else {
+            tokens.push((chunk.to_string(), name_color));
+        }
+
+        if let Some(end) = text[absolute_start..].find('>') {
+            let absolute_end = absolute_start + end + 1;
+            let email_part = &text[absolute_start..absolute_end];
+            tokens.push((email_part.to_string(), email_color));
+            current_idx = absolute_end;
+        } else {
+            current_idx = absolute_start;
+            break;
+        }
+    }
+
+    if current_idx < text.len() {
+        tokens.push((text[current_idx..].to_string(), email_color));
+    }
+
+    // 2. Safely print the colored chunks, handling truncation dynamically
+    let total_chars: usize = tokens.iter().map(|(s, _)| s.chars().count()).sum();
+    let needs_truncation = max_len.map_or(false, |limit| total_chars > limit);
+    let mut chars_printed = 0;
+
+    for (text_chunk, color) in tokens {
+        crossterm::queue!(stdout, crossterm::style::SetForegroundColor(color))?;
+
+        if is_expanded {
+            let parts: Vec<&str> = text_chunk.split('\n').collect();
+            for (idx, part) in parts.iter().enumerate() {
+                if idx > 0 {
+                    current_y += 1;
+                    crossterm::queue!(
+                        stdout,
+                        crossterm::cursor::MoveTo(0, current_y),
+                        crossterm::style::SetBackgroundColor(menu_bg),
+                        crossterm::terminal::Clear(crossterm::terminal::ClearType::UntilNewLine),
+                        crossterm::cursor::MoveTo(9, current_y),
+                        crossterm::style::SetForegroundColor(color)
+                    )?;
+                }
+                crossterm::queue!(stdout, crossterm::style::Print(part))?;
+            }
+        } else {
+            // NEW: Token-aware truncation for unexpanded headers
+            if needs_truncation {
+                let limit = max_len.unwrap();
+                let safe_limit = limit.saturating_sub(3);
+
+                if chars_printed >= safe_limit {
+                    continue; // Skip remaining tokens, ellipsis is already printed
+                }
+
+                let chunk_chars = text_chunk.chars().count();
+                if chars_printed + chunk_chars > safe_limit {
+                    // This chunk crosses the boundary, print exactly what fits
+                    let allowed = safe_limit - chars_printed;
+                    let truncated: String = text_chunk.chars().take(allowed).collect();
+                    crossterm::queue!(stdout, crossterm::style::Print(truncated))?;
+
+                    // Immediately print the ellipsis in the fallback color
+                    crossterm::queue!(
+                        stdout,
+                        crossterm::style::SetForegroundColor(email_color),
+                        crossterm::style::Print("...")
+                    )?;
+                    chars_printed += safe_limit; // Max it out to stop future chunks
+                } else {
+                    crossterm::queue!(stdout, crossterm::style::Print(&text_chunk))?;
+                    chars_printed += chunk_chars;
+                }
+            } else {
+                crossterm::queue!(stdout, crossterm::style::Print(&text_chunk))?;
+            }
+        }
+    }
+
+    Ok(current_y)
+}
+
 pub fn view_email(
     app: &mut App,
     session: &mut Option<MailSession>,
@@ -92,14 +206,9 @@ pub fn view_email(
         let display_cc = crate::mail::clean_display_addresses(&email_cc);
 
         let fields = ["From:", "To:", "Cc:", "Subject:"];
-        let vals = [
-            display_from.as_str(),
-            display_to.as_str(),
-            display_cc.as_str(),
-            email_subject.as_str()
-        ];
+        let vals = [&email_from, &email_to, &email_cc, &email_subject];
 
-        let mut current_y = 1u16;
+        let mut current_y = 1;
 
         for i in 0..4 {
             let label = fields[i];
@@ -121,38 +230,55 @@ pub fn view_email(
                     SetForegroundColor(r_colors.accent),
                     Print(format!("{:>8}", label)),
                     SetForegroundColor(r_colors.fg),
-                    Print(" "),
-                    Print(display_val),
-                    Clear(ClearType::UntilNewLine)
+                    Print(" ")
                 ).unwrap();
+
+                if i < 3 {
+                    // Pass the FULL raw 'val', and let the helper truncate it!
+                    print_colorized_emails(stdout, val, r_colors.date_color, r_colors.fg, current_y, r_colors.menu_bg, false, Some(max_len)).unwrap();
+                } else {
+                    queue!(stdout, Print(display_val)).unwrap();
+                }
+
+                queue!(stdout, Clear(ClearType::UntilNewLine)).unwrap();
                 current_y += 1;
             } else {
                 // Expanded View: Wrap text across multiple lines
                 let wrap_width = (cols as usize).saturating_sub(10);
                 let wrapped_val = if val.is_empty() { String::new() } else { crate::mail::wrap_email_body(val, wrap_width) };
-                let lines: Vec<&str> = if wrapped_val.is_empty() { vec![""] } else { wrapped_val.lines().collect() };
 
-                for (line_idx, line) in lines.iter().enumerate() {
+                if i < 3 {
                     queue!(stdout, cursor::MoveTo(0, current_y), SetBackgroundColor(r_colors.menu_bg), Clear(ClearType::UntilNewLine)).unwrap();
+                    queue!(
+                        stdout, cursor::MoveTo(0, current_y),
+                        SetForegroundColor(r_colors.accent), Print(format!("{:>8}", label)),
+                        SetForegroundColor(r_colors.fg), Print(" ")
+                    ).unwrap();
 
-                    if line_idx == 0 {
-                        queue!(
-                            stdout, cursor::MoveTo(0, current_y),
-                            SetForegroundColor(r_colors.accent), Print(format!("{:>8}", label)),
-                            SetForegroundColor(r_colors.fg), Print(" "), Print(line)
-                        ).unwrap();
-                    } else {
-                        queue!(
-                            stdout, cursor::MoveTo(9, current_y),
-                            SetForegroundColor(r_colors.fg), Print(line)
-                        ).unwrap();
-                    }
+                    current_y = print_colorized_emails(stdout, &wrapped_val, r_colors.date_color, r_colors.fg, current_y, r_colors.menu_bg, true, None).unwrap();
                     current_y += 1;
+                } else {
+                    let lines: Vec<&str> = if wrapped_val.is_empty() { vec![""] } else { wrapped_val.lines().collect() };
+                    for (line_idx, line) in lines.iter().enumerate() {
+                        queue!(stdout, cursor::MoveTo(0, current_y), SetBackgroundColor(r_colors.menu_bg), Clear(ClearType::UntilNewLine)).unwrap();
+
+                        if line_idx == 0 {
+                            queue!(
+                                stdout, cursor::MoveTo(0, current_y),
+                                SetForegroundColor(r_colors.accent), Print(format!("{:>8}", label)),
+                                SetForegroundColor(r_colors.fg), Print(" "), Print(line)
+                            ).unwrap();
+                        } else {
+                            queue!(
+                                stdout, cursor::MoveTo(9, current_y),
+                                SetForegroundColor(r_colors.fg), Print(line)
+                            ).unwrap();
+                        }
+                        current_y += 1;
+                    }
                 }
             }
         }
-
-        // --- ATTACHMENTS SECTION ---
 
         if attachments.is_empty() {
             queue!(
@@ -732,7 +858,7 @@ pub fn view_email(
                         } else {
                             crate::mail::clean_display_addresses(&reply_to)
                         };
-                        
+
                         // apply the 'A' flag if compose_email sucessfully sends
                         if let Some(s) = compose::compose_email(
                             &app.active_account,
