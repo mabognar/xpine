@@ -808,12 +808,19 @@ fn handle_email_list_events(k: KeyEvent, app: &mut App, session: &mut Option<Mai
                         // Determine if Ctrl is pressed for Reply All
                         let is_reply_all = k.modifiers.contains(KeyModifiers::CONTROL);
 
-                        let raw_reply = if reply_to.trim().is_empty() {
-                            crate::mail::extract_email(&from)
+                        // let raw_reply = if reply_to.trim().is_empty() {
+                        //     crate::mail::extract_email(&from)
+                        // } else {
+                        //     crate::mail::extract_email(&reply_to)
+                        // };
+                        // If the Reply-To address is exactly the same as the From address,
+                        // use the From address so we keep the beautifully formatted name!
+                        let raw_reply = if reply_to.trim().is_empty() || crate::mail::extract_email(&reply_to) == crate::mail::extract_email(&from) {
+                            crate::mail::clean_display_addresses(&from)
                         } else {
-                            crate::mail::extract_email(&reply_to)
+                            crate::mail::clean_display_addresses(&reply_to)
                         };
-
+                        
                         let sub = if subject.to_lowercase().starts_with("re:") { subject.clone() } else { format!("Re: {}", subject) };
                         let reply_body = crate::mail::format_reply_text(&t_body, &date, &from);
 
@@ -1194,21 +1201,20 @@ fn handle_settings_events(k: KeyEvent, app: &mut App, theme_provider: &mut Edito
 
     match k.code {
         KeyCode::Up | KeyCode::Char('p') | KeyCode::Char('P') => selected_idx = selected_idx.saturating_sub(1),
-        KeyCode::Down | KeyCode::Char('n') | KeyCode::Char('N') => selected_idx = (selected_idx + 1).min(4),
+        KeyCode::Down | KeyCode::Char('n') | KeyCode::Char('N') => selected_idx = (selected_idx + 1).min(3),
         KeyCode::Left | KeyCode::Char('<') | KeyCode::Char('q') | KeyCode::Char('Q') | KeyCode::Char('s') | KeyCode::Char('S') => next_mode = Some(AppMode::MainMenu { selected_idx: 3 }),
         KeyCode::Char('x') | KeyCode::Char('X') | KeyCode::Right | KeyCode::Enter => {
-            if selected_idx == 0 { theme_provider.soft_wrap = !theme_provider.soft_wrap; theme_provider.save_settings(); }
-            else if selected_idx == 1 { theme_provider.show_line_numbers = !theme_provider.show_line_numbers; theme_provider.save_settings(); }
-            else if selected_idx == 2 {
+            if selected_idx == 0 { theme_provider.show_line_numbers = !theme_provider.show_line_numbers; theme_provider.save_settings(); }
+            else if selected_idx == 1 {
                 theme_provider.sort_newest_first = !theme_provider.sort_newest_first;
                 theme_provider.save_settings();
                 app.needs_fetch = true;
             }
-            else if selected_idx == 3 {
+            else if selected_idx == 2 {
                 theme_provider.spellcheck_before_send = !theme_provider.spellcheck_before_send;
                 theme_provider.save_settings();
             }
-            else if selected_idx == 4 {
+            else if selected_idx == 3 {
                 let current_sig = crate::config::load_signature();
                 let edit_result = theme_provider.edit_buffer("Edit Email Signature (leave blank for no signature)", &current_sig, crate::editor::MenuState::EmailComposer);
                 let _ = execute!(std::io::stdout(), crossterm::terminal::Clear(crossterm::terminal::ClearType::All));
@@ -1217,7 +1223,7 @@ fn handle_settings_events(k: KeyEvent, app: &mut App, theme_provider: &mut Edito
                 }
             }
         }
-        KeyCode::Char('w') | KeyCode::Char('W') => { theme_provider.soft_wrap = !theme_provider.soft_wrap; theme_provider.save_settings(); }
+        // KeyCode::Char('w') | KeyCode::Char('W') => { theme_provider.soft_wrap = !theme_provider.soft_wrap; theme_provider.save_settings(); }
         KeyCode::Char('l') | KeyCode::Char('L') => { theme_provider.show_line_numbers = !theme_provider.show_line_numbers; theme_provider.save_settings(); }
         KeyCode::Char('o') | KeyCode::Char('O') => {
             theme_provider.sort_newest_first = !theme_provider.sort_newest_first;

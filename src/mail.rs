@@ -215,26 +215,45 @@ pub fn build_reply_all_addresses(
 ) -> (String, String) {
     let mut to_addresses = Vec::new();
     let mut cc_addresses = Vec::new();
+    let mut seen_emails = Vec::new(); // Track raw emails to prevent duplicates
 
-    // Helper to extract and add unique addresses while ignoring self
+    // 1. Always add the original sender to the 'To' field FIRST
+    // Do this before the closure borrows `seen_emails`
+    let sender_extracted = extract_email(reply_to_or_from).to_lowercase();
+    seen_emails.push(sender_extracted);
+    to_addresses.push(clean_display_addresses(reply_to_or_from));
+
+    // NOW define the closure, which takes the mutable lock on seen_emails
     let mut add_addrs = |raw_list: &str, target_vec: &mut Vec<String>| {
-        for addr in raw_list.split(',') {
-            let trimmed = addr.trim();
-            if !trimmed.is_empty() {
-                // Ignore self
-                if !trimmed.to_lowercase().contains(&user_email.to_lowercase()) {
-                    let extracted = extract_email(trimmed);
-                    if !target_vec.contains(&extracted) {
-                        target_vec.push(extracted);
-                    }
-                }
+        // Safe split by commas, ignoring commas inside quotes
+        let mut current_addr = String::new();
+        let mut in_quotes = false;
+        let mut split_addrs = Vec::new();
+
+        for c in raw_list.chars() {
+            if c == '"' { in_quotes = !in_quotes; }
+            if c == ',' && !in_quotes {
+                split_addrs.push(current_addr.trim().to_string());
+                current_addr.clear();
+            } else {
+                current_addr.push(c);
+            }
+        }
+        if !current_addr.trim().is_empty() {
+            split_addrs.push(current_addr.trim().to_string());
+        }
+
+        for addr in split_addrs {
+            if addr.is_empty() { continue; }
+            let extracted = extract_email(&addr).to_lowercase();
+
+            // Ignore self and avoid duplicates
+            if !extracted.contains(&user_email.to_lowercase()) && !seen_emails.contains(&extracted) {
+                seen_emails.push(extracted);
+                target_vec.push(clean_display_addresses(&addr));
             }
         }
     };
-
-    // 1. Always add the original sender to the 'To' field
-    let sender_extracted = extract_email(reply_to_or_from);
-    to_addresses.push(sender_extracted.clone());
 
     // 2. Add other 'To' addresses to our 'To' field
     add_addrs(original_to, &mut to_addresses);
@@ -242,9 +261,52 @@ pub fn build_reply_all_addresses(
     // 3. Add 'Cc' addresses to our 'Cc' field
     add_addrs(original_cc, &mut cc_addresses);
 
-    // Remove the sender from CC if they accidentally got caught in it
-    cc_addresses.retain(|c| c != &sender_extracted);
-
     (to_addresses.join(", "), cc_addresses.join(", "))
+}
+
+pub fn clean_display_addresses(raw: &str) -> String {
+    if raw.is_empty() { return String::new(); }
+
+    let mut cleaned = Vec::new();
+    let mut current_addr = String::new();
+    let mut in_quotes = false;
+
+    // 1. Safely split by commas, ignoring commas inside quoted names
+    for c in raw.chars() {
+        if c == '"' {
+            in_quotes = !in_quotes;
+        }
+
+        if c == ',' && !in_quotes {
+            cleaned.push(current_addr.trim().to_string());
+            current_addr.clear();
+        } else {
+            current_addr.push(c);
+        }
+    }
+    if !current_addr.trim().is_empty() {
+        cleaned.push(current_addr.trim().to_string());
+    }
+
+    // 2. Process each address to remove redundant names
+    let processed: Vec<String> = cleaned.into_iter().map(|addr| {
+        if let Some(start) = addr.find('<') {
+            if let Some(end) = addr.find('>') {
+                // Strip quotes and spaces from the name portion
+                let name_part = addr[..start].trim().trim_matches('"').trim();
+                let email_part = addr[start + 1..end].trim();
+
+                // If name is blank OR name is exactly the same as the email address
+                if name_part.is_empty() || name_part.eq_ignore_ascii_case(email_part) {
+                    return email_part.to_string();
+                } else {
+                    return format!("{} <{}>", name_part, email_part);
+                }
+            }
+        }
+        addr
+    }).collect();
+
+    processed.join(", ")
 }
 

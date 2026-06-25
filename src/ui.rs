@@ -296,7 +296,7 @@ impl UiExt for Editor {
                 } else {
                     Self::draw_menu_line(
                         &mut stdout, rows - 2, cols, col_width,
-                        &[("P", " Scroll Up"), ("^R", " ReplyAll"), ("", ""), ("", ""), ("", ""), ("O", " Other (2/2)")],
+                        &[("P", " Scroll Up"), ("^R", " ReplyAll"), ("E", " ExpandHdr"), ("", ""), ("", ""), ("O", " Other (2/2)")],
                         ui_bg, menu_key_fg, menu_text_fg)?;
                     Self::draw_menu_line(
                         &mut stdout, rows - 1, cols, col_width,
@@ -987,7 +987,7 @@ fn draw_email_list(stdout: &mut std::io::Stdout, app: &App, cols: u16, rows: u16
                                &[("*", " Flag"), ("P", " Prev"), ("Y", " Prev Pg"), (" ^R", " ReplyAll"), ("M+T", " Theme"),   ("O", " Other (2/2)")],
                                colors.menu_bg, colors.accent, colors.fg)?;
         Editor::draw_menu_line(stdout, rows - 1, cols, r_col,
-                               &[("U", " (Un)Read"), ("N", " Next"), ("V", " Next Pg"), ("M+M", " Move To"), ("", ""), ("?", " Help")],
+                               &[("U", " (Un)Read"), ("N", " Next"), ("V", " Next Pg"), ("M+M", " Move To"), ("", ""), ("H", " Help")],
                                colors.menu_bg, colors.accent, colors.fg)?;
     }
 
@@ -1154,8 +1154,9 @@ fn draw_settings(stdout: &mut std::io::Stdout, cols: u16, rows: u16, theme_provi
     queue!(stdout, cursor::MoveTo(0, 0), SetBackgroundColor(colors.menu_bg), terminal::Clear(ClearType::CurrentLine), SetForegroundColor(colors.accent), Print("xpine - Settings"), SetBackgroundColor(colors.bg), SetForegroundColor(colors.fg))?;
 
     let options = [
-        ("    Soft Wrap", theme_provider.soft_wrap), ("    Show Line Numbers", theme_provider.show_line_numbers),
-        ("    Sort Newest First", theme_provider.sort_newest_first), ("    Spellcheck Before Sending", theme_provider.spellcheck_before_send),
+        ("    Show Line Numbers", theme_provider.show_line_numbers),
+        ("    Sort Newest First", theme_provider.sort_newest_first),
+        ("    Spellcheck Before Sending", theme_provider.spellcheck_before_send),
     ];
 
     for (i, (title, is_enabled)) in options.iter().enumerate() {

@@ -62,11 +62,13 @@ pub fn view_email(
     let mut date = app.page_emails[app.selected_index].date.clone();
     let mut fetch_seq = app.page_emails[app.selected_index].id.to_string();
 
+    let mut expand_headers = false;
+
     loop {
         let r_theme = &reader.theme_set.themes[&reader.current_theme];
         let r_colors = ui::derive_ui_colors(r_theme);
 
-        for i in 0..(5 + attach_lines) {
+        for i in 0..(reader.top_margin) {
             queue!(stdout, cursor::MoveTo(0, i as u16), SetBackgroundColor(r_colors.menu_bg), Clear(ClearType::UntilNewLine)).unwrap();
         }
 
@@ -84,60 +86,93 @@ pub fn view_email(
             ).unwrap();
         }
 
+        // Generate cleaned versions specifically for visual display
+        let display_from = crate::mail::clean_display_addresses(&email_from);
+        let display_to = crate::mail::clean_display_addresses(&email_to);
+        let display_cc = crate::mail::clean_display_addresses(&email_cc);
+
         let fields = ["From:", "To:", "Cc:", "Subject:"];
-        let vals = [&email_from, &email_to, &email_cc, &email_subject];
+        let vals = [
+            display_from.as_str(),
+            display_to.as_str(),
+            display_cc.as_str(),
+            email_subject.as_str()
+        ];
+
+        let mut current_y = 1u16;
 
         for i in 0..4 {
-            queue!(
-                stdout,
-                cursor::MoveTo(0, (i + 1) as u16),
-                SetBackgroundColor(r_colors.menu_bg),
-                SetForegroundColor(r_colors.accent),
-                Print(format!("{:>8}", fields[i])),
-                SetForegroundColor(r_colors.fg),
-                Print(" "),
-                Print(vals[i]),
-                Clear(ClearType::UntilNewLine)
-            ).unwrap();
+            let label = fields[i];
+            let val = vals[i];
+
+            if !expand_headers {
+                // Collapsed View: Truncate to available width
+                let max_len = (cols as usize).saturating_sub(10);
+                let display_val = if val.chars().count() > max_len {
+                    format!("{}...", &val.chars().take(max_len.saturating_sub(3)).collect::<String>())
+                } else {
+                    val.to_string()
+                };
+
+                queue!(
+                    stdout,
+                    cursor::MoveTo(0, current_y),
+                    SetBackgroundColor(r_colors.menu_bg),
+                    SetForegroundColor(r_colors.accent),
+                    Print(format!("{:>8}", label)),
+                    SetForegroundColor(r_colors.fg),
+                    Print(" "),
+                    Print(display_val),
+                    Clear(ClearType::UntilNewLine)
+                ).unwrap();
+                current_y += 1;
+            } else {
+                // Expanded View: Wrap text across multiple lines
+                let wrap_width = (cols as usize).saturating_sub(10);
+                let wrapped_val = if val.is_empty() { String::new() } else { crate::mail::wrap_email_body(val, wrap_width) };
+                let lines: Vec<&str> = if wrapped_val.is_empty() { vec![""] } else { wrapped_val.lines().collect() };
+
+                for (line_idx, line) in lines.iter().enumerate() {
+                    queue!(stdout, cursor::MoveTo(0, current_y), SetBackgroundColor(r_colors.menu_bg), Clear(ClearType::UntilNewLine)).unwrap();
+
+                    if line_idx == 0 {
+                        queue!(
+                            stdout, cursor::MoveTo(0, current_y),
+                            SetForegroundColor(r_colors.accent), Print(format!("{:>8}", label)),
+                            SetForegroundColor(r_colors.fg), Print(" "), Print(line)
+                        ).unwrap();
+                    } else {
+                        queue!(
+                            stdout, cursor::MoveTo(9, current_y),
+                            SetForegroundColor(r_colors.fg), Print(line)
+                        ).unwrap();
+                    }
+                    current_y += 1;
+                }
+            }
         }
 
-        queue!(
-            stdout,
-            cursor::MoveTo(0, 5),
-            SetBackgroundColor(r_colors.menu_bg),
-            SetForegroundColor(r_colors.accent),
-            Print(" Attach: "),
-            Clear(ClearType::UntilNewLine)
-        ).unwrap();
+        // --- ATTACHMENTS SECTION ---
 
         if attachments.is_empty() {
             queue!(
-                stdout,
-                cursor::MoveTo(0, 5),
-                SetBackgroundColor(r_colors.menu_bg),
-                SetForegroundColor(r_colors.accent),
-                Print(" Attach: "),
-                SetForegroundColor(if r_colors.is_dark { Color::DarkGrey } else { Color::Grey }),
-                Print("None"),
+                stdout, cursor::MoveTo(0, current_y),
+                SetBackgroundColor(r_colors.menu_bg), SetForegroundColor(r_colors.accent), Print(" Attach: "),
+                SetForegroundColor(if r_colors.is_dark { Color::DarkGrey } else { Color::Grey }), Print("None"),
                 Clear(ClearType::UntilNewLine)
             ).unwrap();
+            current_y += 1;
         } else {
             queue!(
-                stdout,
-                cursor::MoveTo(0, 5),
-                SetBackgroundColor(r_colors.menu_bg),
-                SetForegroundColor(r_colors.accent),
-                Print(" Attach: "),
+                stdout, cursor::MoveTo(0, current_y),
+                SetBackgroundColor(r_colors.menu_bg), SetForegroundColor(r_colors.accent), Print(" Attach: "),
                 SetForegroundColor(if r_colors.is_dark { Color::DarkGrey } else { Color::Grey }),
-                Print("'1' to open, 'Meta+1' (ALT+1) to save, 'Meta+0' to save all"),
+                Print("'1' to open, 'Meta+1' to save, 'Meta+0' to save all"),
                 Clear(ClearType::UntilNewLine)
             ).unwrap();
+            current_y += 1;
 
-            let att_color = if r_colors.is_dark {
-                Color::Rgb { r: 255, g: 80, b: 80 }
-            } else {
-                Color::Rgb { r: 220, g: 0, b: 0 }
-            };
+            let att_color = if r_colors.is_dark { Color::Rgb { r: 255, g: 80, b: 80 } } else { Color::Rgb { r: 220, g: 0, b: 0 } };
 
             for (i, (n, data)) in attachments.iter().enumerate() {
                 let size_kb = (data.len() as f32 / 1024.0).max(1.0);
@@ -145,17 +180,164 @@ pub fn view_email(
                 let att_str = format!("         {}. {} ({})", i + 1, n, size_str);
 
                 queue!(
-                    stdout,
-                    cursor::MoveTo(0, (6 + i) as u16),
-                    SetBackgroundColor(r_colors.menu_bg),
-                    SetForegroundColor(att_color),
-                    Print(att_str),
-                    Clear(ClearType::UntilNewLine)
+                    stdout, cursor::MoveTo(0, current_y),
+                    SetBackgroundColor(r_colors.menu_bg), SetForegroundColor(att_color),
+                    Print(att_str), Clear(ClearType::UntilNewLine)
                 ).unwrap();
+                current_y += 1;
             }
         }
 
         queue!(stdout, ResetColor).unwrap();
+
+        // Dynamically tell the text editor where the email body starts
+        reader.top_margin = current_y;
+
+        // let fields = ["From:", "To:", "Cc:", "Subject:"];
+        // let vals = [&email_from, &email_to, &email_cc, &email_subject];
+        //
+        // let mut current_y = 1;
+        //
+        // for i in 0..4 {
+        //     let label = fields[i];
+        //     let val = vals[i];
+        //
+        //     if !expand_headers {
+        //         // Collapsed View: Truncate to available width
+        //         let max_len = (cols as usize).saturating_sub(10);
+        //         let display_val = if val.chars().count() > max_len {
+        //             format!("{}...", &val.chars().take(max_len.saturating_sub(3)).collect::<String>())
+        //         } else {
+        //             val.to_string()
+        //         };
+        //
+        //         queue!(
+        //             stdout,
+        //             cursor::MoveTo(0, current_y),
+        //             SetBackgroundColor(r_colors.menu_bg),
+        //             SetForegroundColor(r_colors.accent),
+        //             Print(format!("{:>8}", label)),
+        //             SetForegroundColor(r_colors.fg),
+        //             Print(" "),
+        //             Print(display_val),
+        //             Clear(ClearType::UntilNewLine)
+        //         ).unwrap();
+        //         current_y += 1;
+        //     } else {
+        //         // Expanded View: Wrap text across multiple lines
+        //         let wrap_width = (cols as usize).saturating_sub(10);
+        //         let wrapped_val = if val.is_empty() { String::new() } else { crate::mail::wrap_email_body(val, wrap_width) };
+        //         let lines: Vec<&str> = if wrapped_val.is_empty() { vec![""] } else { wrapped_val.lines().collect() };
+        //
+        //         for (line_idx, line) in lines.iter().enumerate() {
+        //             queue!(stdout, cursor::MoveTo(0, current_y), SetBackgroundColor(r_colors.menu_bg), Clear(ClearType::UntilNewLine)).unwrap();
+        //
+        //             if line_idx == 0 {
+        //                 queue!(
+        //                     stdout, cursor::MoveTo(0, current_y),
+        //                     SetForegroundColor(r_colors.accent), Print(format!("{:>8}", label)),
+        //                     SetForegroundColor(r_colors.fg), Print(" "), Print(line)
+        //                 ).unwrap();
+        //             } else {
+        //                 queue!(
+        //                     stdout, cursor::MoveTo(9, current_y),
+        //                     SetForegroundColor(r_colors.fg), Print(line)
+        //                 ).unwrap();
+        //             }
+        //             current_y += 1;
+        //         }
+        //     }
+        // }
+        //
+        // queue!(
+        //     stdout, cursor::MoveTo(0, current_y),
+        //     SetBackgroundColor(r_colors.menu_bg), SetForegroundColor(r_colors.accent),
+        //     Print(" Attach: "), Clear(ClearType::UntilNewLine)
+        // ).unwrap();
+        //
+        // if attachments.is_empty() {
+        //     queue!(
+        //         stdout, cursor::MoveTo(0, current_y),
+        //         SetBackgroundColor(r_colors.menu_bg), SetForegroundColor(r_colors.accent), Print(" Attach: "),
+        //         SetForegroundColor(if r_colors.is_dark { Color::DarkGrey } else { Color::Grey }), Print("None"),
+        //         Clear(ClearType::UntilNewLine)
+        //     ).unwrap();
+        //     current_y += 1;
+        // } else {
+        //     queue!(
+        //         stdout, cursor::MoveTo(0, current_y),
+        //         SetBackgroundColor(r_colors.menu_bg), SetForegroundColor(r_colors.accent), Print(" Attach: "),
+        //         SetForegroundColor(if r_colors.is_dark { Color::DarkGrey } else { Color::Grey }),
+        //         Print("'1' to open, 'Meta+1' to save, 'Meta+0' to save all"),
+        //         Clear(ClearType::UntilNewLine)
+        //     ).unwrap();
+        //     current_y += 1;
+        //
+        //     let att_color = if r_colors.is_dark { Color::Rgb { r: 255, g: 80, b: 80 } } else { Color::Rgb { r: 220, g: 0, b: 0 } };
+        //
+        //     for (i, (n, data)) in attachments.iter().enumerate() {
+        //         let size_kb = (data.len() as f32 / 1024.0).max(1.0);
+        //         let size_str = if size_kb < 1024.0 { format!("{:.0}K", size_kb) } else { format!("{:.1}M", size_kb / 1024.0) };
+        //         let att_str = format!("         {}. {} ({})", i + 1, n, size_str);
+        //
+        //         queue!(
+        //             stdout, cursor::MoveTo(0, current_y),
+        //             SetBackgroundColor(r_colors.menu_bg), SetForegroundColor(att_color),
+        //             Print(att_str), Clear(ClearType::UntilNewLine)
+        //         ).unwrap();
+        //         current_y += 1;
+        //     }
+        // }
+        //
+        // // IMPORTANT: Tell the text editor where the body starts so it scrolls correctly
+        // reader.top_margin = current_y;
+        //
+        // if attachments.is_empty() {
+        //     queue!(
+        //         stdout,
+        //         cursor::MoveTo(0, 5),
+        //         SetBackgroundColor(r_colors.menu_bg),
+        //         SetForegroundColor(r_colors.accent),
+        //         Print(" Attach: "),
+        //         SetForegroundColor(if r_colors.is_dark { Color::DarkGrey } else { Color::Grey }),
+        //         Print("None"),
+        //         Clear(ClearType::UntilNewLine)
+        //     ).unwrap();
+        // } else {
+        //     queue!(
+        //         stdout,
+        //         cursor::MoveTo(0, 5),
+        //         SetBackgroundColor(r_colors.menu_bg),
+        //         SetForegroundColor(r_colors.accent),
+        //         Print(" Attach: "),
+        //         SetForegroundColor(if r_colors.is_dark { Color::DarkGrey } else { Color::Grey }),
+        //         Print("'1' to open, 'Meta+1' (ALT+1) to save, 'Meta+0' to save all"),
+        //         Clear(ClearType::UntilNewLine)
+        //     ).unwrap();
+        //
+        //     let att_color = if r_colors.is_dark {
+        //         Color::Rgb { r: 255, g: 80, b: 80 }
+        //     } else {
+        //         Color::Rgb { r: 220, g: 0, b: 0 }
+        //     };
+        //
+        //     for (i, (n, data)) in attachments.iter().enumerate() {
+        //         let size_kb = (data.len() as f32 / 1024.0).max(1.0);
+        //         let size_str = if size_kb < 1024.0 { format!("{:.0}K", size_kb) } else { format!("{:.1}M", size_kb / 1024.0) };
+        //         let att_str = format!("         {}. {} ({})", i + 1, n, size_str);
+        //
+        //         queue!(
+        //             stdout,
+        //             cursor::MoveTo(0, (6 + i) as u16),
+        //             SetBackgroundColor(r_colors.menu_bg),
+        //             SetForegroundColor(att_color),
+        //             Print(att_str),
+        //             Clear(ClearType::UntilNewLine)
+        //         ).unwrap();
+        //     }
+        // }
+        //
+        // queue!(stdout, ResetColor).unwrap();
 
         reader.draw_screen().unwrap();
 
@@ -183,7 +365,12 @@ pub fn view_email(
                         // NEW: Handle ^R (Reply All) inside the reader
                         let reply_body = mail::format_reply_text(&text_body, &date, &email_from);
                         let sub = if email_subject.to_lowercase().starts_with("re:") { email_subject.clone() } else { format!("Re: {}", email_subject) };
-                        let raw_reply = if reply_to.trim().is_empty() { mail::extract_email(&email_from) } else { mail::extract_email(&reply_to) };
+                        // let raw_reply = if reply_to.trim().is_empty() { mail::clean_display_addresses(&email_from) } else { mail::clean_display_addresses(&reply_to) };
+                        let raw_reply = if reply_to.trim().is_empty() || crate::mail::extract_email(&reply_to) == crate::mail::extract_email(&email_from) {
+                            crate::mail::clean_display_addresses(&email_from)
+                        } else {
+                            crate::mail::clean_display_addresses(&reply_to)
+                        };
 
                         let (all_to, all_cc) = mail::build_reply_all_addresses(&active_email, &raw_reply, &email_to, &email_cc);
 
@@ -483,6 +670,16 @@ pub fn view_email(
                         continue;
                     }
 
+                    if key.code == event::KeyCode::Char('e') || key.code == event::KeyCode::Char('E') {
+                        expand_headers = !expand_headers;
+                        let status = if expand_headers { "Headers expanded" } else { "Headers collapsed" };
+                        reader.set_status(status.to_string());
+
+                        // Clear the screen so the editor redraws cleanly at its new top_margin
+                        queue!(stdout, Clear(ClearType::All)).unwrap();
+                        continue;
+                    }
+
                     if key.code == event::KeyCode::Char('a') || key.code == event::KeyCode::Char('A') {
                         let combined_addrs = format!("{}, {}, {}", email_from, email_to, email_cc);
 
@@ -524,12 +721,18 @@ pub fn view_email(
                             format!("Re: {}", email_subject)
                         };
 
-                        let raw_reply = if reply_to.trim().is_empty() {
-                            mail::extract_email(&email_from)
-                        } else {
-                            mail::extract_email(&reply_to)
-                        };
+                        // let raw_reply = if reply_to.trim().is_empty() {
+                        //     mail::extract_email(&email_from)
+                        // } else {
+                        //     mail::extract_email(&reply_to)
+                        // };
 
+                        let raw_reply = if reply_to.trim().is_empty() || crate::mail::extract_email(&reply_to) == crate::mail::extract_email(&email_from) {
+                            crate::mail::clean_display_addresses(&email_from)
+                        } else {
+                            crate::mail::clean_display_addresses(&reply_to)
+                        };
+                        
                         // apply the 'A' flag if compose_email sucessfully sends
                         if let Some(s) = compose::compose_email(
                             &app.active_account,
