@@ -18,7 +18,7 @@ use crate::browser::BrowserExt;
 // use crossterm::style::Color;
 use std::io::Write;
 
-// Helper to colorize "Name <email>" strings dynamically, handling line breaks and truncation seamlessly
+// Colorize "Name <email>" strings
 fn print_colorized_emails(
     stdout: &mut std::io::Stdout,
     text: &str,
@@ -32,7 +32,7 @@ fn print_colorized_emails(
     let mut tokens = Vec::new();
     let mut current_idx = 0;
 
-    // 1. Parse the ENTIRE unwrapped string to lock in the colors
+    // Parse entire unwrapped string and colorize
     while let Some(start) = text[current_idx..].find('<') {
         let absolute_start = current_idx + start;
         let chunk = &text[current_idx..absolute_start];
@@ -68,7 +68,7 @@ fn print_colorized_emails(
         tokens.push((text[current_idx..].to_string(), email_color));
     }
 
-    // 2. Safely print the colored chunks, handling truncation dynamically
+    // Print colored chunks
     let total_chars: usize = tokens.iter().map(|(s, _)| s.chars().count()).sum();
     let needs_truncation = max_len.map_or(false, |limit| total_chars > limit);
     let mut chars_printed = 0;
@@ -93,7 +93,6 @@ fn print_colorized_emails(
                 crossterm::queue!(stdout, crossterm::style::Print(part))?;
             }
         } else {
-            // NEW: Token-aware truncation for unexpanded headers
             if needs_truncation {
                 let limit = max_len.unwrap();
                 let safe_limit = limit.saturating_sub(3);
@@ -104,12 +103,12 @@ fn print_colorized_emails(
 
                 let chunk_chars = text_chunk.chars().count();
                 if chars_printed + chunk_chars > safe_limit {
-                    // This chunk crosses the boundary, print exactly what fits
+                    // Chunk crosses boundary, print what fits
                     let allowed = safe_limit - chars_printed;
                     let truncated: String = text_chunk.chars().take(allowed).collect();
                     crossterm::queue!(stdout, crossterm::style::Print(truncated))?;
 
-                    // Immediately print the ellipsis in the fallback color
+                    // Print the ellipsis
                     crossterm::queue!(
                         stdout,
                         crossterm::style::SetForegroundColor(email_color),
@@ -284,7 +283,7 @@ pub fn view_email(
             queue!(
                 stdout, cursor::MoveTo(0, current_y),
                 SetBackgroundColor(r_colors.menu_bg), SetForegroundColor(r_colors.accent), Print(" Attach: "),
-                SetForegroundColor(if r_colors.is_dark { Color::DarkGrey } else { Color::Grey }), Print("None"),
+                SetForegroundColor(if r_colors.is_dark { r_colors.date_color } else { r_colors.date_color }), Print("None"),
                 Clear(ClearType::UntilNewLine)
             ).unwrap();
             current_y += 1;
@@ -292,7 +291,7 @@ pub fn view_email(
             queue!(
                 stdout, cursor::MoveTo(0, current_y),
                 SetBackgroundColor(r_colors.menu_bg), SetForegroundColor(r_colors.accent), Print(" Attach: "),
-                SetForegroundColor(if r_colors.is_dark { Color::DarkGrey } else { Color::Grey }),
+                SetForegroundColor(if r_colors.is_dark { r_colors.date_color } else { r_colors.date_color }),
                 Print("'1' to open, 'Meta+1' to save, 'Meta+0' to save all"),
                 Clear(ClearType::UntilNewLine)
             ).unwrap();
