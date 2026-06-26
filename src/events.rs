@@ -81,7 +81,7 @@ fn handle_address_book_events(k: KeyEvent, app: &mut App, theme_provider: &mut E
     match k.code {
         KeyCode::Up | KeyCode::Char('p') | KeyCode::Char('P') => selected_idx = selected_idx.saturating_sub(1),
         KeyCode::Down  | KeyCode::Char('n') | KeyCode::Char('N') => if selected_idx + 1 < addresses.len() { selected_idx += 1; },
-        KeyCode::Char('<') | KeyCode::Left | KeyCode::Esc => next_mode = Some(AppMode::MainMenu { selected_idx: 1 }),
+        KeyCode::Char('<') | KeyCode::Left | KeyCode::Esc | KeyCode::Char('m') | KeyCode::Char('M') => next_mode = Some(AppMode::MainMenu { selected_idx: 1 }),
         KeyCode::Char('d') | KeyCode::Char('D') => {
             if !addresses.is_empty() {
                 let current_val = addresses[selected_idx].clone();
@@ -1298,7 +1298,7 @@ fn handle_settings_events(k: KeyEvent, app: &mut App, theme_provider: &mut Edito
     match k.code {
         KeyCode::Up | KeyCode::Char('p') | KeyCode::Char('P') => selected_idx = selected_idx.saturating_sub(1),
         KeyCode::Down | KeyCode::Char('n') | KeyCode::Char('N') => selected_idx = (selected_idx + 1).min(3),
-        KeyCode::Left | KeyCode::Char('<') | KeyCode::Char('q') | KeyCode::Char('Q') | KeyCode::Char('s') | KeyCode::Char('S') => next_mode = Some(AppMode::MainMenu { selected_idx: 3 }),
+        KeyCode::Left | KeyCode::Char('<') | KeyCode::Esc | KeyCode::Char('m') | KeyCode::Char('M') => next_mode = Some(AppMode::MainMenu { selected_idx: 3 }),
         KeyCode::Char('x') | KeyCode::Char('X') | KeyCode::Right | KeyCode::Enter => {
             if selected_idx == 0 {
                 theme_provider.sort_newest_first = !theme_provider.sort_newest_first;

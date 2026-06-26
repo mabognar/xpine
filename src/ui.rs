@@ -496,7 +496,7 @@ impl UiExt for Editor {
                 Cmd1("P, Up", "Move up"),
                 Cmd1("N, Down", "Move down"),
                 Cmd1("Y, -, PgUp", "Page Up"),
-                Cmd1("V, Space, PgDn", "Page Down"),
+                Cmd1("V, Spc, PgDn", "Page Down"),
                 Cmd1("<, Left, Esc", "Return to the Main Menu"),
                 Blank,
                 Header("ACTIONS"),
@@ -521,14 +521,28 @@ impl UiExt for Editor {
                 Text("Configure standard IMAP and Microsoft Graph API accounts."),
                 Blank,
                 Header("NAVIGATION:"),
-                Cmd1("Up/Down or P/N", "Move cursor up and down"),
+                Cmd1("P, Up", "Move cursor up"),
+                Cmd1("N, Down", "Move cursor down"),
                 Cmd1("<", "Return to the Main Menu"),
                 Blank,
                 Header("ACTIONS:"),
                 Cmd1("A", "Add a new email account"),
-                Cmd1("E", "Edit the currently selected account"),
+                Cmd1("", "You will be presented with 4 account types."),
+                Cmd1("", "   1. Microsoft Graph API account (Exchange, Outlook, "),
+                Cmd1("", "      Hotmail) with OAuth 2.0 modern authentication"),
+                Cmd1("", "   2. Google Gmail account with OAuth 2.0 "),
+                Cmd1("", "      modern authentication"),
+                Cmd1("", "   3. Google Gmail account with Application "),
+                Cmd1("", "      Password (generate online - enter app "),
+                Cmd1("", "      password WITHOUT spaces)"),
+                Cmd1("", "   4. Basic IMAP, Legacy account using password access"),
+                Cmd1("", "Note: Some employers/schools restrict access of 3rd"),
+                Cmd1("", "      party email applications with Microsoft accounts - "),
+                Cmd1("", "      ask your administrator to allow xpine "),
+                Cmd1("", "Note: Yahoo requires application passwords - generate"),
+                Cmd1("", "      online and use \"Basic IMAP\" when adding "),
+                Cmd1("", "      account"),
                 Cmd1("D", "Delete the currently selected account"),
-                Cmd1("M", "Trigger Microsoft OAuth2 login flow"),
             ],
             "folders_list" => vec![
                 Title("xpine - Folders List Help"),
@@ -817,7 +831,7 @@ fn draw_address_book(stdout: &mut std::io::Stdout, cols: u16, rows: u16, theme_p
                            &[("<", " Back"), ("P", " Prev"), ("  Y", " Prev Pg"), ("A", " Add Email"), ("E", " Edit"), ("I", " Import")],
                            colors.menu_bg, colors.accent, colors.fg)?;
     Editor::draw_menu_line(stdout, rows - 1, cols, m_col,
-                           &[("", ""), ("N", " Next"), ("Spc", " Next Pg"), ("T", " Add Team"), ("D", " Delete"), ("H", " Help")],
+                           &[("M", " Main Menu"), ("N", " Next"), ("Spc", " Next Pg"), ("T", " Add Team"), ("D", " Delete"), ("H", " Help")],
                            colors.menu_bg, colors.accent, colors.fg)?;
 
     queue!(stdout, cursor::Hide)?;
@@ -1005,7 +1019,7 @@ fn draw_email_list(stdout: &mut std::io::Stdout, app: &App, cols: u16, rows: u16
                                &[("",""), ("^R", " ReplyAll"), ("P", " Prev"), ("Y", " Prev Pg"), ("M+T", " Theme"),   ("O", " Other (2/2)")],
                                colors.menu_bg, colors.accent, colors.fg)?;
         Editor::draw_menu_line(stdout, rows - 1, cols, r_col,
-                               &[(" Q", " Quit"), (" U", " (Un)Read"), ("N", " Next"), ("V", " Next Pg"), ("M+M", " Move To"), ("H", " Help")],
+                               &[(" Q", " Quit"), (" U", " Un-read"), ("N", " Next"), ("V", " Next Pg"), ("M+M", " Move To"), ("H", " Help")],
                                colors.menu_bg, colors.accent, colors.fg)?;
     }
 
@@ -1205,7 +1219,7 @@ fn draw_settings(stdout: &mut std::io::Stdout, cols: u16, rows: u16, theme_provi
                            &[("<", " Back"), ("P", " Prev"), ("     X", " Select"), ("", ""), ("", ""), ("", "")],
                            colors.menu_bg, colors.accent, colors.fg)?;
     Editor::draw_menu_line(stdout, rows - 1, cols, m_col,
-                           &[("", ""), ("N", " Next"), ("Meta+T", " Theme"), ("", ""), ("", ""), ("", "")],
+                           &[("M", " Main Menu"), ("N", " Next"), ("Meta+T", " Theme"), ("", ""), ("", ""), ("", "")],
                            colors.menu_bg, colors.accent, colors.fg)?;
     Ok(())
 }
