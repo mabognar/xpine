@@ -8,8 +8,8 @@ use crossterm::{
 };
 
 use crate::editor::Editor;
-use crate::ui::UiExt; // Needed for Self::draw_menu_line
-use crate::prompt::PromptExt; // Needed for self.prompt and self.prompt_edit
+use crate::ui::UiExt;
+use crate::prompt::PromptExt;
 use crate::theme::derive_ui_colors;
 
 pub trait BrowserExt {
@@ -18,7 +18,6 @@ pub trait BrowserExt {
 
 impl BrowserExt for Editor {
     fn run_file_browser(&mut self, is_saving: bool, default_filename: Option<&str>) -> io::Result<Option<String>> {
-        // ... PASTE your entire existing run_file_browser body here ...
         let mut current_dir = env::current_dir().unwrap_or_else(|_| PathBuf::from("/"));
         let mut selected_idx = 0;
         let mut scroll_offset = 0;

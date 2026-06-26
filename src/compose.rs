@@ -21,6 +21,7 @@ use crossterm::{
     style::{Color, Print, ResetColor, SetBackgroundColor, SetForegroundColor},
     terminal::{Clear, ClearType, size as term_size},
 };
+use crate::prompt::PromptExt;
 
 struct ComposeState {
     to: String,
@@ -253,8 +254,8 @@ pub fn compose_email(account: &Account, default_to: Option<&str>, default_cc: Op
 
         if state.active_idx < 4 {
             let m_col = (cols as usize / 6).max(1);
-            Editor::draw_menu_line(&mut stdout, rows - 2, cols, m_col, &[("^X", " Send"),   (" ^P", " Prev"), ("^A", " Attach"), ("^G", " Signature"), ("", "")], colors.menu_bg, colors.accent, colors.fg).unwrap();
-            Editor::draw_menu_line(&mut stdout, rows - 1, cols, m_col, &[("^C", " Cancel"), ("Tab", " Next"), ("", ""), ("", ""), ("", ""), ("", "")], colors.menu_bg, colors.accent, colors.fg).unwrap();
+            Editor::draw_menu_line(&mut stdout, rows - 2, cols, m_col, &[("^X", " Send"),   ("^P", " Prev"), ("^A", " Attach"), ("^G", " Signature"), ("", "")], colors.menu_bg, colors.accent, colors.fg).unwrap();
+            Editor::draw_menu_line(&mut stdout, rows - 1, cols, m_col, &[("^C", " Cancel"), ("^N", " Next"), ("", ""), ("", ""), ("", ""), ("", "")], colors.menu_bg, colors.accent, colors.fg).unwrap();
             queue!(stdout, cursor::Show).unwrap();
 
             queue!(stdout, cursor::MoveTo(active_cursor_x, active_cursor_y), cursor::Show).unwrap();
@@ -283,8 +284,11 @@ pub fn compose_email(account: &Account, default_to: Option<&str>, default_cc: Op
                             final_body = editor.buffer.to_string();
                             break;
                         }
+                        // if key_event.code == KeyCode::Char('c') {
+                        //     if crate::prompt::prompt_cancel(&mut stdout, &colors) { cancelled = true; break; } else { continue; }
+                        // }
                         if key_event.code == KeyCode::Char('c') {
-                            if crate::prompt::prompt_cancel(&mut stdout, &colors) { cancelled = true; break; } else { continue; }
+                            if let Ok(true) = editor.prompt_cancel() { cancelled = true; break; } else { continue; }
                         }
                         if key_event.code == KeyCode::Char('a') {
                             if let Ok(Some(path)) = editor.run_file_browser(false, None) { state.attachments.push(path); }
@@ -344,7 +348,8 @@ pub fn compose_email(account: &Account, default_to: Option<&str>, default_cc: Op
                                 final_body = editor.buffer.to_string();
                                 break;
                             }
-                            EditorResult::Cancel => { if crate::prompt::prompt_cancel(&mut stdout, &colors) { cancelled = true; break; } }
+                            // EditorResult::Cancel => { if crate::prompt::prompt_cancel(&mut stdout, &colors) { cancelled = true; break; } }
+                            EditorResult::Cancel => { if let Ok(true) = editor.prompt_cancel() { cancelled = true; break; } }
                             EditorResult::Continue => {}
                         }
                     } else {
@@ -506,8 +511,14 @@ pub fn compose_email(account: &Account, default_to: Option<&str>, default_cc: Op
     queue!(stdout, cursor::MoveTo(0, rows - 3), SetBackgroundColor(colors.selected_bg), Clear(ClearType::UntilNewLine), SetForegroundColor(colors.accent), Print("Sending message... Please wait "), ResetColor).unwrap();
     stdout.flush().unwrap();
 
+    let from_addr = if let Some(name) = &account.name {
+        format!("{} <{}>", name, account.email)
+    } else {
+        format!("<{}>", account.email)
+    };
+
     let mut builder = Message::builder()
-        .from(format!("<{}>", account.email).parse().unwrap())
+        .from(from_addr.parse().unwrap())
         .subject(state.subject);
 
     let parse_and_add = |mut b: lettre::message::MessageBuilder, input: &str, field_type: &str| -> lettre::message::MessageBuilder {

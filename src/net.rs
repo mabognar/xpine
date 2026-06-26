@@ -243,11 +243,8 @@ pub fn run_gmail_oauth_flow(email: &str) -> Result<(String, String, String), Str
         return Err("OAuth is currently only implemented for Gmail/Google accounts.".into());
     }
 
-    // IMPORTANT: You will need to replace these with credentials from the Google Cloud Console
-    let client_id = option_env!("XPINE_GOOGLE_CLIENT_ID")
-        .unwrap_or("YOUR_GOOGLE_CLIENT_ID")
-        .to_string();
-    let client_secret = option_env!("XPINE_GOOGLE_CLIENT_SECRET")
+    let client_id = "418710554237-pdjj24ncvldoicjd851u51dm5umlkui2.apps.googleusercontent.com".to_string();
+    let client_secret = option_env!("XPINE_GOOGLE_CLIENT_SECRET") // secret --- read from local machine
         .unwrap_or("YOUR_GOOGLE_CLIENT_SECRET")
         .to_string();
     let redirect_uri = "http://127.0.0.1:8080";
@@ -262,16 +259,16 @@ pub fn run_gmail_oauth_flow(email: &str) -> Result<(String, String, String), Str
     println!("   Opening default web browser for OAuth authentication...");
     println!("   If the browser does not open automatically, manually visit:\r\n\r\n{}\r\n", auth_url);
 
-    // Attempt to open the browser automatically using existing browser module
+    // open browser
     let _ = crate::browser::open_url(&auth_url);
 
-    // Start the local server to catch the browser redirect
+    // start local server to catch the browser redirect
     println!("   Listening for authorization code on {}...", redirect_uri);
     let listener = TcpListener::bind("127.0.0.1:8080").map_err(|e| format!("Failed to bind to port 8080: {}", e))?;
 
     let mut auth_code = String::new();
 
-    // Block and wait for a single connection (the browser redirecting back to us)
+    // wait for a single connection (browser redirect)
     for stream in listener.incoming() {
         match stream {
             Ok(mut stream) => {
@@ -312,7 +309,7 @@ pub fn run_gmail_oauth_flow(email: &str) -> Result<(String, String, String), Str
 
     println!("   Code received! Exchanging for tokens...");
 
-    // Exchange the short-lived code for a permanent refresh token
+    // exchange the temporary code for a permanent refresh token
     let client = reqwest::blocking::Client::new();
     let params = vec![
         ("client_id", client_id.as_str()),

@@ -1,10 +1,6 @@
 use crate::config::Account;
 use crate::mail::EmailMeta;
 use std::time::{Duration, Instant};
-// use std::collections::{HashMap, HashSet};
-use std::thread;
-use reqwest::header::USER_AGENT;
-use serde::Deserialize;
 use std::collections::HashSet;
 
 pub enum AppMode {
@@ -39,10 +35,10 @@ pub enum _BrowserAction {
     SaveEmail(String), // Holds the text_body to save
 }
 
-#[derive(Deserialize)]
-struct GithubRelease {
-    tag_name: String,
-}
+// #[derive(Deserialize)]
+// struct GithubRelease {
+//     tag_name: String,
+// }
 
 pub struct App {
     pub mode: AppMode,
@@ -76,6 +72,7 @@ impl App {
             (
                 Account {
                     email: String::new(),
+                    name: None,
                     password: None,
                     client_id: None,
                     client_secret: None,

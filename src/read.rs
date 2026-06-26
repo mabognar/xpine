@@ -15,10 +15,6 @@ use crate::{address, compose, mail, net, ui};
 use crate::prompt::PromptExt;
 use crate::browser::BrowserExt;
 
-// use crossterm::style::Color;
-use std::io::Write;
-
-// Colorize "Name <email>" strings
 fn print_colorized_emails(
     stdout: &mut std::io::Stdout,
     text: &str,
@@ -192,17 +188,12 @@ pub fn view_email(
         if app.page_emails[app.selected_index].is_deleted {
             queue!(
                 stdout,
-                cursor::MoveTo(cols.saturating_sub(9), 0),
+                cursor::MoveTo(cols.saturating_sub(8), 0),
                 SetBackgroundColor(Color::Red),
                 SetForegroundColor(r_colors.fg),
-                Print("[Deleted]")
+                Print("[Delete]")
             ).unwrap();
         }
-
-        // Generate cleaned versions specifically for visual display
-        let display_from = crate::mail::clean_display_addresses(&email_from);
-        let display_to = crate::mail::clean_display_addresses(&email_to);
-        let display_cc = crate::mail::clean_display_addresses(&email_cc);
 
         let fields = ["From:", "To:", "Cc:", "Subject:"];
         let vals = [&email_from, &email_to, &email_cc, &email_subject];
@@ -315,154 +306,8 @@ pub fn view_email(
 
         queue!(stdout, ResetColor).unwrap();
 
-        // Dynamically tell the text editor where the email body starts
+        // dynamically tell the text editor where the email body starts
         reader.top_margin = current_y;
-
-        // let fields = ["From:", "To:", "Cc:", "Subject:"];
-        // let vals = [&email_from, &email_to, &email_cc, &email_subject];
-        //
-        // let mut current_y = 1;
-        //
-        // for i in 0..4 {
-        //     let label = fields[i];
-        //     let val = vals[i];
-        //
-        //     if !expand_headers {
-        //         // Collapsed View: Truncate to available width
-        //         let max_len = (cols as usize).saturating_sub(10);
-        //         let display_val = if val.chars().count() > max_len {
-        //             format!("{}...", &val.chars().take(max_len.saturating_sub(3)).collect::<String>())
-        //         } else {
-        //             val.to_string()
-        //         };
-        //
-        //         queue!(
-        //             stdout,
-        //             cursor::MoveTo(0, current_y),
-        //             SetBackgroundColor(r_colors.menu_bg),
-        //             SetForegroundColor(r_colors.accent),
-        //             Print(format!("{:>8}", label)),
-        //             SetForegroundColor(r_colors.fg),
-        //             Print(" "),
-        //             Print(display_val),
-        //             Clear(ClearType::UntilNewLine)
-        //         ).unwrap();
-        //         current_y += 1;
-        //     } else {
-        //         // Expanded View: Wrap text across multiple lines
-        //         let wrap_width = (cols as usize).saturating_sub(10);
-        //         let wrapped_val = if val.is_empty() { String::new() } else { crate::mail::wrap_email_body(val, wrap_width) };
-        //         let lines: Vec<&str> = if wrapped_val.is_empty() { vec![""] } else { wrapped_val.lines().collect() };
-        //
-        //         for (line_idx, line) in lines.iter().enumerate() {
-        //             queue!(stdout, cursor::MoveTo(0, current_y), SetBackgroundColor(r_colors.menu_bg), Clear(ClearType::UntilNewLine)).unwrap();
-        //
-        //             if line_idx == 0 {
-        //                 queue!(
-        //                     stdout, cursor::MoveTo(0, current_y),
-        //                     SetForegroundColor(r_colors.accent), Print(format!("{:>8}", label)),
-        //                     SetForegroundColor(r_colors.fg), Print(" "), Print(line)
-        //                 ).unwrap();
-        //             } else {
-        //                 queue!(
-        //                     stdout, cursor::MoveTo(9, current_y),
-        //                     SetForegroundColor(r_colors.fg), Print(line)
-        //                 ).unwrap();
-        //             }
-        //             current_y += 1;
-        //         }
-        //     }
-        // }
-        //
-        // queue!(
-        //     stdout, cursor::MoveTo(0, current_y),
-        //     SetBackgroundColor(r_colors.menu_bg), SetForegroundColor(r_colors.accent),
-        //     Print(" Attach: "), Clear(ClearType::UntilNewLine)
-        // ).unwrap();
-        //
-        // if attachments.is_empty() {
-        //     queue!(
-        //         stdout, cursor::MoveTo(0, current_y),
-        //         SetBackgroundColor(r_colors.menu_bg), SetForegroundColor(r_colors.accent), Print(" Attach: "),
-        //         SetForegroundColor(if r_colors.is_dark { Color::DarkGrey } else { Color::Grey }), Print("None"),
-        //         Clear(ClearType::UntilNewLine)
-        //     ).unwrap();
-        //     current_y += 1;
-        // } else {
-        //     queue!(
-        //         stdout, cursor::MoveTo(0, current_y),
-        //         SetBackgroundColor(r_colors.menu_bg), SetForegroundColor(r_colors.accent), Print(" Attach: "),
-        //         SetForegroundColor(if r_colors.is_dark { Color::DarkGrey } else { Color::Grey }),
-        //         Print("'1' to open, 'Meta+1' to save, 'Meta+0' to save all"),
-        //         Clear(ClearType::UntilNewLine)
-        //     ).unwrap();
-        //     current_y += 1;
-        //
-        //     let att_color = if r_colors.is_dark { Color::Rgb { r: 255, g: 80, b: 80 } } else { Color::Rgb { r: 220, g: 0, b: 0 } };
-        //
-        //     for (i, (n, data)) in attachments.iter().enumerate() {
-        //         let size_kb = (data.len() as f32 / 1024.0).max(1.0);
-        //         let size_str = if size_kb < 1024.0 { format!("{:.0}K", size_kb) } else { format!("{:.1}M", size_kb / 1024.0) };
-        //         let att_str = format!("         {}. {} ({})", i + 1, n, size_str);
-        //
-        //         queue!(
-        //             stdout, cursor::MoveTo(0, current_y),
-        //             SetBackgroundColor(r_colors.menu_bg), SetForegroundColor(att_color),
-        //             Print(att_str), Clear(ClearType::UntilNewLine)
-        //         ).unwrap();
-        //         current_y += 1;
-        //     }
-        // }
-        //
-        // // IMPORTANT: Tell the text editor where the body starts so it scrolls correctly
-        // reader.top_margin = current_y;
-        //
-        // if attachments.is_empty() {
-        //     queue!(
-        //         stdout,
-        //         cursor::MoveTo(0, 5),
-        //         SetBackgroundColor(r_colors.menu_bg),
-        //         SetForegroundColor(r_colors.accent),
-        //         Print(" Attach: "),
-        //         SetForegroundColor(if r_colors.is_dark { Color::DarkGrey } else { Color::Grey }),
-        //         Print("None"),
-        //         Clear(ClearType::UntilNewLine)
-        //     ).unwrap();
-        // } else {
-        //     queue!(
-        //         stdout,
-        //         cursor::MoveTo(0, 5),
-        //         SetBackgroundColor(r_colors.menu_bg),
-        //         SetForegroundColor(r_colors.accent),
-        //         Print(" Attach: "),
-        //         SetForegroundColor(if r_colors.is_dark { Color::DarkGrey } else { Color::Grey }),
-        //         Print("'1' to open, 'Meta+1' (ALT+1) to save, 'Meta+0' to save all"),
-        //         Clear(ClearType::UntilNewLine)
-        //     ).unwrap();
-        //
-        //     let att_color = if r_colors.is_dark {
-        //         Color::Rgb { r: 255, g: 80, b: 80 }
-        //     } else {
-        //         Color::Rgb { r: 220, g: 0, b: 0 }
-        //     };
-        //
-        //     for (i, (n, data)) in attachments.iter().enumerate() {
-        //         let size_kb = (data.len() as f32 / 1024.0).max(1.0);
-        //         let size_str = if size_kb < 1024.0 { format!("{:.0}K", size_kb) } else { format!("{:.1}M", size_kb / 1024.0) };
-        //         let att_str = format!("         {}. {} ({})", i + 1, n, size_str);
-        //
-        //         queue!(
-        //             stdout,
-        //             cursor::MoveTo(0, (6 + i) as u16),
-        //             SetBackgroundColor(r_colors.menu_bg),
-        //             SetForegroundColor(att_color),
-        //             Print(att_str),
-        //             Clear(ClearType::UntilNewLine)
-        //         ).unwrap();
-        //     }
-        // }
-        //
-        // queue!(stdout, ResetColor).unwrap();
 
         reader.draw_screen().unwrap();
 
@@ -781,9 +626,9 @@ pub fn view_email(
                         }
 
                         let status_msg = if app.page_emails[app.selected_index].is_deleted {
-                            "Message marked for deletion."
+                            "Message marked for deletion"
                         } else {
-                            "Message unmarked for deletion."
+                            "Message un-marked for deletion"
                         };
                         reader.set_status(status_msg.to_string());
                         continue;
@@ -846,19 +691,13 @@ pub fn view_email(
                             format!("Re: {}", email_subject)
                         };
 
-                        // let raw_reply = if reply_to.trim().is_empty() {
-                        //     mail::extract_email(&email_from)
-                        // } else {
-                        //     mail::extract_email(&reply_to)
-                        // };
-
                         let raw_reply = if reply_to.trim().is_empty() || crate::mail::extract_email(&reply_to) == crate::mail::extract_email(&email_from) {
                             crate::mail::clean_display_addresses(&email_from)
                         } else {
                             crate::mail::clean_display_addresses(&reply_to)
                         };
 
-                        // apply the 'A' flag if compose_email sucessfully sends
+                        // apply the 'A' flag if compose_email successfully sends
                         if let Some(s) = compose::compose_email(
                             &app.active_account,
                             Some(&raw_reply),

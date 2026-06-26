@@ -68,6 +68,7 @@ pub struct UiColors {
 #[derive(Clone, Deserialize, Serialize)]
 pub struct Account {
     pub email: String,
+    pub name: Option<String>,
     #[serde(skip)]
     pub password: Option<String>,
     pub client_id: Option<String>,

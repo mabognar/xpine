@@ -338,156 +338,102 @@ fn handle_email_accounts_events(k: KeyEvent, app: &mut App, theme_provider: &mut
                 if let Ok(Some(email)) = theme_provider.prompt("Email: ", false) {
                     let email_lower = email.trim().to_lowercase();
 
-                    // OPTION 1: Microsoft Graph API
+                    // 1: Microsoft Graph API
                     if selection.starts_with('1') {
-                        let client_id = "014bd274-beed-47dd-afba-c2fc4f48ede0".to_string();
+                        if let Ok(Some(name_input)) = theme_provider.prompt_with_placeholder("Name: ", "None (enter name - no commas)") {
+                            let name_trimmed = name_input.trim();
+                            let final_name = if name_trimmed.is_empty() || name_trimmed.eq_ignore_ascii_case("none") {
+                                None
+                            } else {
+                                Some(name_trimmed.to_string())
+                            };
 
-                        let mut new_acc = crate::config::Account {
-                            email: email.trim().to_string(),
-                            password: None,
-                            client_id: Some(client_id.clone()),
-                            client_secret: Some("dummy_secret_do_not_remove".to_string()),
-                            refresh_token: None,
-                            imap_server: String::new(),
-                            imap_port: 0,
-                            smtp_server: String::new(),
-                            smtp_port: 0,
-                        };
+                            let client_id = "014bd274-beed-47dd-afba-c2fc4f48ede0".to_string();
 
-                        let _ = crossterm::terminal::disable_raw_mode();
-                        let _ = execute!(std::io::stdout(), crossterm::terminal::LeaveAlternateScreen);
+                            let mut new_acc = crate::config::Account {
+                                name: final_name, // <--- Name is mapped here
+                                email: email.trim().to_string(),
+                                password: None,
+                                client_id: Some(client_id.clone()),
+                                client_secret: Some("dummy_secret_do_not_remove".to_string()),
+                                refresh_token: None,
+                                imap_server: String::new(),
+                                imap_port: 0,
+                                smtp_server: String::new(),
+                                smtp_port: 0,
+                            };
 
-                        println!("Account Email: {}", new_acc.email);
-                        println!("Client ID being sent: '{}'", client_id);
+                            let _ = crossterm::terminal::disable_raw_mode();
+                            let _ = execute!(std::io::stdout(), crossterm::terminal::LeaveAlternateScreen);
 
-                        match net::run_microsoft_auth_flow(&client_id, "") {
-                            Ok(tokens) => {
-                                if let Some(refresh) = tokens.refresh_token {
-                                    new_acc.refresh_token = Some(refresh);
-                                    app.update_status("MS Auth Successful. Account added.".to_string());
-                                }
-                            },
-                            Err(e) => {
-                                println!("\r\nAuthentication Failed!");
-                                println!("Error details: {}\r\n", e);
-                                println!("Press ENTER to return to xpine...");
-                                let mut input = String::new();
-                                let _ = std::io::stdin().read_line(&mut input);
-                                app.update_status("MS Auth Failed. Account added without token.".to_string());
-                            }
-                        }
+                            println!("Account Email: {}", new_acc.email);
+                            println!("Client ID being sent: '{}'", client_id);
 
-                        let _ = crossterm::terminal::enable_raw_mode();
-                        let _ = execute!(
-                            std::io::stdout(),
-                            crossterm::terminal::EnterAlternateScreen,
-                            crossterm::terminal::Clear(crossterm::terminal::ClearType::All)
-                        );
-
-                        app.accounts.push(new_acc);
-                        crate::config::save_config(&app.accounts);
-
-                        app.current_account_idx = app.accounts.len() - 1;
-                        app.active_account = app.accounts[app.current_account_idx].clone();
-                        app.needs_reconnect = true;
-
-                        app.current_folder = "INBOX".to_string();
-                        app.graph_pending_deleted.clear();
-                        app.current_page = 0;
-                        app.restore_index_from_end = Some(0);
-                        selected_idx = app.current_account_idx;
-
-                    // OPTION 2: Gmail OAuth 2.0
-                    } else if selection.starts_with('2') {
-                        let defaults = crate::config::get_provider_defaults(&email);
-                        let default_imap = defaults.as_ref().map(|d| d.imap).unwrap_or("imap.gmail.com");
-
-                        if let Ok(Some(imap_server)) = theme_provider.prompt_edit("IMAP Server: ", default_imap) {
-                            let default_port = defaults.as_ref().map(|d| d.port.to_string()).unwrap_or("993".to_string());
-
-                            if let Ok(Some(imap_port)) = theme_provider.prompt_edit("IMAP Port: ", &default_port) {
-                                let default_smtp = defaults.as_ref().map(|d| d.smtp).unwrap_or("smtp.gmail.com");
-
-                                if let Ok(Some(smtp_server)) = theme_provider.prompt_edit("SMTP Server: ", default_smtp) {
-                                    if let Ok(Some(smtp_port)) = theme_provider.prompt_edit("SMTP Port: ", "587") {
-
-                                        let mut new_acc = crate::config::Account {
-                                            email: email.trim().to_string(),
-                                            password: None,
-                                            client_id: None,
-                                            client_secret: None,
-                                            refresh_token: None,
-                                            imap_server: imap_server.trim().to_string(),
-                                            imap_port: imap_port.trim().parse().unwrap_or(993),
-                                            smtp_server: smtp_server.trim().to_string(),
-                                            smtp_port: smtp_port.trim().parse().unwrap_or(587),
-                                        };
-
-                                        let _ = crossterm::terminal::disable_raw_mode();
-                                        let _ = execute!(std::io::stdout(), crossterm::terminal::LeaveAlternateScreen);
-
-                                        println!("Starting OAuth2 flow for {}...", new_acc.email);
-
-                                        match net::run_gmail_oauth_flow(&email_lower) {
-                                            Ok((client_id, secret, token)) => {
-                                                new_acc.client_id = Some(client_id);
-                                                new_acc.client_secret = Some(secret);
-                                                new_acc.refresh_token = Some(token);
-                                                app.update_status("OAuth Successful!".to_string());
-                                            },
-                                            Err(e) => {
-                                                println!("\r\nOAuth Failed: {}", e);
-                                                println!("Press ENTER to return to xpine...");
-                                                let mut input = String::new();
-                                                let _ = std::io::stdin().read_line(&mut input);
-                                                app.update_status("OAuth Failed.".to_string());
-                                            }
-                                        }
-
-                                        let _ = crossterm::terminal::enable_raw_mode();
-                                        let _ = execute!(
-                                            std::io::stdout(),
-                                            crossterm::terminal::EnterAlternateScreen,
-                                            crossterm::terminal::Clear(crossterm::terminal::ClearType::All)
-                                        );
-
-                                        app.accounts.push(new_acc);
-                                        crate::config::save_config(&app.accounts);
-
-                                        app.current_account_idx = app.accounts.len() - 1;
-                                        app.active_account = app.accounts[app.current_account_idx].clone();
-                                        app.needs_reconnect = true;
-
-                                        app.current_folder = "INBOX".to_string();
-                                        app.graph_pending_deleted.clear();
-                                        app.current_page = 0;
-                                        app.restore_index_from_end = Some(0);
-                                        selected_idx = app.current_account_idx;
+                            match net::run_microsoft_auth_flow(&client_id, "") {
+                                Ok(tokens) => {
+                                    if let Some(refresh) = tokens.refresh_token {
+                                        new_acc.refresh_token = Some(refresh);
+                                        app.update_status("MS Auth Successful. Account added.".to_string());
                                     }
+                                },
+                                Err(e) => {
+                                    println!("\r\nAuthentication Failed!");
+                                    println!("Error details: {}\r\n", e);
+                                    println!("Press ENTER to return to xpine...");
+                                    let mut input = String::new();
+                                    let _ = std::io::stdin().read_line(&mut input);
+                                    app.update_status("MS Auth Failed. Account added without token.".to_string());
                                 }
                             }
+
+                            let _ = crossterm::terminal::enable_raw_mode();
+                            let _ = execute!(
+                                std::io::stdout(),
+                                crossterm::terminal::EnterAlternateScreen,
+                                crossterm::terminal::Clear(crossterm::terminal::ClearType::All)
+                            );
+
+                            app.accounts.push(new_acc);
+                            crate::config::save_config(&app.accounts);
+
+                            app.current_account_idx = app.accounts.len() - 1;
+                            app.active_account = app.accounts[app.current_account_idx].clone();
+                            app.needs_reconnect = true;
+
+                            app.current_folder = "INBOX".to_string();
+                            app.graph_pending_deleted.clear();
+                            app.current_page = 0;
+                            app.restore_index_from_end = Some(0);
+                            selected_idx = app.current_account_idx;
                         }
 
-                    // OPTION 3 & 4: App Password or Basic IMAP
-                    } else if selection.starts_with('3') || selection.starts_with('4') {
-                        let pass_prompt = if selection.starts_with('3') { "App Password: " } else { "Password: " };
+                    // 2: Gmail OAuth 2.0
+                    } else if selection.starts_with('2') {
+                        // 1. PROMPT FOR THE NAME FIRST
+                        if let Ok(Some(name_input)) = theme_provider.prompt_with_placeholder("Name: ", "None (enter name -- no commas)") {
+                            let name_trimmed = name_input.trim();
+                            let final_name = if name_trimmed.is_empty() || name_trimmed.eq_ignore_ascii_case("none") {
+                                None
+                            } else {
+                                Some(name_trimmed.to_string())
+                            };
 
-                        if let Ok(Some(password)) = theme_provider.prompt(pass_prompt, false) {
+                            // 2. CONTINUE WITH THE EXISTING PROMPTS
                             let defaults = crate::config::get_provider_defaults(&email);
-                            let default_imap = defaults.as_ref().map(|d| d.imap).unwrap_or("imap.");
+                            let default_imap = defaults.as_ref().map(|d| d.imap).unwrap_or("imap.gmail.com");
 
                             if let Ok(Some(imap_server)) = theme_provider.prompt_edit("IMAP Server: ", default_imap) {
                                 let default_port = defaults.as_ref().map(|d| d.port.to_string()).unwrap_or("993".to_string());
 
                                 if let Ok(Some(imap_port)) = theme_provider.prompt_edit("IMAP Port: ", &default_port) {
-                                    let default_smtp = defaults.as_ref().map(|d| d.smtp).unwrap_or("smtp.");
+                                    let default_smtp = defaults.as_ref().map(|d| d.smtp).unwrap_or("smtp.gmail.com");
 
                                     if let Ok(Some(smtp_server)) = theme_provider.prompt_edit("SMTP Server: ", default_smtp) {
                                         if let Ok(Some(smtp_port)) = theme_provider.prompt_edit("SMTP Port: ", "587") {
-
-                                            let new_acc = crate::config::Account {
+                                            let mut new_acc = crate::config::Account {
+                                                name: final_name.clone(), // <--- Add the name here
                                                 email: email.trim().to_string(),
-                                                password: Some(password.trim().to_string()),
+                                                password: None,
                                                 client_id: None,
                                                 client_secret: None,
                                                 refresh_token: None,
@@ -496,6 +442,34 @@ fn handle_email_accounts_events(k: KeyEvent, app: &mut App, theme_provider: &mut
                                                 smtp_server: smtp_server.trim().to_string(),
                                                 smtp_port: smtp_port.trim().parse().unwrap_or(587),
                                             };
+
+                                            let _ = crossterm::terminal::disable_raw_mode();
+                                            let _ = execute!(std::io::stdout(), crossterm::terminal::LeaveAlternateScreen);
+
+                                            println!("Starting OAuth2 flow for {}...", new_acc.email);
+
+                                            match net::run_gmail_oauth_flow(&email_lower) {
+                                                Ok((client_id, secret, token)) => {
+                                                    new_acc.client_id = Some(client_id);
+                                                    new_acc.client_secret = Some(secret);
+                                                    new_acc.refresh_token = Some(token);
+                                                    app.update_status("OAuth Successful!".to_string());
+                                                },
+                                                Err(e) => {
+                                                    println!("\r\nOAuth Failed: {}", e);
+                                                    println!("Press ENTER to return to xpine...");
+                                                    let mut input = String::new();
+                                                    let _ = std::io::stdin().read_line(&mut input);
+                                                    app.update_status("OAuth Failed.".to_string());
+                                                }
+                                            }
+
+                                            let _ = crossterm::terminal::enable_raw_mode();
+                                            let _ = execute!(
+                                                std::io::stdout(),
+                                                crossterm::terminal::EnterAlternateScreen,
+                                                crossterm::terminal::Clear(crossterm::terminal::ClearType::All)
+                                            );
 
                                             app.accounts.push(new_acc);
                                             crate::config::save_config(&app.accounts);
@@ -514,7 +488,67 @@ fn handle_email_accounts_events(k: KeyEvent, app: &mut App, theme_provider: &mut
                                 }
                             }
                         }
+
+                    // 3 & 4: Gmail App Password or Basic IMAP
+                    } else if selection.starts_with('3') || selection.starts_with('4') {
+                        // name
+                        if let Ok(Some(name_input)) = theme_provider.prompt_with_placeholder("Name: ", "None (enter name - no commas)") {
+                            let name_trimmed = name_input.trim();
+                            let final_name = if name_trimmed.is_empty() || name_trimmed.eq_ignore_ascii_case("none") {
+                                None
+                            } else {
+                                Some(name_trimmed.to_string())
+                            };
+
+                            // password
+                            let pass_prompt = if selection.starts_with('3') { "App Password: " } else { "Password: " };
+
+                            if let Ok(Some(password)) = theme_provider.prompt(pass_prompt, false) {
+                                let defaults = crate::config::get_provider_defaults(&email);
+                                let default_imap = defaults.as_ref().map(|d| d.imap).unwrap_or("imap.");
+
+                                if let Ok(Some(imap_server)) = theme_provider.prompt_edit("IMAP Server: ", default_imap) {
+                                    let default_port = defaults.as_ref().map(|d| d.port.to_string()).unwrap_or("993".to_string());
+
+                                    if let Ok(Some(imap_port)) = theme_provider.prompt_edit("IMAP Port: ", &default_port) {
+                                        let default_smtp = defaults.as_ref().map(|d| d.smtp).unwrap_or("smtp.");
+
+                                        if let Ok(Some(smtp_server)) = theme_provider.prompt_edit("SMTP Server: ", default_smtp) {
+                                            if let Ok(Some(smtp_port)) = theme_provider.prompt_edit("SMTP Port: ", "587") {
+
+                                                let new_acc = crate::config::Account {
+                                                    name: final_name, // <--- Name is mapped here
+                                                    email: email.trim().to_string(),
+                                                    password: Some(password.trim().to_string()),
+                                                    client_id: None,
+                                                    client_secret: None,
+                                                    refresh_token: None,
+                                                    imap_server: imap_server.trim().to_string(),
+                                                    imap_port: imap_port.trim().parse().unwrap_or(993),
+                                                    smtp_server: smtp_server.trim().to_string(),
+                                                    smtp_port: smtp_port.trim().parse().unwrap_or(587),
+                                                };
+
+                                                app.accounts.push(new_acc);
+                                                crate::config::save_config(&app.accounts);
+
+                                                app.current_account_idx = app.accounts.len() - 1;
+                                                app.active_account = app.accounts[app.current_account_idx].clone();
+                                                app.needs_reconnect = true;
+
+                                                app.current_folder = "INBOX".to_string();
+                                                app.graph_pending_deleted.clear();
+                                                app.current_page = 0;
+                                                app.restore_index_from_end = Some(0);
+                                                selected_idx = app.current_account_idx;
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
                     }
+
                 }
             }
         }
@@ -874,16 +908,9 @@ fn handle_email_list_events(k: KeyEvent, app: &mut App, session: &mut Option<Mai
                         }
                     }
                     else {
-                        // Determine if Ctrl is pressed for Reply All
+                        // determine if Ctrl is pressed for Reply All
                         let is_reply_all = k.modifiers.contains(KeyModifiers::CONTROL);
 
-                        // let raw_reply = if reply_to.trim().is_empty() {
-                        //     crate::mail::extract_email(&from)
-                        // } else {
-                        //     crate::mail::extract_email(&reply_to)
-                        // };
-                        // If the Reply-To address is exactly the same as the From address,
-                        // use the From address so we keep the beautifully formatted name!
                         let raw_reply = if reply_to.trim().is_empty() || crate::mail::extract_email(&reply_to) == crate::mail::extract_email(&from) {
                             crate::mail::clean_display_addresses(&from)
                         } else {
@@ -893,7 +920,7 @@ fn handle_email_list_events(k: KeyEvent, app: &mut App, session: &mut Option<Mai
                         let sub = if subject.to_lowercase().starts_with("re:") { subject.clone() } else { format!("Re: {}", subject) };
                         let reply_body = crate::mail::format_reply_text(&t_body, &date, &from);
 
-                        // Generate appropriate TO and CC headers
+                        // generate TO and CC headers
                         let (final_to, final_cc) = if is_reply_all {
                             let (all_to, all_cc) = crate::mail::build_reply_all_addresses(&app.active_account.email, &raw_reply, &to_addr, &cc);
                             (all_to, Some(all_cc))
@@ -1053,7 +1080,7 @@ fn handle_folder_list_events(k: KeyEvent, app: &mut App, session: &mut Option<Ma
             }
         }
         KeyCode::Char('a') | KeyCode::Char('A') => {
-            // NEW: Only trigger the prompt if we are actually viewing folders (step != 0)
+            // only trigger prompt if we are viewing folders (i.e. step != 0)
             if step != 0 {
                 if let Ok(Some(folder_name)) = theme_provider.prompt("New Folder Name: ", false) {
                     let clean_name = folder_name.trim();
@@ -1273,14 +1300,17 @@ fn handle_settings_events(k: KeyEvent, app: &mut App, theme_provider: &mut Edito
         KeyCode::Down | KeyCode::Char('n') | KeyCode::Char('N') => selected_idx = (selected_idx + 1).min(3),
         KeyCode::Left | KeyCode::Char('<') | KeyCode::Char('q') | KeyCode::Char('Q') | KeyCode::Char('s') | KeyCode::Char('S') => next_mode = Some(AppMode::MainMenu { selected_idx: 3 }),
         KeyCode::Char('x') | KeyCode::Char('X') | KeyCode::Right | KeyCode::Enter => {
-            if selected_idx == 0 { theme_provider.show_line_numbers = !theme_provider.show_line_numbers; theme_provider.save_settings(); }
-            else if selected_idx == 1 {
+            if selected_idx == 0 {
                 theme_provider.sort_newest_first = !theme_provider.sort_newest_first;
                 theme_provider.save_settings();
                 app.needs_fetch = true;
             }
-            else if selected_idx == 2 {
+            else if selected_idx == 1 {
                 theme_provider.spellcheck_before_send = !theme_provider.spellcheck_before_send;
+                theme_provider.save_settings();
+            }
+            else if selected_idx == 2 {
+                theme_provider.show_line_numbers = !theme_provider.show_line_numbers;
                 theme_provider.save_settings();
             }
             else if selected_idx == 3 {
@@ -1292,7 +1322,6 @@ fn handle_settings_events(k: KeyEvent, app: &mut App, theme_provider: &mut Edito
                 }
             }
         }
-        // KeyCode::Char('w') | KeyCode::Char('W') => { theme_provider.soft_wrap = !theme_provider.soft_wrap; theme_provider.save_settings(); }
         KeyCode::Char('l') | KeyCode::Char('L') => { theme_provider.show_line_numbers = !theme_provider.show_line_numbers; theme_provider.save_settings(); }
         KeyCode::Char('o') | KeyCode::Char('O') => {
             theme_provider.sort_newest_first = !theme_provider.sort_newest_first;

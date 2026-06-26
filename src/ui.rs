@@ -265,24 +265,14 @@ impl UiExt for Editor {
                 } else {
                     Self::draw_menu_line(
                         &mut stdout, rows - 2, cols, col_width,
-                        &[("^R", " Read File"), ("^T", " To Spell"), ("", ""), ("", ""),  ("",""), ("^O", " Other 2/2")],
+                        &[("^R", " Read File"), (" ^T", " To Spell"), ("", ""), ("", ""),  ("",""), ("^O", " Other 2/2")],
                         ui_bg, menu_key_fg, menu_text_fg)?;
                     Self::draw_menu_line(
                         &mut stdout, rows - 1, cols, col_width,
-                        &[("^W", " Where is"), ("Alt-A", " Mark"), ("", ""), ("", ""), ("", ""), ("", "")],
+                        &[("^W", " Where is"), ("M+A", " Mark"), ("", ""), ("", ""), ("", ""), ("", "")],
                         ui_bg, menu_key_fg, menu_text_fg)?;
                 }
             }
-            // MenuState::EmailReader => {
-            //     Self::draw_menu_line(
-            //         &mut stdout, rows - 2, cols, col_width,
-            //         &[("<", " Back"), ("R", " Reply"), ("P", " Prev"), ("Y", " Prev Pg"), ("A", " Add Addr"), ("B"," Browser")],
-            //         ui_bg, menu_key_fg, menu_text_fg)?;
-            //     Self::draw_menu_line(
-            //         &mut stdout, rows - 1, cols, col_width,
-            //         &[("", ""), ("F", " Forward"), ("N", " Next"), ("V", " Next Pg"), ("S", " Save"), ("", "") ],
-            //         ui_bg, menu_key_fg, menu_text_fg)?;
-            // }
             MenuState::EmailReader => {
                 if self.menu_page == 1 {
                     Self::draw_menu_line(
@@ -511,12 +501,19 @@ impl UiExt for Editor {
                 Blank,
                 Header("ACTIONS"),
                 Cmd1("A", "Add a new email address"),
-                Cmd1("T", "Create a new Team (group distribution list)."),
+                Cmd1("T", "Create a new Team (group distribution list)"),
                 Cmd1("E", "Edit the currently selected entry"),
                 Cmd1("D", "Delete the currently selected entry"),
                 Cmd1("I", "Import email list from text file. Format: "),
                 Cmd1("", "   1. emails are separated by commas, or"),
                 Cmd1("", "   2. emails on separate lines"),
+                Cmd1("", "Each email must be formatted as:"),
+                Cmd1("", "   1. Full Name <useremail@example.com> "),
+                Cmd1("", "            ---> email with name - do not remove <>"),
+                Cmd1("", "   2. \"Full Name\" <useremail@example.com> "),
+                Cmd1("", "            ---> name in quotes - no not remove <>"),
+                Cmd1("", "   3. useremail@example.com"),
+                Cmd1("", "            ---> email with no name"),
             ],
             "email_accounts" => vec![
                 Title("xpine - Email Accounts Help"),
@@ -771,8 +768,12 @@ fn draw_address_book(stdout: &mut std::io::Stdout, cols: u16, rows: u16, theme_p
 
             // Check if this is a Team (contains a colon)
             if let Some((team_name, emails)) = display_str.split_once(':') {
-                // Calculate space taken by the padding, team name, and the colon
-                let prefix_len = padding.len() + team_name.chars().count() + 1;
+                // Count the number of members by splitting the emails by comma
+                let member_count = emails.split(',').filter(|e| !e.trim().is_empty()).count();
+                let team_name_with_count = format!("{} ({})", team_name, member_count);
+
+                // Calculate space taken by the padding, new team name, and the colon
+                let prefix_len = padding.len() + team_name_with_count.chars().count() + 1;
                 let available_len = (cols as usize).saturating_sub(prefix_len);
 
                 // If the emails run past the margin, truncate and add "..."
@@ -785,17 +786,15 @@ fn draw_address_book(stdout: &mut std::io::Stdout, cols: u16, rows: u16, theme_p
 
                 queue!(
                     stdout,
-                    SetForegroundColor(colors.accent), Print(team_name),
+                    SetForegroundColor(colors.accent), Print(team_name_with_count),
                     SetForegroundColor(colors.fg), Print(":"), Print(emails_display)
                 )?;
             } else {
-                // --- NEW: Split Name and Email for contrast ---
+                // colorize name
                 if let Some(start) = display_str.find('<') {
                     if let Some(_end) = display_str.find('>') {
                         let name_part = &display_str[..start]; // Captures "Matt Bognar "
                         let email_part = &display_str[start..]; // Captures "<statgod1@outlook.com>"
-
-                        let hint_color = if colors.is_dark { Color::DarkGrey } else { Color::Grey };
 
                         queue!(
                             stdout,
@@ -810,9 +809,6 @@ fn draw_address_book(stdout: &mut std::io::Stdout, cols: u16, rows: u16, theme_p
                     queue!(stdout, SetForegroundColor(colors.fg), Print(display_str))?;
                 }
             }
-            // } else {
-            //     queue!(stdout, SetForegroundColor(colors.fg), Print(display_str))?;
-            // }
         }
     }
 
@@ -821,7 +817,7 @@ fn draw_address_book(stdout: &mut std::io::Stdout, cols: u16, rows: u16, theme_p
                            &[("<", " Back"), ("P", " Prev"), ("  Y", " Prev Pg"), ("A", " Add Email"), ("E", " Edit"), ("I", " Import")],
                            colors.menu_bg, colors.accent, colors.fg)?;
     Editor::draw_menu_line(stdout, rows - 1, cols, m_col,
-                           &[("", ""), ("N", " Next"), ("Spc", " Next Pg"), ("T", " Team"), ("D", " Delete"), ("H", " Help")],
+                           &[("", ""), ("N", " Next"), ("Spc", " Next Pg"), ("T", " Add Team"), ("D", " Delete"), ("H", " Help")],
                            colors.menu_bg, colors.accent, colors.fg)?;
 
     queue!(stdout, cursor::Hide)?;
@@ -1002,14 +998,14 @@ fn draw_email_list(stdout: &mut std::io::Stdout, app: &App, cols: u16, rows: u16
                                &[("<", " Back"), (">", " View"), ("C", " Compose"), ("R", " Reply"),   ("D", " Delete"), ("O", " Other (1/2)")],
                                colors.menu_bg, colors.accent, colors.fg)?;
         Editor::draw_menu_line(stdout, rows - 1, cols, r_col,
-                               &[("Q", " Quit"), ("M", " Main Menu"), ("S", " Search"), ("F", " Forward"), ("X", " Expunge"), ("Tab", " Acct")],
+                               &[("M", " Main Menu"), ("*", " Flag"), ("S", " Search"), ("F", " Forward"), ("X", " Expunge"), ("Tab", " Acct")],
                                colors.menu_bg, colors.accent, colors.fg)?;
     } else {
         Editor::draw_menu_line(stdout, rows - 2, cols, r_col,
-                               &[("*", " Flag"), ("P", " Prev"), ("Y", " Prev Pg"), (" ^R", " ReplyAll"), ("M+T", " Theme"),   ("O", " Other (2/2)")],
+                               &[("",""), ("^R", " ReplyAll"), ("P", " Prev"), ("Y", " Prev Pg"), ("M+T", " Theme"),   ("O", " Other (2/2)")],
                                colors.menu_bg, colors.accent, colors.fg)?;
         Editor::draw_menu_line(stdout, rows - 1, cols, r_col,
-                               &[("U", " (Un)Read"), ("N", " Next"), ("V", " Next Pg"), ("M+M", " Move To"), ("", ""), ("H", " Help")],
+                               &[(" Q", " Quit"), (" U", " (Un)Read"), ("N", " Next"), ("V", " Next Pg"), ("M+M", " Move To"), ("H", " Help")],
                                colors.menu_bg, colors.accent, colors.fg)?;
     }
 
@@ -1176,9 +1172,9 @@ fn draw_settings(stdout: &mut std::io::Stdout, cols: u16, rows: u16, theme_provi
     queue!(stdout, cursor::MoveTo(0, 0), SetBackgroundColor(colors.menu_bg), terminal::Clear(ClearType::CurrentLine), SetForegroundColor(colors.accent), Print("xpine - Settings"), SetBackgroundColor(colors.bg), SetForegroundColor(colors.fg))?;
 
     let options = [
-        ("    Show Line Numbers", theme_provider.show_line_numbers),
         ("    Sort Newest First", theme_provider.sort_newest_first),
         ("    Spellcheck Before Sending", theme_provider.spellcheck_before_send),
+        ("    Show Line Numbers", theme_provider.show_line_numbers),
     ];
 
     for (i, (title, is_enabled)) in options.iter().enumerate() {
@@ -1198,7 +1194,6 @@ fn draw_settings(stdout: &mut std::io::Stdout, cols: u16, rows: u16, theme_provi
     queue!(stdout, Print(" [>]     Edit Email Signature               "), ResetColor)?;
     // -----------------------------
 
-    // Shifted from 2 to 3 to account for the new signature line
     let theme_y = 3 + options.len() as u16;
 
     queue!(stdout, cursor::MoveTo(2, theme_y), SetBackgroundColor(colors.bg), SetForegroundColor(colors.accent), Print("Meta+T"), ResetColor)?;

@@ -6,7 +6,6 @@ use crossterm::{cursor, event::{self, Event, KeyCode, KeyModifiers, KeyEventKind
                 terminal::{self, ClearType, size as term_size}};
 use std::io::{self, stdout, Write};
 use crossterm::terminal::Clear;
-use crate::config::UiColors;
 use crate::browser::BrowserExt;
 
 pub trait PromptExt {
@@ -18,6 +17,7 @@ pub trait PromptExt {
     fn prompt_for_folder(&mut self, prompt_text: &str, folders: &[String]) -> io::Result<Option<String>>;
     fn prompt_select_item(&mut self, prompt_text: &str, items: &[String]) -> io::Result<Option<String>>;
     fn prompt_with_placeholder(&mut self, prompt_text: &str, placeholder: &str) -> io::Result<Option<String>>;
+    fn prompt_cancel(&mut self) -> io::Result<bool>;
 }
 
 impl PromptExt for Editor {
@@ -568,7 +568,7 @@ impl PromptExt for Editor {
                 String::new()
             };
 
-            // 1. Draw the prompt and input text (moved up to row - 3)
+            // raw the prompt and input text
             queue!(
                 stdout,
                 cursor::MoveTo(0, rows.saturating_sub(3)),
@@ -583,21 +583,21 @@ impl PromptExt for Editor {
                 ResetColor
             )?;
 
-            // 2. Draw the upper menu line (blank)
+            // draw the upper menu line (blank)
             Self::draw_menu_line(
                 &mut stdout, rows.saturating_sub(2), cols, col_width,
                 &[("", ""), ("", ""), ("", ""), ("", ""), ("", ""), ("", "")],
                 colors.menu_bg, colors.accent, colors.fg,
             )?;
 
-            // 3. Draw the lower menu line with just the Cancel command
+            // draw the lower menu line with just the Cancel command
             Self::draw_menu_line(
                 &mut stdout, rows.saturating_sub(1), cols, col_width,
                 &[("^C", " Cancel"), ("", ""), ("", ""), ("", ""), ("", ""), ("", "")],
                 colors.menu_bg, colors.accent, colors.fg,
             )?;
 
-            // 4. Place the cursor securely at the end of the user's typed input
+            // place the cursor at end of typed input
             let prompt_len = prompt_text.chars().count();
             let input_len = input.chars().count();
             let cursor_x = (prompt_len + input_len) as u16;
@@ -610,7 +610,6 @@ impl PromptExt for Editor {
 
             stdout.flush()?;
 
-            // 5. Handle Keyboard Events
             if let Event::Key(key) = event::read()? {
                 if key.kind == KeyEventKind::Press {
                     match key.code {
@@ -775,10 +774,9 @@ impl PromptExt for Editor {
 
             // NEW LOGIC: Draw the grey placeholder if input is empty
             if input.is_empty() {
-                let placeholder_color = if ui_colors.is_dark { Color::DarkGrey } else { Color::Grey };
                 queue!(
                     stdout_handle,
-                    SetForegroundColor(placeholder_color),
+                    SetForegroundColor(ui_colors.date_color),
                     Print(placeholder),
                     SetForegroundColor(ui_colors.fg)
                 )?;
@@ -876,44 +874,48 @@ impl PromptExt for Editor {
             }
         }
     }
-}
 
-pub fn prompt_cancel(stdout: &mut io::Stdout, colors: &UiColors) -> bool {
-    let (cols, rows) = term_size().unwrap_or((80, 24));
+    fn prompt_cancel(&mut self) -> io::Result<bool> {
+        let mut stdout_handle = stdout();
+        let (cols, rows) = term_size()?;
 
-    execute!(
-        stdout,
-        cursor::MoveTo(0, rows.saturating_sub(3)),
-        SetBackgroundColor(colors.menu_bg),
-        Clear(ClearType::UntilNewLine),
-        SetForegroundColor(colors.accent),
-        Print("Are you sure you want to cancel? "),
-        ResetColor
-    ).unwrap();
+        let theme = &self.theme_set.themes[&self.current_theme];
+        let colors = derive_ui_colors(theme);
 
-    let col_width = (cols as usize / 6).max(1);
-    Editor::draw_menu_line(
-        stdout, rows.saturating_sub(2), cols, col_width,
-        &[("Y", " Yes"), ("", ""), ("", ""), ("", ""), ("", ""), ("", "")],
-        colors.menu_bg, colors.accent, colors.fg,
-    ).unwrap();
-    Editor::draw_menu_line(
-        stdout, rows.saturating_sub(1), cols, col_width,
-        &[("N", " No"), ("", ""), ("", ""), ("", ""), ("", ""), ("", "")],
-        colors.menu_bg, colors.accent, colors.fg,
-    ).unwrap();
+        execute!(
+            stdout_handle,
+            cursor::MoveTo(0, rows.saturating_sub(3)),
+            SetBackgroundColor(colors.menu_bg),
+            Clear(ClearType::UntilNewLine),
+            SetForegroundColor(colors.accent),
+            Print("Are you sure you want to cancel? "),
+            ResetColor
+        )?;
 
-    stdout.flush().unwrap();
+        let col_width = (cols as usize / 6).max(1);
+        Self::draw_menu_line(
+            &mut stdout_handle, rows.saturating_sub(2), cols, col_width,
+            &[("Y", " Yes"), ("", ""), ("", ""), ("", ""), ("", ""), ("", "")],
+            colors.menu_bg, colors.accent, colors.fg,
+        )?;
+        Self::draw_menu_line(
+            &mut stdout_handle, rows.saturating_sub(1), cols, col_width,
+            &[("N", " No"), ("", ""), ("", ""), ("", ""), ("", ""), ("", "")],
+            colors.menu_bg, colors.accent, colors.fg,
+        )?;
 
-    loop {
-        if let Ok(Event::Key(pk)) = event::read() {
-            if pk.kind == KeyEventKind::Press {
-                match pk.code {
-                    KeyCode::Char('y') | KeyCode::Char('Y') => return true,
-                    KeyCode::Char('n') | KeyCode::Char('N') => return false,
-                    KeyCode::Esc => return false,
-                    KeyCode::Char('c') if pk.modifiers.contains(KeyModifiers::CONTROL) => return false,
-                    _ => {}
+        stdout_handle.flush()?;
+
+        loop {
+            if let Event::Key(pk) = event::read()? {
+                if pk.kind == KeyEventKind::Press {
+                    match pk.code {
+                        KeyCode::Char('y') | KeyCode::Char('Y') => return Ok(true),
+                        KeyCode::Char('n') | KeyCode::Char('N') => return Ok(false),
+                        KeyCode::Esc => return Ok(false),
+                        KeyCode::Char('c') | KeyCode::Char('C') if pk.modifiers.contains(KeyModifiers::CONTROL) => return Ok(false),
+                        _ => {}
+                    }
                 }
             }
         }

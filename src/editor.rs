@@ -736,17 +736,16 @@ impl Editor {
 
             crossterm::queue!(stdout, crossterm::cursor::SavePosition)?;
 
-            // Draw the Bottom Menu Hotkeys dynamically
             let m_col = (cols as usize / 6).max(1);
             if self.menu_state == MenuState::TeamEditor {
                 Self::draw_menu_line(
                     &mut stdout, rows - 2, cols, m_col,
-                    &[("^C", " Cancel"), ("^P", " Prev"), ("^Y", " Prev Pg"), ("^A", " Add Email"), ("", ""), ("", "")],
+                    &[("^C", " Cancel"), ("^A", " Add Email"), ("^P", " Prev"), ("^Y", " Prev Pg"), ("", ""), ("", "")],
                     colors.menu_bg, colors.accent, colors.fg
                 )?;
                 Self::draw_menu_line(
                     &mut stdout, rows - 1, cols, m_col,
-                    &[("^X", " Save"), ("^N", " Next"), ("^V", " Next Pg"), ("", ""), ("", ""), ("", "")],
+                    &[("^X", " Save"), ("", ""), ("^N", " Next"), ("^V", " Next Pg"), ("", ""), ("", "")],
                     colors.menu_bg, colors.accent, colors.fg
                 )?;
             } else {
