@@ -41,10 +41,10 @@ is checked.
 ---
 
 ## Determine Connection Method
-Before running `xpine`, determine your connection method and get the necessary information.
+Before running `xpine`, determine your authentication method and get the necessary information.
 1. Google Gmail App Specific Password (less secure, easier to setup) [instructions](#google-gmail)
 2. Google Gmail OAuth 2.0 (more secure, harder setup, need to generate Google client_id and client_secret) [instructions](#setting-up-google-gmail-oauth-20)
-3. Microsoft Outlook, Hotmail, Exchange (secure, easy setup, can be setup directly in xpine)
+3. Microsoft Outlook, Hotmail, Exchange (Graph API OAuth 2.0, can be easily setup directly in xpine)
 4. Yahoo App Specific Password [instructions](#yahoo-mail)
 5. Apple/iCloud App Specific Password [instructions](#apple-icloud-mail)
 

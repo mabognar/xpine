@@ -504,62 +504,6 @@ fn handle_email_accounts_events(k: KeyEvent, app: &mut App, theme_provider: &mut
                                                 }
                                             }
                                         }
-
-                                    //     if let Ok(Some(smtp_port)) = theme_provider.prompt_edit("SMTP Port: ", "587") {
-                                    //         let mut new_acc = crate::config::Account {
-                                    //             name: final_name.clone(), // <--- Add the name here
-                                    //             email: email.trim().to_string(),
-                                    //             password: None,
-                                    //             client_id: None,
-                                    //             client_secret: None,
-                                    //             refresh_token: None,
-                                    //             imap_server: imap_server.trim().to_string(),
-                                    //             imap_port: imap_port.trim().parse().unwrap_or(993),
-                                    //             smtp_server: smtp_server.trim().to_string(),
-                                    //             smtp_port: smtp_port.trim().parse().unwrap_or(587),
-                                    //         };
-                                    //
-                                    //         let _ = crossterm::terminal::disable_raw_mode();
-                                    //         let _ = execute!(std::io::stdout(), crossterm::terminal::LeaveAlternateScreen);
-                                    //
-                                    //         println!("Starting OAuth2 flow for {}...", new_acc.email);
-                                    //
-                                    //         match net::run_gmail_oauth_flow(&email_lower) {
-                                    //             Ok((client_id, secret, token)) => {
-                                    //                 new_acc.client_id = Some(client_id);
-                                    //                 new_acc.client_secret = Some(secret);
-                                    //                 new_acc.refresh_token = Some(token);
-                                    //                 app.update_status("OAuth Successful!".to_string());
-                                    //             },
-                                    //             Err(e) => {
-                                    //                 println!("\r\nOAuth Failed: {}", e);
-                                    //                 println!("Press ENTER to return to xpine...");
-                                    //                 let mut input = String::new();
-                                    //                 let _ = std::io::stdin().read_line(&mut input);
-                                    //                 app.update_status("OAuth Failed.".to_string());
-                                    //             }
-                                    //         }
-                                    //
-                                    //         let _ = crossterm::terminal::enable_raw_mode();
-                                    //         let _ = execute!(
-                                    //             std::io::stdout(),
-                                    //             crossterm::terminal::EnterAlternateScreen,
-                                    //             crossterm::terminal::Clear(crossterm::terminal::ClearType::All)
-                                    //         );
-                                    //
-                                    //         app.accounts.push(new_acc);
-                                    //         crate::config::save_config(&app.accounts);
-                                    //
-                                    //         app.current_account_idx = app.accounts.len() - 1;
-                                    //         app.active_account = app.accounts[app.current_account_idx].clone();
-                                    //         app.needs_reconnect = true;
-                                    //
-                                    //         app.current_folder = "INBOX".to_string();
-                                    //         app.graph_pending_deleted.clear();
-                                    //         app.current_page = 0;
-                                    //         app.restore_index_from_end = Some(0);
-                                    //         selected_idx = app.current_account_idx;
-                                    //     }
                                     }
                                 }
                             }
