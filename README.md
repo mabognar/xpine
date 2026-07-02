@@ -59,8 +59,8 @@ The application is fully signed and notarized by Apple.
 ### Linux
 
 Linux requirements:
-1. Need `gnome-keyring` or `kwallet` installed.
-2. Need the `libdbus-1-dev` package or a functioning Secret Service provider.
+1. Need Secret Service API such as `gnome-keyring` or `kwallet` installed
+2. Need the `libdbus-1-dev` package installed
 
 #### Option 1: Debian/Ubuntu (.deb package)
 If you are using Debian, Ubuntu, Linux Mint, Pop!_OS, or any other Debian derivative:
@@ -134,6 +134,21 @@ xpine
 
 On your first launch, you will be greeted by the Main Menu. Press `E` to navigate to **Email Accounts** and add your 
 first account. `xpine` will safely and locally store your configurations in `~/.xpine/xpinerc`.
+
+
+## Security & Credential Management
+
+`xpine` prioritizes your privacy and security by ensuring your sensitive information (such as IMAP passwords, OAuth 2.0 refresh tokens, and client secrets) is never stored in plain text on your drive.
+
+Here is how `xpine` manages your credentials securely:
+
+* **Separation of Data:** Non-sensitive settings (like your email address and IMAP server ports) are stored in a standard plain text TOML file (`~/.xpine/xpinerc`). However, all sensitive credentials bypass this file entirely.
+* **AES-256-GCM Encryption:** Passwords and OAuth tokens are stored in a separate, fully encrypted binary vault (`~/.xpine/secrets.enc`). `xpine` uses AES-256-GCM, an industry-standard authenticated encryption algorithm, to secure this data.
+* **Auto-Generated Master Key:** On first launch, `xpine` generates a cryptographically secure 256-bit master key (`~/.xpine/.master.key`) used to encrypt and decrypt your vault.
+* **Strict File Permissions:** On macOS and Linux systems, `xpine` automatically enforces strict `0600` (read/write by owner only) file permissions on the master key. This ensures that other users on the same machine or unauthorized applications cannot read your encryption key.
+
+*Note: If you migrate your `xpine` configuration to a new computer, you must copy both the `secrets.enc` vault and the hidden `.master.key` file for your encrypted credentials to carry over successfully.*
+
 
 ## License
 
