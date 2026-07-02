@@ -135,10 +135,32 @@ impl SpellExt for Editor {
             self.highlight_match = Some((self.cursor_y, self.cursor_x, self.cursor_x + word_len));
 
             let dict = self.dictionary.as_ref().unwrap();
-            let suggestions = Self::get_suggestions(&lower_word, dict);
+
+            // make the suggestions vector mutable
+            let mut suggestions = Self::get_suggestions(&lower_word, dict);
+
+            // check the casing of the original misspelled word
+            let is_all_caps = word.chars().all(char::is_uppercase);
+            let is_first_upper = word.chars().next().map(char::is_uppercase).unwrap_or(false);
+
+            // format suggestions to match the original word's casing
+            if is_all_caps {
+                for sugg in suggestions.iter_mut() {
+                    *sugg = sugg.to_uppercase();
+                }
+            } else if is_first_upper {
+                for sugg in suggestions.iter_mut() {
+                    let mut chars = sugg.chars();
+                    if let Some(first_char) = chars.next() {
+                        // Uppercase the first character, keep the rest lowercase
+                        *sugg = first_char.to_uppercase().collect::<String>() + chars.as_str();
+                    }
+                }
+            }
 
             // Populate current suggestions and transition state context
             self.current_suggestions = suggestions.into_iter().take(5).collect();
+
             self.menu_state = MenuState::SpellCheck;
 
             // Draw screen ONLY after suggestions and layout states are fully prepared
@@ -201,7 +223,8 @@ impl SpellExt for Editor {
         self.set_status(format!("Spell check complete. {} corrections made.", corrections));
         self.menu_state = previous_state;
 
-        // 4. Return true on completion
+        self.draw_screen()?;
+
         Ok(true)
     }
 

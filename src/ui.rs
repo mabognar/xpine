@@ -874,15 +874,16 @@ fn draw_email_accounts(stdout: &mut std::io::Stdout, app: &App, cols: u16, rows:
 
     let m_col = (cols as usize / 6).max(1);
     Editor::draw_menu_line(stdout, rows - 2, cols, m_col,
-                           &[(" <", " Back"), ("A", " Add Acct"), ("P", " Prev"), ("", ""), ("", ""), ("", "")],
+                           &[("<", " Back"), ("A", " Add Acct"), ("P", " Prev"), ("", ""), ("", ""), ("", "")],
                            colors.menu_bg, colors.accent, colors.fg)?;
     Editor::draw_menu_line(stdout, rows - 1, cols, m_col,
-                           &[("", ""), ("D", " Del Acct"), ("N", " Next"), ("", ""), ("", ""), ("", "")],
+                           &[("M", " Main Menu"), ("D", " Del Acct"), ("N", " Next"), ("", ""), ("", ""), ("", "")],
                            colors.menu_bg, colors.accent, colors.fg)?;
 
     queue!(
         stdout, SetBackgroundColor(colors.bg), SetForegroundColor(colors.accent),
-        cursor::MoveTo(0, rows - 6), Print("  - App Specific Password is required for Yahoo; generate online"),
+        cursor::MoveTo(0, rows - 7), Print("  - App Specific Password is required for Google & Yahoo"),
+        cursor::MoveTo(0, rows - 6), Print("  - Go online to generate App Specific Password"),
         cursor::MoveTo(0, rows - 5), Print("  - Enter the App Specific Password WITHOUT spaces"),
         ResetColor
     )?;
@@ -1091,7 +1092,7 @@ fn draw_folder_list(stdout: &mut std::io::Stdout, app: &App, cols: u16, rows: u1
                            &[("<", " Back"), (">", " Select"),  ("P", " Prev"), add_fldr_opt, rename_opt, ("","")],
                            colors.menu_bg, colors.accent, colors.fg)?;
     Editor::draw_menu_line(stdout, rows - 1, cols, m_col,
-                           &[("Q", " Quit"), ("M", " Main Menu"), ("N", " Next"), ("", ""), del_opt, ("H", " Help")],
+                           &[("M", " Main Menu"), ("", ""), ("N", " Next"),  ("", ""), del_opt, ("H", " Help")],
                            colors.menu_bg, colors.accent, colors.fg)?;
     Ok(())
 }
@@ -1123,6 +1124,7 @@ fn draw_main_menu(stdout: &mut std::io::Stdout, app: &App, cols: u16, rows: u16,
         ("E", "EMAIL ACCOUNTS", "Add/Delete email accounts"),
         ("H", "HELP", "Get help using xpine"),
         ("U", "UPDATE XPINE", update_desc.as_str()), // ADDED
+        ("$", "DONATE", "❤️  xpine? Please consider donating"),
         ("Q", "QUIT", "Leave the xpine program"),    // Pushed down
     ];
 

@@ -323,12 +323,12 @@ fn handle_email_accounts_events(k: KeyEvent, app: &mut App, theme_provider: &mut
     match k.code {
         KeyCode::Up | KeyCode::Char('p') | KeyCode::Char('P') => selected_idx = selected_idx.saturating_sub(1),
         KeyCode::Down | KeyCode::Char('n') | KeyCode::Char('N') => selected_idx = (selected_idx + 1).min(app.accounts.len().saturating_sub(1)),
-        KeyCode::Char('<') | KeyCode::Left | KeyCode::Esc => next_mode = Some(AppMode::MainMenu { selected_idx: 4 }),
+        KeyCode::Char('<') | KeyCode::Char('m') | KeyCode::Char('M') | KeyCode::Left | KeyCode::Esc => next_mode = Some(AppMode::MainMenu { selected_idx: 4 }),
         KeyCode::Char('c') | KeyCode::Char('C') if k.modifiers.contains(KeyModifiers::CONTROL) => next_mode = Some(AppMode::MainMenu { selected_idx: 4 }),
         KeyCode::Char('a') | KeyCode::Char('A') => {
             let auth_options = vec![
                 "1. Microsoft Exchange (Graph API, OAuth2.0)".to_string(),
-                "2. Google Gmail (OAuth2.0)".to_string(),
+                "2. COMING SOON -- Google Gmail (OAuth2.0)".to_string(),
                 "3. Google Gmail (App Password)".to_string(),
                 "4. Basic IMAP (Yahoo/Legacy/Other)".to_string(),
             ];
@@ -1214,9 +1214,9 @@ fn handle_main_menu_events(k: KeyEvent, app: &mut App, session: &mut Option<Mail
 
     match k.code {
         KeyCode::Up | KeyCode::Char('p') | KeyCode::Char('P') => selected_idx = selected_idx.saturating_sub(1),
-        KeyCode::Char('m') | KeyCode::Char('M') => next_mode = Some(AppMode::EmailList),
+        // KeyCode::Char('m') | KeyCode::Char('M') => next_mode = Some(AppMode::EmailList),
         KeyCode::Char('e') | KeyCode::Char('E') => next_mode = Some(AppMode::EmailAccounts { selected_idx: 0 }),
-        KeyCode::Down | KeyCode::Char('n') | KeyCode::Char('N') => selected_idx = (selected_idx + 1).min(7),
+        KeyCode::Down | KeyCode::Char('n') | KeyCode::Char('N') => selected_idx = (selected_idx + 1).min(8),
         KeyCode::Enter | KeyCode::Char('>') | KeyCode::Right => {
             match selected_idx {
                 0 => {
@@ -1236,6 +1236,11 @@ fn handle_main_menu_events(k: KeyEvent, app: &mut App, session: &mut Option<Mail
                 },
                 5 => { let _ = theme_provider.show_help("main_menu"); },
                 6 => {
+                    // NEW: Open GitHub Sponsors
+                    let _ = crate::browser::open_url("https://github.com/sponsors/mabognar");
+                },
+                7 => {
+                    // SHIFTED: Update Check
                     if let Some(latest) = &app.latest_version {
                         if latest != env!("CARGO_PKG_VERSION") {
                             let _ = crate::browser::open_url("https://github.com/mabognar/xpine/releases/latest");
@@ -1246,7 +1251,8 @@ fn handle_main_menu_events(k: KeyEvent, app: &mut App, session: &mut Option<Mail
                         theme_provider.set_status("Still checking for updates...".to_string());
                     }
                 },
-                7 => {
+                8 => {
+                    // SHIFTED: Quit
                     check_and_expunge_outlook(app, session, theme_provider);
                     *quit = true;
                 },
@@ -1271,6 +1277,9 @@ fn handle_main_menu_events(k: KeyEvent, app: &mut App, session: &mut Option<Mail
             app.restore_index_from_end = Some(0);
             app.needs_fetch = true;
             next_mode = Some(AppMode::EmailList);
+        }
+        KeyCode::Char('$') => {
+            let _ = crate::browser::open_url("https://github.com/sponsors/mabognar");
         }
         KeyCode::Char('a') | KeyCode::Char('A') => next_mode = Some(AppMode::AddressBook { selected_idx: 0, addresses: crate::address::load_address_book() }),
         KeyCode::Char('f') | KeyCode::Char('F') => next_mode = Some(AppMode::FolderList { step: 0, selected_idx: app.current_account_idx, folders: Vec::new() }),
