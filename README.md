@@ -40,13 +40,13 @@ is checked.
 
 ---
 
-## Determine Connection Method
+## Determine Authentication Method
 Before running `xpine`, determine your authentication method and get the necessary information.
-1. Google Gmail App Specific Password (less secure, easier to setup) [instructions](#google-gmail)
-2. Google Gmail OAuth 2.0 (more secure, harder setup, need to generate Google client_id and client_secret) [instructions](#setting-up-google-gmail-oauth-20)
-3. Microsoft Outlook, Hotmail, Exchange (Graph API OAuth 2.0, can be easily setup directly in xpine)
-4. Yahoo App Specific Password [instructions](#yahoo-mail)
-5. Apple/iCloud App Specific Password [instructions](#apple-icloud-mail)
+1. Google Gmail App Specific Password (less secure, easier to setup) [instructions](#connecting-via-imapsmtp-app-passwords)
+2. Google Gmail OAuth 2.0 (more secure, harder to setup, need to generate Google `client_id` and `client_secret`) [instructions](#setting-up-google-gmail-oauth-20)
+3. Microsoft Outlook, Hotmail, Exchange (Graph API OAuth 2.0, can be easily setup directly in `xpine`)
+4. Yahoo App Specific Password [instructions](#connecting-via-imapsmtp-app-passwords)
+5. Apple/iCloud App Specific Password [instructions](#connecting-via-imapsmtp-app-passwords)
 
 ---
 
@@ -136,7 +136,7 @@ first account. `xpine` will safely and locally store your configurations in `~/.
 
 ---
 
-## **Connecting via Basic IMAP/SMTP (App Passwords)**
+## **Connecting via IMAP/SMTP (App Passwords)**
 
 If you are using Yahoo, Apple iCloud, or prefer to connect to Gmail via standard IMAP instead of OAuth, 
 you cannot use your regular email account password to log into `xpine`.
