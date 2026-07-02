@@ -328,7 +328,7 @@ fn handle_email_accounts_events(k: KeyEvent, app: &mut App, theme_provider: &mut
         KeyCode::Char('a') | KeyCode::Char('A') => {
             let auth_options = vec![
                 "1. Microsoft Exchange (Graph API, OAuth2.0)".to_string(),
-                "2. COMING SOON -- Google Gmail (OAuth2.0)".to_string(),
+                "2. Google Gmail (OAuth2.0)".to_string(),
                 "3. Google Gmail (App Password)".to_string(),
                 "4. Basic IMAP (Yahoo/Legacy/Other)".to_string(),
             ];

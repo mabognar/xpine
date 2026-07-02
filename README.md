@@ -9,8 +9,9 @@
 ## Features
 
 * **Authentication:** Full support for standard IMAP/SMTP accounts
-* **Google Accounts:** OAuth 2.0 authentication for Gmail accounts (pre-compiled binaries only --- use Application Specific Passwords for self-compiled binaries)
+* **Google Accounts:** OAuth 2.0 authentication or Application Specific Passwords
 * **Microsoft Accounts:** Graph API with OAuth 2.0 authentication for Outlook, Hotmail, and Exchange accounts
+* **Yahoo, Apple:** Application Specific Passwords
 * **Multiple Accounts:** Multiple accounts are supported -- switch between accounts with a single key-stroke
 * **Help:** Built-in help describing the hot-keys and functionality
 * **Editor:** Compose emails with a built-in text editor that includes soft-wrapping and paragraph justification
@@ -37,12 +38,15 @@ In Gmail (on the web), go to `Settings > See all settings > Forwarding and POP/I
 `Auto-Expunge off - Wait for the client to update the server` 
 is checked.
 
-### Google Gmail OAuth 2.0 vs. Google Application Specific Password
-The pre-compiled binaries allow connecting to Google Gmail via modern authentication (OAuth 2.0). Compiling yourself 
+---
 
-will NOT allow you to connect to Google Gmail via modern authentication (OAuth 2.0). 
-
-Use an Application Specific Password instead (search online how to do this). 
+## Determine Connection Method
+Before running `xpine`, determine your connection method and get the necessary information.
+1. Google Gmail App Specific Password (less secure, easier to setup) [instructions](#google-gmail)
+2. Google Gmail OAuth 2.0 (more secure, harder setup, need to generate Google client_id and client_secret) [instructions](#setting-up-google-gmail-oauth-20)
+3. Microsoft Outlook, Hotmail, Exchange (secure, easy setup, can be setup directly in xpine)
+4. Yahoo App Specific Password [instructions](#yahoo-mail)
+5. Apple/iCloud App Specific Password [instructions](#apple-icloud-mail)
 
 ---
 
@@ -78,9 +82,6 @@ Using the `.deb` package will allow for Google Gmail OAuth 2.0 authentication.
 #### Option 2: Compile from Source
 For other Linux distributions (Fedora, Arch, etc.), or if you prefer to build from source, 
 you can easily compile `xpine` using `cargo`.
-
-Note: Compiling from source will not allow Google Gmail OAuth 2.0 authentication. Use an Application Specific Password
-instead (search online how to do this). 
 
 **1. Install System Dependencies**
 You will need the standard C compiler tools and OpenSSL headers to handle secure IMAP and HTTP connections.
@@ -135,32 +136,20 @@ first account. `xpine` will safely and locally store your configurations in `~/.
 
 ---
 
-## Security & Credential Management
+## **Connecting via Basic IMAP/SMTP (App Passwords)**
 
-`xpine` prioritizes your privacy and security by ensuring your sensitive information (such as IMAP passwords, OAuth 2.0 refresh tokens, and client secrets) is never stored in plain text on your drive.
+If you are using Yahoo, Apple iCloud, or prefer to connect to Gmail via standard IMAP instead of OAuth, 
+you cannot use your regular email account password to log into `xpine`.
 
-Here is how `xpine` manages your credentials securely:
+Modern email providers require you to generate a unique **Application-Specific Password**. This is a 
+special 16-character password created just for `xpine` that allows it to securely sync your mail.
 
-* **Separation of Data:** Non-sensitive settings (like your email address and IMAP server ports) are stored in a standard plain text TOML file (`~/.xpine/xpinerc`). However, all sensitive credentials bypass this file entirely.
-* **AES-256-GCM Encryption:** Passwords and OAuth tokens are stored in a separate, fully encrypted binary vault (`~/.xpine/secrets.enc`). `xpine` uses AES-256-GCM, an industry-standard authenticated encryption algorithm, to secure this data.
-* **Auto-Generated Master Key:** On first launch, `xpine` generates a cryptographically secure 256-bit master key (`~/.xpine/.master.key`) used to encrypt and decrypt your vault.
-* **Strict File Permissions:** On macOS and Linux systems, `xpine` automatically enforces strict `0600` (read/write by owner only) file permissions on the master key. This ensures that other users on the same machine or unauthorized applications cannot read your encryption key.
-
-*Note: If you migrate your `xpine` configuration to a new computer, you must copy both the `secrets.enc` vault and the hidden `.master.key` file for your encrypted credentials to carry over successfully.*
+*Note: For almost all providers, you **must** have Two-Factor Authentication (2FA) enabled on your 
+account before the option to create an App Password will appear.*
 
 ---
 
-## **Connecting via Basic IMAP (App Passwords)**
-
-If you are using Yahoo, iCloud, or prefer to connect to Gmail via standard IMAP instead of OAuth, you cannot use your regular email account password to log into `xpine`.
-
-Modern email providers require you to generate a unique **Application-Specific Password**. This is a special 16-character password created just for `xpine` that allows it to securely sync your mail.
-
-*Note: For almost all providers, you **must** have Two-Factor Authentication (2FA) enabled on your account before the option to create an App Password will appear.*
-
----
-
-### **Google / Gmail**
+### **Google Gmail**
 *(Note: If you use the Gmail OAuth option in the xpine menu, you do not need to do this. This is only for the "Basic IMAP" menu option).*
 
 1. Go to your [Google Account management page](https://myaccount.google.com/).
@@ -178,29 +167,14 @@ Modern email providers require you to generate a unique **Application-Specific P
 4. Type `xpine` into the "App name" field and click **Generate password**.
 5. Yahoo will display a one-time, 16-character password. Copy this (without spaces) and use it to log into `xpine`.
 
-### **Apple / iCloud Mail**
+### **Apple iCloud Mail**
 1. Go to [appleid.apple.com](https://appleid.apple.com/) and sign in with your Apple ID.
 2. In the left navigation panel, click **App-Specific Passwords**.
 3. Click the **Generate an app-specific password** button (or the "+" icon).
 4. Enter `xpine` as the name and click **Create**.
 5. Enter your standard Apple ID password to confirm.
-6. Apple will reveal a 16-character password (formatted like `xxxx-xxxx-xxxx-xxxx`). Copy this password and use it as your `xpine` password.
-
-[//]: # (### **Microsoft / Outlook / Hotmail**)
-
-[//]: # (*&#40;Note: xpine natively supports the Microsoft Graph API via OAuth2, which is the highly recommended way to connect Outlook accounts. If you must use basic IMAP, follow these steps&#41;.*)
-
-[//]: # ()
-[//]: # (1. Go to your Microsoft Account [Advanced Security Options]&#40;https://account.live.com/proofs/manage/additional&#41;.)
-
-[//]: # (2. Ensure that **Two-step verification** is turned **ON**.)
-
-[//]: # (3. Scroll down to the **App passwords** section.)
-
-[//]: # (4. Click **Create a new app password**.)
-
-[//]: # (5. Microsoft will instantly generate a password on the screen. Copy this and paste it into the `xpine` basic IMAP password prompt.)
-
+6. Apple will reveal a 16-character password (formatted like `xxxx-xxxx-xxxx-xxxx`). 
+7. Copy this password and use it as your `xpine` password.
 
 **Troubleshooting:**
 * Never type the spaces. Even if the provider displays the password with spaces (e.g., `abcd efgh ijkl mnop`), always enter it into `xpine` as a single continuous string (`abcdefghijklmnop`).
@@ -254,6 +228,21 @@ then Go to xpine-client (unsafe), and click Continue.
 
 Security Note: xpine uses AES-256-GCM encryption to automatically secure your Client Secret and 
 refresh tokens locally on your machine. They are never stored in plain text.
+
+---
+
+## Security & Credential Management
+
+`xpine` prioritizes your privacy and security by ensuring your sensitive information (such as IMAP passwords, OAuth 2.0 refresh tokens, and client secrets) is never stored in plain text on your drive.
+
+Here is how `xpine` manages your credentials securely:
+
+* **Separation of Data:** Non-sensitive settings (like your email address and IMAP server ports) are stored in a standard plain text TOML file (`~/.xpine/xpinerc`). However, all sensitive credentials bypass this file entirely.
+* **AES-256-GCM Encryption:** Passwords and OAuth tokens are stored in a separate, fully encrypted binary vault (`~/.xpine/secrets.enc`). `xpine` uses AES-256-GCM, an industry-standard authenticated encryption algorithm, to secure this data.
+* **Auto-Generated Master Key:** On first launch, `xpine` generates a cryptographically secure 256-bit master key (`~/.xpine/.master.key`) used to encrypt and decrypt your vault.
+* **Strict File Permissions:** On macOS and Linux systems, `xpine` automatically enforces strict `0600` (read/write by owner only) file permissions on the master key. This ensures that other users on the same machine or unauthorized applications cannot read your encryption key.
+
+*Note: If you migrate your `xpine` configuration to a new computer, you must copy both the `secrets.enc` vault and the hidden `.master.key` file for your encrypted credentials to carry over successfully.*
 
 ---
 
