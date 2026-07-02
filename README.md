@@ -11,14 +11,14 @@
 * **Authentication:** Full support for standard IMAP/SMTP accounts
 * **Google Accounts:** OAuth 2.0 authentication for Gmail accounts (pre-compiled binaries only --- use Application Specific Passwords for self-compiled binaries)
 * **Microsoft Accounts:** Graph API with OAuth 2.0 authentication for Outlook, Hotmail, and Exchange accounts
-* **Multiple Accounts:** Multiple accounts are supported, and accounts can be changed with a single key-stroke
+* **Multiple Accounts:** Multiple accounts are supported -- switch between accounts with a single key-stroke
 * **Help:** Built-in help describing the hot-keys and functionality
 * **Editor:** Compose emails with a built-in text editor that includes soft-wrapping and paragraph justification
 * **Address Book & Teams:** Manage individual contacts, import lists, and create distribution groups ("Teams")
 * **Address Completion:** `xpine` provides for autocompletion of email addresses (just hit `tab`)
 * **Spell Checking:** With the option to automatically spellcheck before sending an email
 * **Flexible Signature:** Insert your signature where/if you want with a single key-stroke 
-* **Auto Prettify:** Before sending, `xpine` automatically justifies your email --- raggedly typed emails will look nice
+* **Auto Prettify:** `xpine` automatically justifies your email upon sending --- ragged emails will look nice
 * **Folders:** Move emails from folder-to-folder
 * **Theming:** Multiple built-in color themes
 * **Updates:** Built-in update checker
@@ -37,9 +37,11 @@ In Gmail (on the web), go to `Settings > See all settings > Forwarding and POP/I
 `Auto-Expunge off - Wait for the client to update the server` 
 is checked.
 
-### Pre-compiled binary vs. Compiling yourself
+### Google Gmail OAuth 2.0 vs. Google Application Specific Password
 The pre-compiled binaries allow connecting to Google Gmail via modern authentication (OAuth 2.0). Compiling yourself 
+
 will NOT allow you to connect to Google Gmail via modern authentication (OAuth 2.0). 
+
 Use an Application Specific Password instead (search online how to do this). 
 
 ---
@@ -57,10 +59,6 @@ The application is fully signed and notarized by Apple.
 4. Open your terminal and type `xpine` to launch the application!
 
 ### Linux
-
-Linux requirements:
-1. Need Secret Service API such as `gnome-keyring` or `kwallet` installed
-2. Need the `libdbus-1-dev` package installed
 
 #### Option 1: Debian/Ubuntu (.deb package)
 If you are using Debian, Ubuntu, Linux Mint, Pop!_OS, or any other Debian derivative:
@@ -152,7 +150,115 @@ Here is how `xpine` manages your credentials securely:
 
 ---
 
+## **Connecting via Basic IMAP (App Passwords)**
+
+If you are using Yahoo, iCloud, or prefer to connect to Gmail via standard IMAP instead of OAuth, you cannot use your regular email account password to log into `xpine`.
+
+Modern email providers require you to generate a unique **Application-Specific Password**. This is a special 16-character password created just for `xpine` that allows it to securely sync your mail.
+
+*Note: For almost all providers, you **must** have Two-Factor Authentication (2FA) enabled on your account before the option to create an App Password will appear.*
+
+---
+
+### **Google / Gmail**
+*(Note: If you use the Gmail OAuth option in the xpine menu, you do not need to do this. This is only for the "Basic IMAP" menu option).*
+
+1. Go to your [Google Account management page](https://myaccount.google.com/).
+2. On the left navigation panel, click **Security**.
+3. Under the "How you sign in to Google" section, ensure **2-Step Verification** is turned **ON**.
+4. Click on **2-Step Verification** and scroll all the way to the bottom of the page.
+5. Click on **App passwords**.
+6. In the "App name" field, type `xpine` and click **Create**.
+7. Google will generate a 16-character password in a yellow box. Copy this exact password (without spaces) and paste it into the `xpine` password prompt.
+
+### **Yahoo Mail**
+1. Log into your Yahoo account and go to your [Account Security page](https://login.yahoo.com/account/security).
+2. Scroll down to the "Other ways to sign in" section.
+3. Click on **Generate and manage app passwords**.
+4. Type `xpine` into the "App name" field and click **Generate password**.
+5. Yahoo will display a one-time, 16-character password. Copy this (without spaces) and use it to log into `xpine`.
+
+### **Apple / iCloud Mail**
+1. Go to [appleid.apple.com](https://appleid.apple.com/) and sign in with your Apple ID.
+2. In the left navigation panel, click **App-Specific Passwords**.
+3. Click the **Generate an app-specific password** button (or the "+" icon).
+4. Enter `xpine` as the name and click **Create**.
+5. Enter your standard Apple ID password to confirm.
+6. Apple will reveal a 16-character password (formatted like `xxxx-xxxx-xxxx-xxxx`). Copy this password and use it as your `xpine` password.
+
+[//]: # (### **Microsoft / Outlook / Hotmail**)
+
+[//]: # (*&#40;Note: xpine natively supports the Microsoft Graph API via OAuth2, which is the highly recommended way to connect Outlook accounts. If you must use basic IMAP, follow these steps&#41;.*)
+
+[//]: # ()
+[//]: # (1. Go to your Microsoft Account [Advanced Security Options]&#40;https://account.live.com/proofs/manage/additional&#41;.)
+
+[//]: # (2. Ensure that **Two-step verification** is turned **ON**.)
+
+[//]: # (3. Scroll down to the **App passwords** section.)
+
+[//]: # (4. Click **Create a new app password**.)
+
+[//]: # (5. Microsoft will instantly generate a password on the screen. Copy this and paste it into the `xpine` basic IMAP password prompt.)
+
+
+**Troubleshooting:**
+* Never type the spaces. Even if the provider displays the password with spaces (e.g., `abcd efgh ijkl mnop`), always enter it into `xpine` as a single continuous string (`abcdefghijklmnop`).
+* App Passwords are shown exactly once. If you lose it or need to reinstall `xpine` on a new machine without copying your secure `secrets.enc` vault, simply delete the old password from your provider's website and generate a new one.
+
+---
+
+## Setting Up Google Gmail OAuth 2.0
+Because xpine is a fully local, open-source terminal application that requires full read/write access to your inbox, 
+Google classifies it as requesting a "Restricted Scope." For a centralized application to offer this 
+automatically, Google requires a costly third-party security audit.
+
+To keep xpine free, open-source, and secure, it utilizes a "Bring Your Own Credentials" (BYOC) model. 
+You will act as your own developer by generating a personal, free Google Cloud credential. 
+This takes about 3 minutes and ensures your OAuth tokens are tied exclusively to your personal project.
+
+### Step 1: Create a Google Cloud Project
+1. Navigate to the Google Cloud Console (https://console.cloud.google.com/) and log in with your Google account.
+2. Click the project dropdown menu in the top-left navigation bar and select New Project.
+3. Name your project (e.g., xpine-local-client) and click Create.
+
+### Step 2: Enable the Gmail API
+1. Make sure your newly created project is selected in the top-left dropdown.
+2. In the left sidebar, click APIs & Services, then click Library.
+3. Search for Gmail API, click on it, and click Enable.
+
+### Step 3: Configure the OAuth Consent Screen
+1. In the left sidebar under APIs & Services, click OAuth consent screen.
+2. Select External as the User Type and click Create.
+3. Fill in the required fields: App Name (e.g., xpine-client), User Support Email (your email), and 
+Developer Contact Information (your email). Ignore all other optional fields and click Save and Continue.
+4. On the Scopes screen, click Add or Remove Scopes.
+5. Manually paste https://mail.google.com/ into the search/filter box, check the box to add it, click Update, 
+and then Save and Continue.
+6. On the Test Users screen, click Add Users. Type your exact Gmail address, click Add, and then Save and Continue.
+
+### Step 4: Generate Your Credentials
+1. In the left sidebar, click Credentials.
+2. Click + Create Credentials at the top of the screen and select OAuth client ID.
+3. Select Desktop app from the Application type dropdown.
+4. Name it (e.g., xpine-desktop) and click Create.
+5. A popup will appear containing your Client ID and Client Secret. Keep this window open.
+
+### Step 5: Connect xpine
+1. Launch xpine in your terminal.
+2. Navigate to the Accounts menu and select the option to add a new Gmail OAuth account.
+3. When prompted, carefully paste your Client ID and Client Secret.
+4. Your browser will open. You will see a warning stating "Google hasn’t verified this app." 
+Because you just created this app in Testing mode for yourself, this is expected. Click Advanced, 
+then Go to xpine-client (unsafe), and click Continue.
+
+Security Note: xpine uses AES-256-GCM encryption to automatically secure your Client Secret and 
+refresh tokens locally on your machine. They are never stored in plain text.
+
+---
+
 ## License
 
 This project is licensed under the [LICENSE](LICENSE) file included in the repository.
+
 

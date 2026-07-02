@@ -235,19 +235,45 @@ pub fn run_microsoft_auth_flow(client_id: &str, client_secret: &str) -> Result<T
     Ok(token)
 }
 
-pub fn run_gmail_oauth_flow(email: &str) -> Result<(String, String, String), String> {
+// 1. Update the signature
+pub fn run_gmail_oauth_flow(email: &str, user_client_id: &str, user_client_secret: &str) -> Result<(String, String, String), String> {
     let email_lower = email.to_lowercase();
 
-    // For this phase, we are strictly targeting Gmail
     if !email_lower.ends_with("@gmail.com") {
         return Err("OAuth is currently only implemented for Gmail/Google accounts.".into());
     }
 
-    let client_id = "418710554237-pdjj24ncvldoicjd851u51dm5umlkui2.apps.googleusercontent.com".to_string();
-    let client_secret = option_env!("XPINE_GOOGLE_CLIENT_SECRET") // secret --- read from local machine
-        .unwrap_or("YOUR_GOOGLE_CLIENT_SECRET")
-        .to_string();
+    // 2. Map the user's inputs to the variables your network code already uses
+    let client_id = user_client_id.to_string();
+    let client_secret = user_client_secret.to_string();
     let redirect_uri = "http://127.0.0.1:8080";
+
+
+// pub fn run_gmail_oauth_flow(email: &str, user_client_id: &str, user_client_secret: &str) -> Result<(String, String, String), String> {
+//     let email_lower = email.to_lowercase();
+//
+//     if !email_lower.ends_with("@gmail.com") {
+//         return Err("OAuth is currently only implemented for Gmail/Google accounts.".into());
+//     }
+//
+//     // Use the arguments instead of hardcoding them
+//     let client_id = user_client_id.to_string();
+//     let client_secret = user_client_secret.to_string();
+//     let redirect_uri = "http://127.0.0.1:8080";
+
+    // pub fn run_gmail_oauth_flow(email: &str) -> Result<(String, String, String), String> {
+//     let email_lower = email.to_lowercase();
+//
+//     // For this phase, we are strictly targeting Gmail
+//     if !email_lower.ends_with("@gmail.com") {
+//         return Err("OAuth is currently only implemented for Gmail/Google accounts.".into());
+//     }
+//
+//     let client_id = "418710554237-pdjj24ncvldoicjd851u51dm5umlkui2.apps.googleusercontent.com".to_string();
+//     let client_secret = option_env!("XPINE_GOOGLE_CLIENT_SECRET") // secret --- read from local machine
+//         .unwrap_or("YOUR_GOOGLE_CLIENT_SECRET")
+//         .to_string();
+//     let redirect_uri = "http://127.0.0.1:8080";
 
     // Construct the Google Authorization URL
     // 'offline' and 'consent' guarantee Google gives refresh token
