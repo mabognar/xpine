@@ -3,6 +3,8 @@
 XPINE IS NOT READY FOR PRODUCTION USE. 
 UNDER HEAVY DEVELOPMENT.
 
+<img width="740" height="588" alt="xpine-processed" src="https://github.com/user-attachments/assets/7d03509f-08dc-46c8-86cd-4d336dd0acac" />
+
 MacOS users: In your Terminal settings, go to Profiles > select your profile > Keyboard and make sure 
 "Use Option as Meta key" is checked.
 
