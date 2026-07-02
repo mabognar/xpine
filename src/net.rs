@@ -758,14 +758,25 @@ pub fn fetch_emails(session: &mut MailSession, app: &mut App, items_per_page: u3
                         folder
                     )
                 } else {
-                    let search_str = format!("\"{}\"", q);
-                    let encoded_q = urlencoding::encode(&search_str);
+                    // Escape any single quotes to prevent OData query crashes
+                    let clean_q = q.trim().replace("'", "''");
+                    let encoded_q = urlencoding::encode(&clean_q);
 
+                    // Use $filter with contains() to force exact substring matching instead of the tokenized $search index
                     format!(
-                        "https://graph.microsoft.com/v1.0/me/mailFolders/{}/messages?$top=250&$search={}",
-                        folder, encoded_q
+                        "https://graph.microsoft.com/v1.0/me/mailFolders/{}/messages?$top=250&$count=true&$filter=contains(subject,'{}')%20or%20contains(from/emailAddress/name,'{}')%20or%20contains(from/emailAddress/address,'{}')&$expand=singleValueExtendedProperties($filter=id%20eq%20'Integer%200x1081'%20or%20id%20eq%20'Long%200x0E08')",
+                        folder, encoded_q, encoded_q, encoded_q
                     )
                 }
+                // } else {
+                //     let search_str = format!("\"{}\"", q);
+                //     let encoded_q = urlencoding::encode(&search_str);
+                //
+                //     format!(
+                //         "https://graph.microsoft.com/v1.0/me/mailFolders/{}/messages?$top=250&$search={}",
+                //         folder, encoded_q
+                //     )
+                // }
             } else {
                 let order = "receivedDateTime%20DESC";
                 format!(

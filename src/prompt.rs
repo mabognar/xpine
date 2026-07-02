@@ -939,7 +939,7 @@ pub fn find_email_suggestions(input: &str, address_book: &[String]) -> Vec<Strin
         // If the address contains a colon, it's a team list
         if let Some((team_name, _)) = addr.split_once(':') {
             let team_name = team_name.trim();
-            if team_name.to_lowercase().starts_with(search_term) {
+            if team_name.to_lowercase().contains(search_term) { // <-- CHANGED HERE
                 // Return the formatted Team string instead of the raw file line
                 matches.push(format!("{} (Team)", team_name));
             }
@@ -956,11 +956,35 @@ pub fn find_email_suggestions(input: &str, address_book: &[String]) -> Vec<Strin
                 }
             }
 
-            // Match if the search term matches the beginning of the name OR the beginning of the email
-            if clean_name_lower.starts_with(search_term) || (!email_part.is_empty() && email_part.starts_with(search_term)) {
+            // Match if the search term matches ANYWHERE in the name OR the email
+            if clean_name_lower.contains(search_term) || (!email_part.is_empty() && email_part.contains(search_term)) { // <-- CHANGED HERE
                 matches.push(addr.clone());
             }
         }
+        // if let Some((team_name, _)) = addr.split_once(':') {
+        //     let team_name = team_name.trim();
+        //     if team_name.to_lowercase().starts_with(search_term) {
+        //         // Return the formatted Team string instead of the raw file line
+        //         matches.push(format!("{} (Team)", team_name));
+        //     }
+        // } else {
+        //     // It's a standard individual email
+        //     let addr_lower = addr.to_lowercase();
+        //     let clean_name_lower = addr_lower.trim_start_matches('"');
+        //
+        //     // Extract the raw email address if it's wrapped in < >
+        //     let mut email_part = "";
+        //     if let Some(start) = addr_lower.find('<') {
+        //         if let Some(end) = addr_lower.find('>') {
+        //             email_part = addr_lower[start + 1..end].trim();
+        //         }
+        //     }
+        //
+        //     // Match if the search term matches the beginning of the name OR the beginning of the email
+        //     if clean_name_lower.starts_with(search_term) || (!email_part.is_empty() && email_part.starts_with(search_term)) {
+        //         matches.push(addr.clone());
+        //     }
+        // }
     }
 
     matches
