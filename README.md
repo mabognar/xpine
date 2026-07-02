@@ -42,7 +42,7 @@ The pre-compiled binaries allow connecting to Google Gmail via modern authentica
 will NOT allow you to connect to Google Gmail via modern authentication (OAuth 2.0). 
 Use an Application Specific Password instead (search online how to do this). 
 
-
+---
 
 ## Installation
 
@@ -135,6 +135,7 @@ xpine
 On your first launch, you will be greeted by the Main Menu. Press `E` to navigate to **Email Accounts** and add your 
 first account. `xpine` will safely and locally store your configurations in `~/.xpine/xpinerc`.
 
+---
 
 ## Security & Credential Management
 
@@ -149,6 +150,7 @@ Here is how `xpine` manages your credentials securely:
 
 *Note: If you migrate your `xpine` configuration to a new computer, you must copy both the `secrets.enc` vault and the hidden `.master.key` file for your encrypted credentials to carry over successfully.*
 
+---
 
 ## License
 
