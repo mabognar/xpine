@@ -1236,7 +1236,7 @@ fn handle_main_menu_events(k: KeyEvent, app: &mut App, session: &mut Option<Mail
         KeyCode::Up | KeyCode::Char('p') | KeyCode::Char('P') => selected_idx = selected_idx.saturating_sub(1),
         // KeyCode::Char('m') | KeyCode::Char('M') => next_mode = Some(AppMode::EmailList),
         KeyCode::Char('e') | KeyCode::Char('E') => next_mode = Some(AppMode::EmailAccounts { selected_idx: 0 }),
-        KeyCode::Down | KeyCode::Char('n') | KeyCode::Char('N') => selected_idx = (selected_idx + 1).min(8),
+        KeyCode::Down | KeyCode::Char('n') | KeyCode::Char('N') => selected_idx = (selected_idx + 1).min(7),
         KeyCode::Enter | KeyCode::Char('>') | KeyCode::Right => {
             match selected_idx {
                 0 => {
@@ -1255,11 +1255,11 @@ fn handle_main_menu_events(k: KeyEvent, app: &mut App, session: &mut Option<Mail
                     next_mode = Some(AppMode::EmailAccounts { selected_idx: 0 });
                 },
                 5 => { let _ = theme_provider.show_help("main_menu"); },
+                // 6 => {
+                //     // NEW: Open GitHub Sponsors
+                //     let _ = crate::browser::open_url("https://github.com/sponsors/mabognar");
+                // },
                 6 => {
-                    // NEW: Open GitHub Sponsors
-                    let _ = crate::browser::open_url("https://github.com/sponsors/mabognar");
-                },
-                7 => {
                     // SHIFTED: Update Check
                     if let Some(latest) = &app.latest_version {
                         if latest != env!("CARGO_PKG_VERSION") {
@@ -1271,7 +1271,7 @@ fn handle_main_menu_events(k: KeyEvent, app: &mut App, session: &mut Option<Mail
                         theme_provider.set_status("Still checking for updates...".to_string());
                     }
                 },
-                8 => {
+                7 => {
                     // SHIFTED: Quit
                     check_and_expunge_outlook(app, session, theme_provider);
                     *quit = true;
@@ -1298,9 +1298,9 @@ fn handle_main_menu_events(k: KeyEvent, app: &mut App, session: &mut Option<Mail
             app.needs_fetch = true;
             next_mode = Some(AppMode::EmailList);
         }
-        KeyCode::Char('$') => {
-            let _ = crate::browser::open_url("https://github.com/sponsors/mabognar");
-        }
+        // KeyCode::Char('$') => {
+        //     let _ = crate::browser::open_url("https://github.com/sponsors/mabognar");
+        // }
         KeyCode::Char('a') | KeyCode::Char('A') => next_mode = Some(AppMode::AddressBook { selected_idx: 0, addresses: crate::address::load_address_book() }),
         KeyCode::Char('f') | KeyCode::Char('F') => next_mode = Some(AppMode::FolderList { step: 0, selected_idx: app.current_account_idx, folders: Vec::new() }),
         KeyCode::Char('s') | KeyCode::Char('S') => next_mode = Some(AppMode::Settings { selected_idx: 0 }),

@@ -12,13 +12,13 @@
 * **Google Accounts:** OAuth 2.0 authentication or Application Specific Passwords
 * **Microsoft Accounts:** Graph API with OAuth 2.0 authentication for Outlook, Hotmail, and Exchange accounts
 * **Yahoo, Apple:** Application Specific Passwords
-* **Multiple Accounts:** Multiple accounts are supported -- switch between accounts with a single key-stroke
+* **Multiple Accounts:** Multiple accounts are supported -- switch between accounts with a single keystroke
 * **Help:** Built-in help describing the hot-keys and functionality
 * **Editor:** Compose emails with a built-in text editor that includes soft-wrapping and paragraph justification
 * **Address Book & Teams:** Manage individual contacts, import lists, and create distribution groups ("Teams")
 * **Address Completion:** `xpine` provides for autocompletion of email addresses (just hit `tab`)
 * **Spell Checking:** With the option to automatically spellcheck before sending an email
-* **Flexible Signature:** Insert your signature where/if you want with a single key-stroke 
+* **Flexible Signature:** Insert your signature where/if you want with a single keystroke 
 * **Auto Prettify:** `xpine` automatically justifies your email upon sending --- ragged emails will look nice
 * **Folders:** Move emails from folder-to-folder
 * **Theming:** Multiple built-in color themes
@@ -42,8 +42,8 @@ is checked.
 
 ## Determine Authentication Method
 Before running `xpine`, determine your authentication method and get the necessary information.
-1. Google Gmail App Specific Password (less secure, easier to setup) [instructions](#connecting-via-imapsmtp-app-passwords)
-2. Google Gmail OAuth 2.0 (more secure, harder to setup, need to generate Google `client_id` and `client_secret`) [instructions](#setting-up-google-gmail-oauth-20)
+1. Google Gmail App Specific Password (less secure, easier to set up) [instructions](#connecting-via-imapsmtp-app-passwords)
+2. Google Gmail OAuth 2.0 (more secure, harder to set up, need to generate Google `client_id` and `client_secret`) [instructions](#setting-up-google-gmail-oauth-20)
 3. Microsoft Outlook, Hotmail, Exchange (Graph API OAuth 2.0, can be easily setup directly in `xpine`)
 4. Yahoo App Specific Password [instructions](#connecting-via-imapsmtp-app-passwords)
 5. Apple/iCloud App Specific Password [instructions](#connecting-via-imapsmtp-app-passwords)
@@ -233,7 +233,8 @@ refresh tokens locally on your machine. They are never stored in plain text.
 
 ## Security & Credential Management
 
-`xpine` prioritizes your privacy and security by ensuring your sensitive information (such as IMAP passwords, OAuth 2.0 refresh tokens, and client secrets) is never stored in plain text on your drive.
+`xpine` ensures sensitive information (such as IMAP passwords, OAuth 2.0 refresh tokens, and client secrets) is never 
+stored in plain text on your drive.
 
 Here is how `xpine` manages your credentials securely:
 

@@ -1124,7 +1124,7 @@ fn draw_main_menu(stdout: &mut std::io::Stdout, app: &App, cols: u16, rows: u16,
         ("E", "EMAIL ACCOUNTS", "Add/Delete email accounts"),
         ("H", "HELP", "Get help using xpine"),
         ("U", "UPDATE XPINE", update_desc.as_str()), // ADDED
-        ("$", "DONATE", "❤️  xpine? Please consider donating"),
+        // ("$", "DONATE", "❤️  xpine? Please consider donating"),
         ("Q", "QUIT", "Leave the xpine program"),    // Pushed down
     ];
 
