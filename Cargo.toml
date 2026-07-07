@@ -2,6 +2,13 @@
 name = "xpine"
 version = "0.1.0"
 edition = "2024"
+license = "MIT"
+keywords = ["email", "client", "terminal"]
+categories = ["email"]
+description = "Email client written in Rust. Fast, efficient, with modern features. Tested with MacOS & Linux."
+readme = true
+documentation = "https://docs.rs/xpine"
+repository = "https://github.com/mabognar/xpine"
 
 [dependencies]
 imap = "2.4.1"
