@@ -2,7 +2,7 @@
 
 `xpine` is a fast, efficient terminal-based email client written in Rust. 
 
-<img width="740" height="588" alt="xpine-mov" src="https://github.com/user-attachments/assets/4edd00a8-d2ef-4705-a27f-8b312e5ef16a" />
+https://github.com/user-attachments/assets/a0d5aecb-30da-4514-88fa-5b8eb96d9621
 
 ---
 
