@@ -28,25 +28,92 @@ fn print_colorized_emails(
     let mut tokens = Vec::new();
     let mut current_idx = 0;
 
+    // // Parse entire unwrapped string and colorize
+    // while let Some(start) = text[current_idx..].find('<') {
+    //     let absolute_start = current_idx + start;
+    //     let chunk = &text[current_idx..absolute_start];
+    //
+    //     let mut in_quotes = false;
+    //     let mut last_comma_idx = None;
+    //     for (i, c) in chunk.char_indices() {
+    //         if c == '"' { in_quotes = !in_quotes; }
+    //         if c == ',' && !in_quotes { last_comma_idx = Some(i); }
+    //     }
+    //
+    //     if let Some(comma_pos) = last_comma_idx {
+    //         let plain_emails_part = &chunk[..comma_pos + 1];
+    //         tokens.push((plain_emails_part.to_string(), email_color));
+    //         let name_part = &chunk[comma_pos + 1..];
+    //         tokens.push((name_part.to_string(), name_color));
+    //     } else {
+    //         tokens.push((chunk.to_string(), name_color));
+    //     }
+    //
+    //     if let Some(end) = text[absolute_start..].find('>') {
+    //         let absolute_end = absolute_start + end + 1;
+    //         let email_part = &text[absolute_start..absolute_end];
+    //         tokens.push((email_part.to_string(), email_color));
+    //         current_idx = absolute_end;
+    //     } else {
+    //         current_idx = absolute_start;
+    //         break;
+    //     }
+    // }
+
     // Parse entire unwrapped string and colorize
     while let Some(start) = text[current_idx..].find('<') {
         let absolute_start = current_idx + start;
         let chunk = &text[current_idx..absolute_start];
 
-        let mut in_quotes = false;
-        let mut last_comma_idx = None;
-        for (i, c) in chunk.char_indices() {
-            if c == '"' { in_quotes = !in_quotes; }
-            if c == ',' && !in_quotes { last_comma_idx = Some(i); }
+        // Find the split point between plain emails (which contain '@')
+        // and the display name immediately preceding the '<'
+        let split_pos = if let Some(last_at) = chunk.rfind('@') {
+            if let Some(comma_offset) = chunk[last_at..].find(',') {
+                last_at + comma_offset + 1 // split immediately after the comma
+            } else {
+                0
+            }
+        } else {
+            // No '@' means no plain emails. Just separate the leading comma if this
+            // name is appended to a previous '<...>' address block.
+            if chunk.trim_start().starts_with(',') {
+                chunk.find(',').unwrap() + 1
+            } else {
+                0
+            }
+        };
+
+        // let plain_emails_part = &chunk[..split_pos];
+        // let name_part = &chunk[split_pos..];
+        //
+        // if !plain_emails_part.is_empty() {
+        //     tokens.push((plain_emails_part.to_string(), email_color));
+        // }
+        // if !name_part.is_empty() {
+        //     tokens.push((name_part.to_string(), name_color));
+        // }
+
+        let plain_emails_part = &chunk[..split_pos];
+        let name_part = &chunk[split_pos..];
+
+        if !plain_emails_part.is_empty() {
+            tokens.push((plain_emails_part.to_string(), email_color));
         }
 
-        if let Some(comma_pos) = last_comma_idx {
-            let plain_emails_part = &chunk[..comma_pos + 1];
-            tokens.push((plain_emails_part.to_string(), email_color));
-            let name_part = &chunk[comma_pos + 1..];
+        // Find the boundaries of the actual text to preserve leading/trailing newlines and spaces
+        let start = name_part.find(|c: char| !c.is_whitespace()).unwrap_or(0);
+        let end = name_part.rfind(|c: char| !c.is_whitespace()).map(|i| i + 1).unwrap_or(0);
+
+        if start < end {
+            let left_space = &name_part[..start];
+            let clean_name = name_part[start..end].trim_matches('"');
+            let right_space = &name_part[end..];
+
+            // Reassemble with the preserved newlines intact
+            tokens.push((format!("{}\"{}\"{}", left_space, clean_name, right_space), name_color));
+        } else if !name_part.is_empty() {
+            // Push any remaining whitespace-only chunks (like dangling newlines)
             tokens.push((name_part.to_string(), name_color));
-        } else {
-            tokens.push((chunk.to_string(), name_color));
         }
 
         if let Some(end) = text[absolute_start..].find('>') {

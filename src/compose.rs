@@ -556,14 +556,39 @@ pub fn compose_email(account: &Account, default_to: Option<&str>, default_cc: Op
         .subject(state.subject);
 
     let parse_and_add = |mut b: lettre::message::MessageBuilder, input: &str, field_type: &str| -> lettre::message::MessageBuilder {
-        for addr in input.split(',') {
-            let mut trimmed = addr.trim().trim_end_matches(';').to_string();
+        let mut split_addrs = Vec::new();
+        let mut current_addr = String::new();
+        let mut in_quotes = false;
+
+        // split by commas, ignore commas inside quotes
+        for c in input.chars() {
+            if c == '"' { in_quotes = !in_quotes; }
+            if c == ',' && !in_quotes {
+                split_addrs.push(current_addr.trim().to_string());
+                current_addr.clear();
+            } else {
+                current_addr.push(c);
+            }
+        }
+        if !current_addr.trim().is_empty() {
+            split_addrs.push(current_addr.trim().to_string());
+        }
+
+        // process the addresses
+        for addr in split_addrs {
+            let mut trimmed = addr.trim_end_matches(';').to_string();
             if trimmed.eq_ignore_ascii_case(&account.email) {
-                if let Some((user, domain)) = trimmed.split_once('@') { if !user.contains('+') { trimmed = format!("{}+me@{}", user, domain); } }
+                if let Some((user, domain)) = trimmed.split_once('@') {
+                    if !user.contains('+') { trimmed = format!("{}+me@{}", user, domain); }
+                }
             }
             if !trimmed.is_empty() {
-                if let Ok(mailbox) = trimmed.parse::<lettre::message::Mailbox>() { b = match field_type { "to" => b.to(mailbox), "cc" => b.cc(mailbox), "bcc" => b.bcc(mailbox), _ => b, }; }
-                else if let Ok(mailbox) = format!("<{}>", trimmed).parse::<lettre::message::Mailbox>() { b = match field_type { "to" => b.to(mailbox), "cc" => b.cc(mailbox), "bcc" => b.bcc(mailbox), _ => b, }; }
+                if let Ok(mailbox) = trimmed.parse::<lettre::message::Mailbox>() {
+                    b = match field_type { "to" => b.to(mailbox), "cc" => b.cc(mailbox), "bcc" => b.bcc(mailbox), _ => b, };
+                }
+                else if let Ok(mailbox) = format!("<{}>", trimmed).parse::<lettre::message::Mailbox>() {
+                    b = match field_type { "to" => b.to(mailbox), "cc" => b.cc(mailbox), "bcc" => b.bcc(mailbox), _ => b, };
+                }
             }
         }
         b
