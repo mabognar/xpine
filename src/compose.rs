@@ -124,8 +124,21 @@ pub fn compose_email(account: &Account, default_to: Option<&str>, default_cc: Op
                 if i < 3 {
                     let suggestions = crate::prompt::find_email_suggestions(val, &address_book);
                     if !suggestions.is_empty() {
+                        // let current_suggestion = &suggestions[suggestion_idx % suggestions.len()];
+                        // let last_part = val.split(',').last().unwrap_or("").trim_start();
+                        //
+                        // if last_part.to_lowercase() != current_suggestion.to_lowercase() {
+
                         let current_suggestion = &suggestions[suggestion_idx % suggestions.len()];
-                        let last_part = val.split(',').last().unwrap_or("").trim_start();
+
+                        // Safely find the last unquoted comma for hints
+                        let mut last_comma_idx = None;
+                        let mut in_quotes = false;
+                        for (idx, c) in val.char_indices() {
+                            if c == '"' { in_quotes = !in_quotes; }
+                            if c == ',' && !in_quotes { last_comma_idx = Some(idx); }
+                        }
+                        let last_part = if let Some(idx) = last_comma_idx { val[idx + 1..].trim_start() } else { val.trim_start() };
 
                         if last_part.to_lowercase() != current_suggestion.to_lowercase() {
                             // calculate how many matches exist to hint at scrolling
@@ -437,20 +450,41 @@ pub fn compose_email(account: &Account, default_to: Option<&str>, default_cc: Op
                                     if !suggestions.is_empty() {
                                         let suggestion = &suggestions[suggestion_idx % suggestions.len()];
 
+                                        // // strip hidden newlines/carriage returns
+                                        // let clean_suggestion = suggestion.trim_end();
+                                        //
+                                        // let last_part = target.split(',').last().unwrap_or("").trim_start();
+                                        //
+                                        // if last_part.to_lowercase() != clean_suggestion.to_lowercase() {
+                                        //     if let Some(last_comma_idx) = target.rfind(',') {
+                                        //         target.truncate(last_comma_idx + 1);
+                                        //         target.push(' ');
+                                        //         target.push_str(clean_suggestion); // append cleaned version
+                                        //     } else {
+                                        //         *target = clean_suggestion.to_string(); // replace with cleaned version
+                                        //     }
+
                                         // strip hidden newlines/carriage returns
                                         let clean_suggestion = suggestion.trim_end();
 
-                                        let last_part = target.split(',').last().unwrap_or("").trim_start();
+                                        // Safely find the last unquoted comma for completion
+                                        let mut last_comma_idx = None;
+                                        let mut in_quotes = false;
+                                        for (idx, c) in target.char_indices() {
+                                            if c == '"' { in_quotes = !in_quotes; }
+                                            if c == ',' && !in_quotes { last_comma_idx = Some(idx); }
+                                        }
+                                        let last_part = if let Some(idx) = last_comma_idx { target[idx + 1..].trim_start() } else { target.trim_start() };
 
                                         if last_part.to_lowercase() != clean_suggestion.to_lowercase() {
-                                            if let Some(last_comma_idx) = target.rfind(',') {
-                                                target.truncate(last_comma_idx + 1);
+                                            if let Some(idx) = last_comma_idx {
+                                                target.truncate(idx + 1);
                                                 target.push(' ');
                                                 target.push_str(clean_suggestion); // append cleaned version
                                             } else {
                                                 *target = clean_suggestion.to_string(); // replace with cleaned version
                                             }
-
+                                            
                                             cursor_pos = target.len();
 
                                             suggestion_idx = 0;

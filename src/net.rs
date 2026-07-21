@@ -595,15 +595,48 @@ pub fn fetch_emails(session: &mut MailSession, app: &mut App, items_per_page: u3
                         let mut subject = "No Subject".to_string();
                         let mut from = "Unknown Sender".to_string();
                         let mut reply_to = "unknown@example.com".to_string();
+                        // let mut to_addr = String::new();
+                        // let mut cc = String::new();
+                        // let mut date = "Unknown Date".to_string();
+                        //
+                        // if let Some(env) = message.envelope() {
                         let mut to_addr = String::new();
                         let mut cc = String::new();
                         let mut date = "Unknown Date".to_string();
+                        let mut full_date = "Unknown Date".to_string();
 
                         if let Some(env) = message.envelope() {
                             // Update the Subject to use our decoder
                             if let Some(s) = env.subject.as_ref() {
                                 subject = decode_mime_string(s);
                             }
+
+                            // if let Some(d) = env.date.as_ref() {
+                            //     let raw_date = String::from_utf8_lossy(d).into_owned();
+                            //     if let Ok(dt) = DateTime::parse_from_rfc2822(&raw_date) {
+                            //         let now = Utc::now().timestamp();
+                            //         let diff = now - dt.timestamp();
+                            //         let local_dt = dt.with_timezone(&Local);
+                            //         date = if diff < 7 * 24 * 3600 && diff >= -86400 { local_dt.format("%a %H:%M").to_string() } else { local_dt.format("%b %d").to_string() };
+                            //     } else if let Some(dt) = message.internal_date() {
+                            //         // Fallback to the server's guaranteed internal receive time
+                            //         let now = Utc::now().timestamp();
+                            //         let diff = now - dt.timestamp();
+                            //         let local_dt = dt.with_timezone(&Local);
+                            //         date = if diff < 7 * 24 * 3600 && diff >= -86400 { local_dt.format("%a %H:%M").to_string() } else { local_dt.format("%b %d").to_string() };
+                            //     } else {
+                            //         // Extreme fallback: truncate to exactly 6 characters (e.g., "Apr 02") to preserve UI column width
+                            //         let mut s = raw_date.split(" +").next().unwrap_or(&raw_date).to_string();
+                            //         s.truncate(6);
+                            //         date = s;
+                            //     }
+                            // } else if let Some(dt) = message.internal_date() {
+                            //     // Fallback if the Date header is completely missing
+                            //     let now = Utc::now().timestamp();
+                            //     let diff = now - dt.timestamp();
+                            //     let local_dt = dt.with_timezone(&Local);
+                            //     date = if diff < 7 * 24 * 3600 && diff >= -86400 { local_dt.format("%a %H:%M").to_string() } else { local_dt.format("%b %d").to_string() };
+                            // }
 
                             if let Some(d) = env.date.as_ref() {
                                 let raw_date = String::from_utf8_lossy(d).into_owned();
@@ -612,17 +645,20 @@ pub fn fetch_emails(session: &mut MailSession, app: &mut App, items_per_page: u3
                                     let diff = now - dt.timestamp();
                                     let local_dt = dt.with_timezone(&Local);
                                     date = if diff < 7 * 24 * 3600 && diff >= -86400 { local_dt.format("%a %H:%M").to_string() } else { local_dt.format("%b %d").to_string() };
+                                    full_date = local_dt.format("%a, %d %b %Y %H:%M:%S %z").to_string();
                                 } else if let Some(dt) = message.internal_date() {
                                     // Fallback to the server's guaranteed internal receive time
                                     let now = Utc::now().timestamp();
                                     let diff = now - dt.timestamp();
                                     let local_dt = dt.with_timezone(&Local);
                                     date = if diff < 7 * 24 * 3600 && diff >= -86400 { local_dt.format("%a %H:%M").to_string() } else { local_dt.format("%b %d").to_string() };
+                                    full_date = local_dt.format("%a, %d %b %Y %H:%M:%S %z").to_string();
                                 } else {
                                     // Extreme fallback: truncate to exactly 6 characters (e.g., "Apr 02") to preserve UI column width
                                     let mut s = raw_date.split(" +").next().unwrap_or(&raw_date).to_string();
                                     s.truncate(6);
                                     date = s;
+                                    full_date = raw_date;
                                 }
                             } else if let Some(dt) = message.internal_date() {
                                 // Fallback if the Date header is completely missing
@@ -630,6 +666,7 @@ pub fn fetch_emails(session: &mut MailSession, app: &mut App, items_per_page: u3
                                 let diff = now - dt.timestamp();
                                 let local_dt = dt.with_timezone(&Local);
                                 date = if diff < 7 * 24 * 3600 && diff >= -86400 { local_dt.format("%a %H:%M").to_string() } else { local_dt.format("%b %d").to_string() };
+                                full_date = local_dt.format("%a, %d %b %Y %H:%M:%S %z").to_string();
                             }
 
                             macro_rules! format_addrs {
@@ -676,6 +713,7 @@ pub fn fetch_emails(session: &mut MailSession, app: &mut App, items_per_page: u3
                             to_addr,
                             cc,
                             date,
+                            full_date,
                             size,
                             is_read: is_seen,
                             is_deleted,
@@ -880,7 +918,20 @@ pub fn fetch_emails(session: &mut MailSession, app: &mut App, items_per_page: u3
                                 .map(|dt| dt.timestamp())
                                 .unwrap_or(0);
 
+                            // let mut date_str = "Unknown Date".to_string();
+                            // if let Ok(dt) = DateTime::parse_from_rfc3339(&msg.received_date_time) {
+                            //     let now = Utc::now().timestamp();
+                            //     let diff = now - dt.timestamp();
+                            //     let local_dt = dt.with_timezone(&Local);
+                            //     date_str = if diff < 7 * 24 * 3600 && diff >= -86400 {
+                            //         local_dt.format("%a %H:%M").to_string()
+                            //     } else {
+                            //         local_dt.format("%b %d").to_string()
+                            //     };
+                            // }
+
                             let mut date_str = "Unknown Date".to_string();
+                            let mut full_date_str = "Unknown Date".to_string();
                             if let Ok(dt) = DateTime::parse_from_rfc3339(&msg.received_date_time) {
                                 let now = Utc::now().timestamp();
                                 let diff = now - dt.timestamp();
@@ -890,6 +941,9 @@ pub fn fetch_emails(session: &mut MailSession, app: &mut App, items_per_page: u3
                                 } else {
                                     local_dt.format("%b %d").to_string()
                                 };
+                                full_date_str = local_dt.format("%a, %d %b %Y %H:%M:%S %z").to_string();
+                            } else {
+                                full_date_str = msg.received_date_time.clone();
                             }
 
                             macro_rules! format_graph_addrs {
@@ -938,6 +992,7 @@ pub fn fetch_emails(session: &mut MailSession, app: &mut App, items_per_page: u3
                                 to_addr,
                                 cc,
                                 date: date_str,
+                                full_date: full_date_str,
                                 size: msg_size,
                                 is_read: msg.is_read,
                                 is_deleted: is_deleted_locally,

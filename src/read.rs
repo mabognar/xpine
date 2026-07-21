@@ -168,7 +168,8 @@ pub fn view_email(
     let active_email = app.active_account.email.clone();
 
     let mut reply_to = app.page_emails[app.selected_index].reply_to.clone();
-    let mut date = app.page_emails[app.selected_index].date.clone();
+    // let mut date = app.page_emails[app.selected_index].date.clone();
+    let mut date = app.page_emails[app.selected_index].full_date.clone();
     let mut fetch_seq = app.page_emails[app.selected_index].id.to_string();
 
     let mut expand_headers = false;
@@ -195,12 +196,12 @@ pub fn view_email(
             ).unwrap();
         }
 
-        let fields = ["From:", "To:", "Cc:", "Subject:"];
-        let vals = [&email_from, &email_to, &email_cc, &email_subject];
+        let fields = ["Date:", "From:", "To:", "Cc:", "Subject:"];
+        let vals = [&date, &email_from, &email_to, &email_cc, &email_subject];
 
         let mut current_y = 1;
 
-        for i in 0..4 {
+        for i in 0..5 {
             let label = fields[i];
             let val = vals[i];
 
@@ -223,12 +224,19 @@ pub fn view_email(
                     Print(" ")
                 ).unwrap();
 
-                if i < 3 {
+                if i > 0 && i < 4 {
                     // Pass the FULL raw 'val', and let the helper truncate it!
                     print_colorized_emails(stdout, val, r_colors.date_color, r_colors.fg, current_y, r_colors.menu_bg, false, Some(max_len)).unwrap();
                 } else {
                     queue!(stdout, Print(display_val)).unwrap();
                 }
+
+                // if i < 3 {
+                //     // Pass the FULL raw 'val', and let the helper truncate it!
+                //     print_colorized_emails(stdout, val, r_colors.date_color, r_colors.fg, current_y, r_colors.menu_bg, false, Some(max_len)).unwrap();
+                // } else {
+                //     queue!(stdout, Print(display_val)).unwrap();
+                // }
 
                 queue!(stdout, Clear(ClearType::UntilNewLine)).unwrap();
                 current_y += 1;
@@ -237,7 +245,18 @@ pub fn view_email(
                 let wrap_width = (cols as usize).saturating_sub(10);
                 let wrapped_val = if val.is_empty() { String::new() } else { crate::mail::wrap_email_body(val, wrap_width) };
 
-                if i < 3 {
+                // if i < 3 {
+                //     queue!(stdout, cursor::MoveTo(0, current_y), SetBackgroundColor(r_colors.menu_bg), Clear(ClearType::UntilNewLine)).unwrap();
+                //     queue!(
+                //         stdout, cursor::MoveTo(0, current_y),
+                //         SetForegroundColor(r_colors.accent), Print(format!("{:>8}", label)),
+                //         SetForegroundColor(r_colors.fg), Print(" ")
+                //     ).unwrap();
+                //
+                //     current_y = print_colorized_emails(stdout, &wrapped_val, r_colors.date_color, r_colors.fg, current_y, r_colors.menu_bg, true, None).unwrap();
+                //     current_y += 1;
+                // } else {
+                if i > 0 && i < 4 {
                     queue!(stdout, cursor::MoveTo(0, current_y), SetBackgroundColor(r_colors.menu_bg), Clear(ClearType::UntilNewLine)).unwrap();
                     queue!(
                         stdout, cursor::MoveTo(0, current_y),
@@ -485,14 +504,22 @@ pub fn view_email(
                                 html_body = h_body;
                                 attachments = atts;
 
+                                // // Update local headers to reflect the new email
+                                // email_from = app.page_emails[app.selected_index].from.clone();
+                                // email_to = app.page_emails[app.selected_index].to_addr.clone();
+                                // email_cc = app.page_emails[app.selected_index].cc.clone();
+                                // email_subject = app.page_emails[app.selected_index].subject.clone();
+                                // reply_to = app.page_emails[app.selected_index].reply_to.clone();
+                                // date = app.page_emails[app.selected_index].date.clone();
+
                                 // Update local headers to reflect the new email
                                 email_from = app.page_emails[app.selected_index].from.clone();
                                 email_to = app.page_emails[app.selected_index].to_addr.clone();
                                 email_cc = app.page_emails[app.selected_index].cc.clone();
                                 email_subject = app.page_emails[app.selected_index].subject.clone();
                                 reply_to = app.page_emails[app.selected_index].reply_to.clone();
-                                date = app.page_emails[app.selected_index].date.clone();
-
+                                date = app.page_emails[app.selected_index].full_date.clone();
+                                
                                 // Readjust header size layout for attachments
                                 attach_lines = if attachments.is_empty() { 1 } else { 1 + attachments.len() };
                                 reader.top_margin = (5 + attach_lines) as u16;

@@ -9,6 +9,7 @@ pub struct EmailMeta {
     pub to_addr: String,
     pub cc: String,
     pub date: String,
+    pub full_date: String,
     pub size: u32,
     pub is_read: bool,
     pub is_deleted: bool,

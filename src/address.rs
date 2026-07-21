@@ -185,11 +185,38 @@ pub fn expand_address_lists(input: &str, address_book: &[String]) -> String {
         }
     }
 
+    // let mut expanded = Vec::new();
+    //
+    // // split by comma
+    // for part in processed_input.split(',') {
+    //     let part = part.trim();
+    //
+    //     // strip out the " (Team)" suffix
+    //     let clean_part = part.strip_suffix(" (Team)").unwrap_or(part).trim();
+    //     let mut matched_list = false;
+
     let mut expanded = Vec::new();
 
-    // split by comma
-    for part in processed_input.split(',') {
-        let part = part.trim();
+    // Safely split by comma, ignoring commas inside quotes
+    let mut parts = Vec::new();
+    let mut current_part = String::new();
+    let mut in_quotes = false;
+
+    for c in processed_input.chars() {
+        if c == '"' { in_quotes = !in_quotes; }
+        if c == ',' && !in_quotes {
+            parts.push(current_part.trim().to_string());
+            current_part.clear();
+        } else {
+            current_part.push(c);
+        }
+    }
+    if !current_part.trim().is_empty() {
+        parts.push(current_part.trim().to_string());
+    }
+
+    for part in parts {
+        let part = part.as_str();
 
         // strip out the " (Team)" suffix
         let clean_part = part.strip_suffix(" (Team)").unwrap_or(part).trim();

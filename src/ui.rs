@@ -625,12 +625,20 @@ impl UiExt for Editor {
 
                 match line {
                     Title(t) => {
+                        let display_title = t.replace("xpine - ", &format!("xpine ({}) - ", env!("CARGO_PKG_VERSION")));
                         queue!(stdout,
                             SetBackgroundColor(colors.menu_bg), SetForegroundColor(colors.accent),
-                            Print(*t), Print(" ".repeat((cols as usize).saturating_sub(t.chars().count()))),
+                            Print(&display_title), Print(" ".repeat((cols as usize).saturating_sub(display_title.chars().count()))),
                             ResetColor, SetBackgroundColor(colors.bg)
                         )?;
                     }
+                    // Title(t) => {
+                    //     queue!(stdout,
+                    //         SetBackgroundColor(colors.menu_bg), SetForegroundColor(colors.accent),
+                    //         Print(*t), Print(" ".repeat((cols as usize).saturating_sub(t.chars().count()))),
+                    //         ResetColor, SetBackgroundColor(colors.bg)
+                    //     )?;
+                    // }
                     Header(h) => {
                         queue!(stdout, SetForegroundColor(colors.date_color), Print(*h))?;
                     }
@@ -761,8 +769,11 @@ fn draw_address_book(stdout: &mut std::io::Stdout, cols: u16, rows: u16, theme_p
     let theme = &theme_provider.theme_set.themes[&theme_provider.current_theme];
     let colors = derive_ui_colors(theme);
 
-    let title = "xpine - Address Book";
-    queue!(stdout, cursor::MoveTo(0, 0), SetBackgroundColor(colors.menu_bg), SetForegroundColor(colors.accent), Print(title), Print(" ".repeat((cols as usize).saturating_sub(title.chars().count()))), ResetColor)?;
+    let title = format!("xpine ({}) - Address Book", env!("CARGO_PKG_VERSION"));
+    queue!(stdout, cursor::MoveTo(0, 0), SetBackgroundColor(colors.menu_bg), SetForegroundColor(colors.accent), Print(&title), Print(" ".repeat((cols as usize).saturating_sub(title.chars().count()))), ResetColor)?;
+
+    // let title = "xpine - Address Book";
+    // queue!(stdout, cursor::MoveTo(0, 0), SetBackgroundColor(colors.menu_bg), SetForegroundColor(colors.accent), Print(title), Print(" ".repeat((cols as usize).saturating_sub(title.chars().count()))), ResetColor)?;
 
     let items_per_page = (rows.saturating_sub(4) as usize).max(1);
     let start_idx = if selected_idx >= items_per_page { selected_idx - items_per_page + 1 } else { 0 };
@@ -843,8 +854,11 @@ fn draw_email_accounts(stdout: &mut std::io::Stdout, app: &App, cols: u16, rows:
     let theme = &theme_provider.theme_set.themes[&theme_provider.current_theme];
     let colors = derive_ui_colors(theme);
 
-    let title = "xpine - Email Accounts";
+    let title = format!("xpine ({}) - Email Accounts", env!("CARGO_PKG_VERSION"));
     let title_len = title.chars().count();
+
+    // let title = "xpine - Email Accounts";
+    // let title_len = title.chars().count();
 
     queue!(
         stdout, cursor::MoveTo(0, 0), SetBackgroundColor(colors.menu_bg),
@@ -894,7 +908,8 @@ fn draw_email_list(stdout: &mut std::io::Stdout, app: &App, cols: u16, rows: u16
     let theme = &theme_provider.theme_set.themes[&theme_provider.current_theme];
     let colors = derive_ui_colors(theme);
 
-    let header_title = format!("xpine - {} ({})", app.current_folder, app.active_account.email);
+    let header_title = format!("xpine ({}) - {} ({})", env!("CARGO_PKG_VERSION"), app.current_folder, app.active_account.email);
+    // let header_title = format!("xpine - {} ({})", app.current_folder, app.active_account.email);
     queue!(stdout, cursor::MoveTo(0, 0), SetBackgroundColor(colors.menu_bg), terminal::Clear(ClearType::UntilNewLine), cursor::MoveTo(0, 0), SetForegroundColor(colors.accent), Print(header_title))?;
 
     if let Some(ref query) = app.search_query {
@@ -1044,7 +1059,12 @@ fn draw_folder_list(stdout: &mut std::io::Stdout, app: &App, cols: u16, rows: u1
     let theme = &theme_provider.theme_set.themes[&theme_provider.current_theme];
     let colors = derive_ui_colors(theme);
 
-    let header_title = if step == 0 { "xpine - Select Account".to_string() } else { format!("xpine - Folders ({})", app.active_account.email) };
+    let header_title = if step == 0 {
+        format!("xpine ({}) - Select Account", env!("CARGO_PKG_VERSION"))
+    } else {
+        format!("xpine ({}) - Folders ({})", env!("CARGO_PKG_VERSION"), app.active_account.email)
+    };
+    // let header_title = if step == 0 { "xpine - Select Account".to_string() } else { format!("xpine - Folders ({})", app.active_account.email) };
     queue!(stdout, cursor::MoveTo(0, 0), SetBackgroundColor(colors.menu_bg), terminal::Clear(ClearType::UntilNewLine), SetForegroundColor(colors.accent), Print(header_title), ResetColor)?;
 
     let items_count = if step == 0 { app.accounts.len() } else { folders.len() };
@@ -1128,7 +1148,8 @@ fn draw_main_menu(stdout: &mut std::io::Stdout, app: &App, cols: u16, rows: u16,
         ("Q", "QUIT", "Leave the xpine program"),    // Pushed down
     ];
 
-    let header_title = format!("xpine - Main Menu ({})", app.active_account.email);
+    let header_title = format!("xpine ({}) - Main Menu ({})", env!("CARGO_PKG_VERSION"), app.active_account.email);
+    // let header_title = format!("xpine - Main Menu ({})", app.active_account.email);
     queue!(stdout, cursor::MoveTo(0, 0), SetBackgroundColor(colors.menu_bg), terminal::Clear(ClearType::UntilNewLine), SetForegroundColor(colors.accent), Print(header_title), ResetColor)?;
 
     for (i, (key, title, desc)) in menu_options.iter().enumerate() {
@@ -1185,7 +1206,9 @@ fn draw_settings(stdout: &mut std::io::Stdout, cols: u16, rows: u16, theme_provi
     let theme = &theme_provider.theme_set.themes[&theme_provider.current_theme];
     let colors = derive_ui_colors(theme);
 
-    queue!(stdout, cursor::MoveTo(0, 0), SetBackgroundColor(colors.menu_bg), terminal::Clear(ClearType::CurrentLine), SetForegroundColor(colors.accent), Print("xpine - Settings"), SetBackgroundColor(colors.bg), SetForegroundColor(colors.fg))?;
+    let title = format!("xpine ({}) - Settings", env!("CARGO_PKG_VERSION"));
+    queue!(stdout, cursor::MoveTo(0, 0), SetBackgroundColor(colors.menu_bg), terminal::Clear(ClearType::CurrentLine), SetForegroundColor(colors.accent), Print(title), SetBackgroundColor(colors.bg), SetForegroundColor(colors.fg))?;
+    // queue!(stdout, cursor::MoveTo(0, 0), SetBackgroundColor(colors.menu_bg), terminal::Clear(ClearType::CurrentLine), SetForegroundColor(colors.accent), Print("xpine - Settings"), SetBackgroundColor(colors.bg), SetForegroundColor(colors.fg))?;
 
     let options = [
         ("    Sort Newest First", theme_provider.sort_newest_first),
