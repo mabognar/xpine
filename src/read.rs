@@ -746,11 +746,48 @@ pub fn view_email(
 
                     if key.code == event::KeyCode::Char('a') || key.code == event::KeyCode::Char('A') {
                         let combined_addrs = format!("{}, {}, {}", email_from, email_to, email_cc);
+                        let mut addrs: Vec<String> = Vec::new();
+                        let mut current_addr = String::new();
+                        let mut in_angle_brackets = false;
 
-                        let mut addrs: Vec<String> = combined_addrs.split(',')
-                            .map(|s| s.trim().to_string())
-                            .filter(|s| !s.is_empty())
-                            .collect();
+                        for c in combined_addrs.chars() {
+                            match c {
+                                '<' => {
+                                    in_angle_brackets = true;
+                                    current_addr.push(c);
+                                }
+                                '>' => {
+                                    in_angle_brackets = false;
+                                    current_addr.push(c);
+                                }
+                                ',' => {
+                                    if in_angle_brackets {
+                                        // Comma is safely inside the <email@domain.com> bracket
+                                        current_addr.push(c);
+                                    } else if current_addr.contains('@') {
+                                        // The comma is outside brackets, AND we already have an '@'.
+                                        // This guarantees we've completed reading an address block.
+                                        let trimmed = current_addr.trim().to_string();
+                                        if trimmed.chars().any(|ch| ch.is_alphanumeric()) {
+                                            addrs.push(trimmed);
+                                        }
+                                        current_addr.clear();
+                                    } else {
+                                        // The comma is outside brackets but we haven't seen an '@' yet.
+                                        // This is a comma inside an unquoted name (e.g., "Roth, Heather A")
+                                        current_addr.push(c);
+                                    }
+                                }
+                                _ => {
+                                    current_addr.push(c);
+                                }
+                            }
+                        }
+
+                        let final_trim = current_addr.trim().to_string();
+                        if final_trim.chars().any(|ch| ch.is_alphanumeric()) {
+                            addrs.push(final_trim);
+                        }
 
                         addrs.sort();
                         addrs.dedup();
@@ -773,9 +810,95 @@ pub fn view_email(
                         } else {
                             reader.set_status("Add address cancelled.".to_string());
                         }
-
                         continue;
                     }
+
+                    // if key.code == event::KeyCode::Char('a') || key.code == event::KeyCode::Char('A') {
+                    //     let combined_addrs = format!("{}, {}, {}", email_from, email_to, email_cc);
+                    //
+                    //     // Safely split by commas, ignoring commas inside quoted names
+                    //     let mut addrs: Vec<String> = Vec::new();
+                    //     let mut current_addr = String::new();
+                    //     let mut in_quotes = false;
+                    //
+                    //     for c in combined_addrs.chars() {
+                    //         if c == '"' {
+                    //             in_quotes = !in_quotes;
+                    //         }
+                    //         if c == ',' && !in_quotes {
+                    //             let trimmed = current_addr.trim().to_string();
+                    //             if !trimmed.is_empty() {
+                    //                 addrs.push(trimmed);
+                    //             }
+                    //             current_addr.clear();
+                    //         } else {
+                    //             current_addr.push(c);
+                    //         }
+                    //     }
+                    //
+                    //     // Capture the final address after the loop
+                    //     let final_trim = current_addr.trim().to_string();
+                    //     if !final_trim.is_empty() {
+                    //         addrs.push(final_trim);
+                    //     }
+                    //
+                    //     addrs.sort();
+                    //     addrs.dedup();
+                    //
+                    //     if addrs.is_empty() {
+                    //         reader.set_status("No addresses found to add.".to_string());
+                    //         continue;
+                    //     }
+                    //
+                    //     if let Ok(Some(selected_addr)) = reader.prompt_select_item("Add address:", &addrs) {
+                    //         if let Ok(added) = address::add_to_address_book(&selected_addr) {
+                    //             if added {
+                    //                 reader.set_status(format!("Added {} to address book.", selected_addr));
+                    //             } else {
+                    //                 reader.set_status("Address already in address book".to_string());
+                    //             }
+                    //         } else {
+                    //             reader.set_status("Failed to access address book".to_string());
+                    //         }
+                    //     } else {
+                    //         reader.set_status("Add address cancelled.".to_string());
+                    //     }
+                    //     continue;
+                    // }
+
+                    // if key.code == event::KeyCode::Char('a') || key.code == event::KeyCode::Char('A') {
+                    //     let combined_addrs = format!("{}, {}, {}", email_from, email_to, email_cc);
+                    //
+                    //     let mut addrs: Vec<String> = combined_addrs.split(',')
+                    //         .map(|s| s.trim().to_string())
+                    //         .filter(|s| !s.is_empty())
+                    //         .collect();
+                    //
+                    //     addrs.sort();
+                    //     addrs.dedup();
+                    //
+                    //     if addrs.is_empty() {
+                    //         reader.set_status("No addresses found to add.".to_string());
+                    //         continue;
+                    //     }
+                    //
+                    //     if let Ok(Some(selected_addr)) = reader.prompt_select_item("Add address:", &addrs) {
+                    //         if let Ok(added) = address::add_to_address_book(&selected_addr) {
+                    //             if added {
+                    //                 reader.set_status(format!("Added {} to address book.", selected_addr));
+                    //             } else {
+                    //                 reader.set_status("Address already in address book".to_string());
+                    //             }
+                    //         } else {
+                    //             reader.set_status("Failed to access address book".to_string());
+                    //         }
+                    //     } else {
+                    //         reader.set_status("Add address cancelled.".to_string());
+                    //     }
+                    //
+                    //     continue;
+                    // }
+
                     if key.code == event::KeyCode::Char('r') || key.code == event::KeyCode::Char('R') {
                         let reply_body = mail::format_reply_text(&text_body, &date, &email_from);
 
