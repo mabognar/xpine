@@ -100,7 +100,8 @@ fn main() {
 
         if app.needs_fetch && matches!(app.mode, AppMode::EmailList) {
             if let Some(ref mut s) = session {
-                net::fetch_emails(s, &mut app, items_per_page, settings_provider.sort_newest_first);
+                net::fetch_emails(s, &mut app, items_per_page, settings_provider.sort_newest_first,
+                                  settings_provider.use_dmy_dates,);
             }
             app.last_fetch_time = Instant::now();
             app.needs_fetch = false;

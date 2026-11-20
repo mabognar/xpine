@@ -504,7 +504,13 @@ fn decode_mime_string(raw: &[u8]) -> String {
     }
 }
 
-pub fn fetch_emails(session: &mut MailSession, app: &mut App, items_per_page: u32, sort_newest_first: bool) {
+pub fn fetch_emails(
+    session: &mut MailSession,
+    app: &mut App,
+    items_per_page: u32,
+    sort_newest_first: bool,
+    use_dmy_dates: bool) {
+    let old_date_fmt = if use_dmy_dates { "%d/%m/%y" } else { "%m/%d/%y" };
     match session {
         MailSession::Imap(imap_sess) => {
             app.page_emails.clear();
@@ -644,14 +650,14 @@ pub fn fetch_emails(session: &mut MailSession, app: &mut App, items_per_page: u3
                                     let now = Utc::now().timestamp();
                                     let diff = now - dt.timestamp();
                                     let local_dt = dt.with_timezone(&Local);
-                                    date = if diff < 7 * 24 * 3600 && diff >= -86400 { local_dt.format("%a %H:%M").to_string() } else { local_dt.format("%b %d").to_string() };
+                                    date = if diff < 7 * 24 * 3600 && diff >= -86400 { local_dt.format("%a %H:%M").to_string() } else { local_dt.format(old_date_fmt).to_string() };
                                     full_date = local_dt.format("%a, %d %b %Y %H:%M:%S %z").to_string();
                                 } else if let Some(dt) = message.internal_date() {
                                     // Fallback to the server's guaranteed internal receive time
                                     let now = Utc::now().timestamp();
                                     let diff = now - dt.timestamp();
                                     let local_dt = dt.with_timezone(&Local);
-                                    date = if diff < 7 * 24 * 3600 && diff >= -86400 { local_dt.format("%a %H:%M").to_string() } else { local_dt.format("%b %d").to_string() };
+                                    date = if diff < 7 * 24 * 3600 && diff >= -86400 { local_dt.format("%a %H:%M").to_string() } else { local_dt.format(old_date_fmt).to_string() };
                                     full_date = local_dt.format("%a, %d %b %Y %H:%M:%S %z").to_string();
                                 } else {
                                     // Extreme fallback: truncate to exactly 6 characters (e.g., "Apr 02") to preserve UI column width
@@ -665,7 +671,7 @@ pub fn fetch_emails(session: &mut MailSession, app: &mut App, items_per_page: u3
                                 let now = Utc::now().timestamp();
                                 let diff = now - dt.timestamp();
                                 let local_dt = dt.with_timezone(&Local);
-                                date = if diff < 7 * 24 * 3600 && diff >= -86400 { local_dt.format("%a %H:%M").to_string() } else { local_dt.format("%b %d").to_string() };
+                                date = if diff < 7 * 24 * 3600 && diff >= -86400 { local_dt.format("%a %H:%M").to_string() } else { local_dt.format(old_date_fmt).to_string() };
                                 full_date = local_dt.format("%a, %d %b %Y %H:%M:%S %z").to_string();
                             }
 
@@ -930,22 +936,38 @@ pub fn fetch_emails(session: &mut MailSession, app: &mut App, items_per_page: u3
                             //     };
                             // }
 
-                            let mut date_str = "Unknown Date".to_string();
-                            let mut full_date_str = "Unknown Date".to_string();
-                            if let Ok(dt) = DateTime::parse_from_rfc3339(&msg.received_date_time) {
-                                let now = Utc::now().timestamp();
-                                let diff = now - dt.timestamp();
-                                let local_dt = dt.with_timezone(&Local);
-                                date_str = if diff < 7 * 24 * 3600 && diff >= -86400 {
-                                    local_dt.format("%a %H:%M").to_string()
-                                } else {
-                                    local_dt.format("%b %d").to_string()
-                                };
-                                full_date_str = local_dt.format("%a, %d %b %Y %H:%M:%S %z").to_string();
-                            } else {
-                                full_date_str = msg.received_date_time.clone();
-                            }
+                            // let mut date_str = "Unknown Date".to_string();
+                            // let mut full_date_str = "Unknown Date".to_string();
+                            // if let Ok(dt) = DateTime::parse_from_rfc3339(&msg.received_date_time) {
+                            //     let now = Utc::now().timestamp();
+                            //     let diff = now - dt.timestamp();
+                            //     let local_dt = dt.with_timezone(&Local);
+                            //     date_str = if diff < 7 * 24 * 3600 && diff >= -86400 {
+                            //         local_dt.format("%a %H:%M").to_string()
+                            //     } else {
+                            //         local_dt.format(old_date_fmt).to_string()
+                            //     };
+                            //     full_date_str = local_dt.format("%a, %d %b %Y %H:%M:%S %z").to_string();
+                            // } else {
+                            //     full_date_str = msg.received_date_time.clone();
+                            // }
 
+                            let (date_str, full_date_str) =
+                                if let Ok(dt) = DateTime::parse_from_rfc3339(&msg.received_date_time) {
+                                    let now = Utc::now().timestamp();
+                                    let diff = now - dt.timestamp();
+                                    let local_dt = dt.with_timezone(&Local);
+                                    let short_date = if diff < 7 * 24 * 3600 && diff >= -86400 {
+                                        local_dt.format("%a %H:%M").to_string()
+                                    } else {
+                                        local_dt.format(old_date_fmt).to_string()
+                                    };
+                                    let full = local_dt.format("%a, %d %b %Y %H:%M:%S %z").to_string();
+                                    (short_date, full)
+                                } else {
+                                    ("Unknown Date".to_string(), msg.received_date_time.clone())
+                                };
+                            
                             macro_rules! format_graph_addrs {
                                 ($addrs:expr) => {{
                                     let mut result = Vec::new();

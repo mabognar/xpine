@@ -1,11 +1,11 @@
 [package]
 name = "xpine"
-version = "0.1.2"
+version = "0.1.3"
 edition = "2024"
 license = "MIT"
 keywords = ["email", "client", "terminal"]
 categories = ["email"]
-description = "Terminal email client. Efficient, easy-to-use, with modern features. Tested with MacOS & Linux."
+description = "Terminal email client. Easy-to-use, modern features. Tested with MacOS & Linux."
 readme = true
 documentation = "https://docs.rs/xpine"
 repository = "https://github.com/mabognar/xpine"
@@ -37,7 +37,7 @@ copyright = "2024, Matthew Bognar"
 license-file = ["LICENSE", "4"]
 depends = "$auto"
 extended-description = """
-A terminal-based email client and utility.
+Terminal email client. Easy-to-use, modern features. Tested with MacOS & Linux.
 """
 section = "utility"
 priority = "optional"

@@ -527,7 +527,7 @@ pub fn view_email(
 
                                 // Let net.rs run the exact logic. Since we pre-set the selected_index to 0 or max_idx,
                                 // net.rs will automatically apply the correct overlap padding dynamically!
-                                net::fetch_emails(sess, app, items_per_page, sort_newest);
+                                net::fetch_emails(sess, app, items_per_page, sort_newest, settings_provider.use_dmy_dates,);
 
                                 if !app.page_emails.is_empty() {
                                     // Safety bound to ensure we don't index out of bounds

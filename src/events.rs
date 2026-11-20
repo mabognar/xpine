@@ -1326,7 +1326,7 @@ fn handle_settings_events(k: KeyEvent, app: &mut App, theme_provider: &mut Edito
 
     match k.code {
         KeyCode::Up | KeyCode::Char('p') | KeyCode::Char('P') => selected_idx = selected_idx.saturating_sub(1),
-        KeyCode::Down | KeyCode::Char('n') | KeyCode::Char('N') => selected_idx = (selected_idx + 1).min(3),
+        KeyCode::Down | KeyCode::Char('n') | KeyCode::Char('N') => selected_idx = (selected_idx + 1).min(4),
         KeyCode::Left | KeyCode::Char('<') | KeyCode::Esc | KeyCode::Char('m') | KeyCode::Char('M') => next_mode = Some(AppMode::MainMenu { selected_idx: 3 }),
         KeyCode::Char('x') | KeyCode::Char('X') | KeyCode::Right | KeyCode::Enter => {
             if selected_idx == 0 {
@@ -1343,6 +1343,11 @@ fn handle_settings_events(k: KeyEvent, app: &mut App, theme_provider: &mut Edito
                 theme_provider.save_settings();
             }
             else if selected_idx == 3 {
+                theme_provider.use_dmy_dates = !theme_provider.use_dmy_dates;
+                theme_provider.save_settings();
+                app.needs_fetch = true;
+            }
+            else if selected_idx == 4 {
                 let current_sig = crate::config::load_signature();
                 let edit_result = theme_provider.edit_buffer("Edit Email Signature (leave blank for no signature)", &current_sig, crate::editor::MenuState::EmailComposer);
                 let _ = execute!(std::io::stdout(), crossterm::terminal::Clear(crossterm::terminal::ClearType::All));

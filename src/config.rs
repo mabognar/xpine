@@ -5,7 +5,6 @@ use std::env;
 use std::fs;
 use std::path::{Path, PathBuf};
 use crate::syntax::SyntaxExt;
-use std::io::Write;
 
 use aes_gcm::{
     aead::{Aead, KeyInit},
@@ -18,7 +17,7 @@ pub trait ConfigExt {
     fn get_base_dir() -> Option<PathBuf>;
     fn get_settings_path() -> Option<PathBuf>;
     fn get_theme_dir() -> Option<PathBuf>;
-    fn load_settings() -> (String, bool, bool, bool, bool);
+    fn load_settings() -> (String, bool, bool, bool, bool, bool);
     fn save_settings(&self);
     fn cycle_theme(&mut self);
     fn update_cursor_color(&self);
@@ -48,6 +47,8 @@ pub struct EditorSettings {
     pub sort_newest_first: bool,
     #[serde(default)]
     pub spellcheck_before_send: bool,
+    #[serde(default)]
+    pub use_dmy_dates: bool,
 }
 
 #[derive(Clone, Copy)]
@@ -114,6 +115,7 @@ impl Default for EditorSettings {
             soft_wrap: false,
             sort_newest_first: false,
             spellcheck_before_send: false,
+            use_dmy_dates: false,
         }
     }
 }
@@ -143,12 +145,11 @@ impl ConfigExt for Editor {
         })
     }
 
-    fn load_settings() -> (String, bool, bool, bool, bool) {
+    fn load_settings() -> (String, bool, bool, bool, bool, bool) {
         let default_settings = EditorSettings::default();
 
         if let Some(path) = Self::get_settings_path() {
             if let Ok(content) = fs::read_to_string(path) {
-                // Parse the TOML, falling back to defaults if parsing fails
                 if let Ok(settings) = toml::from_str::<EditorSettings>(&content) {
                     return (
                         settings.theme,
@@ -156,18 +157,19 @@ impl ConfigExt for Editor {
                         settings.soft_wrap,
                         settings.sort_newest_first,
                         settings.spellcheck_before_send,
+                        settings.use_dmy_dates,
                     );
                 }
             }
         }
 
-        // Return defaults if the file doesn't exist or couldn't be parsed
         (
             default_settings.theme,
             default_settings.line_numbers,
             default_settings.soft_wrap,
             default_settings.sort_newest_first,
             default_settings.spellcheck_before_send,
+            default_settings.use_dmy_dates,
         )
     }
 
@@ -179,6 +181,7 @@ impl ConfigExt for Editor {
                 soft_wrap: self.soft_wrap,
                 sort_newest_first: self.sort_newest_first,
                 spellcheck_before_send: self.spellcheck_before_send,
+                use_dmy_dates: self.use_dmy_dates,
             };
 
             if let Ok(toml_string) = toml::to_string_pretty(&settings) {
@@ -186,6 +189,52 @@ impl ConfigExt for Editor {
             }
         }
     }
+    // fn load_settings() -> (String, bool, bool, bool, bool, bool) {
+    //     let default_settings = EditorSettings::default();
+    //
+    //     if let Some(path) = Self::get_settings_path() {
+    //         if let Ok(content) = fs::read_to_string(path) {
+    //             // Parse the TOML, falling back to defaults if parsing fails
+    //             if let Ok(settings) = toml::from_str::<EditorSettings>(&content) {
+    //                 return (
+    //                     settings.theme,
+    //                     settings.line_numbers,
+    //                     settings.soft_wrap,
+    //                     settings.sort_newest_first,
+    //                     settings.spellcheck_before_send,
+    //                     settings.use_dmy_dates,
+    //                 );
+    //             }
+    //         }
+    //     }
+    //
+    //     // Return defaults if the file doesn't exist or couldn't be parsed
+    //     (
+    //         default_settings.theme,
+    //         default_settings.line_numbers,
+    //         default_settings.soft_wrap,
+    //         default_settings.sort_newest_first,
+    //         default_settings.spellcheck_before_send,
+    //         default_settings.use_dmy_dates,
+    //     )
+    // }
+    //
+    // fn save_settings(&self) {
+    //     if let Some(path) = Self::get_settings_path() {
+    //         let settings = EditorSettings {
+    //             theme: self.current_theme.clone(),
+    //             line_numbers: self.show_line_numbers,
+    //             soft_wrap: self.soft_wrap,
+    //             sort_newest_first: self.sort_newest_first,
+    //             spellcheck_before_send: self.spellcheck_before_send,
+    //             use_dmy_dates: self.use_dmy_dates,
+    //         };
+    //
+    //         if let Ok(toml_string) = toml::to_string_pretty(&settings) {
+    //             let _ = fs::write(path, toml_string);
+    //         }
+    //     }
+    // }
 
     fn cycle_theme(&mut self) {
         let mut themes: Vec<String> = self.theme_set.themes.keys().cloned().collect();

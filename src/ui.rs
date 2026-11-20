@@ -1214,6 +1214,7 @@ fn draw_settings(stdout: &mut std::io::Stdout, cols: u16, rows: u16, theme_provi
         ("    Sort Newest First", theme_provider.sort_newest_first),
         ("    Spellcheck Before Sending", theme_provider.spellcheck_before_send),
         ("    Show Line Numbers", theme_provider.show_line_numbers),
+        ("    Use day/month/year (instead of month/day/year)", theme_provider.use_dmy_dates),
     ];
 
     for (i, (title, is_enabled)) in options.iter().enumerate() {

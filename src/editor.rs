@@ -68,6 +68,7 @@ pub struct Editor {
     pub(crate) previous_action_was_cut: bool,
     pub menu_page: u8,
     pub(crate) spellcheck_before_send: bool,
+    pub(crate) use_dmy_dates: bool,
 }
 
 impl Editor {
@@ -86,7 +87,7 @@ impl Editor {
         let (theme_set, themes_found, error_occurred) = Self::load_theme_set();
         let initial_status = if themes_found > 0 { String::new() } else if let Some(err) = error_occurred { err } else { String::new() };
 
-        let (mut starting_theme, line_numbers, soft_wrap, sort_newest_first, spellcheck_before_send) = Self::load_settings();
+        let (mut starting_theme, line_numbers, soft_wrap, sort_newest_first, spellcheck_before_send, _use_dmy_dates) = Self::load_settings();
         if !theme_set.themes.contains_key(&starting_theme) {
             starting_theme = String::from("base16-ocean.dark");
         }
@@ -109,6 +110,7 @@ impl Editor {
             current_theme: starting_theme,
             is_justified: false, pre_justify_snapshot: None,
             show_line_numbers: line_numbers, soft_wrap, sort_newest_first, spellcheck_before_send,
+            use_dmy_dates: false,
             previous_action_was_cut: false,
             menu_page: 1,
         }
