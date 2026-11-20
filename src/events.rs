@@ -630,6 +630,7 @@ fn handle_email_list_events(k: KeyEvent, app: &mut App, session: &mut Option<Mai
                 app.current_page = 0;
                 app.needs_fetch = true;
             } else {
+                net::flush_pending_flags(session, app);
                 let mut fetched = Vec::new();
                 if let Some(sess) = session {
                     match sess {
@@ -663,6 +664,7 @@ fn handle_email_list_events(k: KeyEvent, app: &mut App, session: &mut Option<Mai
             }
         }
         KeyCode::Tab => {
+            net::flush_pending_flags(session, app);
             check_and_expunge_outlook(app, session, theme_provider);
             if app.accounts.len() > 1 {
                 app.current_account_idx = (app.current_account_idx + 1) % app.accounts.len();
@@ -697,6 +699,7 @@ fn handle_email_list_events(k: KeyEvent, app: &mut App, session: &mut Option<Mai
             if let Some(digit) = c.to_digit(10) {
                 let idx = (digit as usize).saturating_sub(1);
                 if idx < app.accounts.len() && idx != app.current_account_idx {
+                    net::flush_pending_flags(session, app);
                     check_and_expunge_outlook(app, session, theme_provider);
                     app.current_account_idx = idx;
                     app.needs_reconnect = true;
@@ -762,6 +765,7 @@ fn handle_email_list_events(k: KeyEvent, app: &mut App, session: &mut Option<Mai
                                 if !clean_dest.is_empty() {
                                     if let Some(exact_folder) = folders.iter().find(|f| f.eq_ignore_ascii_case(clean_dest)) {
                                         let msg_id = app.page_emails[app.selected_index].id.to_string();
+                                        net::flush_pending_flags_with_session(sess, app);
                                         match net::move_email(sess, &msg_id, exact_folder) {
                                             Ok(_) => {
                                                 app.update_status(format!("Moved to '{}'", exact_folder));
@@ -791,13 +795,17 @@ fn handle_email_list_events(k: KeyEvent, app: &mut App, session: &mut Option<Mai
             }
         }
         KeyCode::Char('m') | KeyCode::Char('M') if k.modifiers.contains(KeyModifiers::NONE) => {
+            net::flush_pending_flags(session, app);
             check_and_expunge_outlook(app, session, theme_provider);
             app.mode = AppMode::MainMenu { selected_idx: 0 };
         },
         KeyCode::Char('o') | KeyCode::Char('O') => { app.menu_page = if app.menu_page == 1 { 2 } else { 1 }; }
         KeyCode::Char('*') => {
-            if let Some(sess) = session { net::toggle_flag(sess, &mut app.page_emails, app.selected_index, "\\Flagged"); }
+            if let Some(sess) = session { net::toggle_flag(sess, app, "\\Flagged"); }
         }
+        // KeyCode::Char('*') => {
+        //     if let Some(sess) = session { net::toggle_flag(sess, &mut app.page_emails, app.selected_index, "\\Flagged"); }
+        // }
         KeyCode::Char('d') | KeyCode::Char('D') => {
             let is_outlook = app.active_account.imap_server.to_lowercase().contains("outlook") ||
                 app.active_account.email.to_lowercase().contains("outlook") ||
@@ -818,7 +826,7 @@ fn handle_email_list_events(k: KeyEvent, app: &mut App, session: &mut Option<Mai
             } else {
                 if let Some(sess) = session {
                     if !app.page_emails.is_empty() {
-                        net::toggle_flag(sess, &mut app.page_emails, app.selected_index, "\\Deleted");
+                        net::toggle_flag(sess, app, "\\Deleted");
 
                         // Track standard IMAP deletes identically, allowing cross-page expunge detection
                         let idx = app.selected_index;
@@ -831,6 +839,23 @@ fn handle_email_list_events(k: KeyEvent, app: &mut App, session: &mut Option<Mai
                     }
                 }
             }
+            // } else {
+            //     if let Some(sess) = session {
+            //         net::toggle_flag(sess, app, "\\Deleted");
+            //         // if !app.page_emails.is_empty() {
+            //         //     net::toggle_flag(sess, &mut app.page_emails, app.selected_index, "\\Deleted");
+            //         //
+            //         //     // Track standard IMAP deletes identically, allowing cross-page expunge detection
+            //         //     let idx = app.selected_index;
+            //         //     let email_id = app.page_emails[idx].id.clone();
+            //         //     if app.page_emails[idx].is_deleted {
+            //         //         app.graph_pending_deleted.insert(email_id);
+            //         //     } else {
+            //         //         app.graph_pending_deleted.remove(&email_id);
+            //         //     }
+            //         // }
+            //     }
+            // }
 
             let max_visible = app.page_emails.len().min(rows.saturating_sub(3) as usize);
             if app.selected_index + 1 < max_visible { app.selected_index += 1; }
@@ -894,11 +919,18 @@ fn handle_email_list_events(k: KeyEvent, app: &mut App, session: &mut Option<Mai
         }
         KeyCode::Char('u') | KeyCode::Char('U') => {
             if let Some(sess) = session {
-                net::toggle_flag(sess, &mut app.page_emails, app.selected_index, "\\Seen");
+                net::toggle_flag(sess, app, "\\Seen");
             }
             let max_visible = app.page_emails.len().min(rows.saturating_sub(3) as usize);
             if app.selected_index + 1 < max_visible { app.selected_index += 1; }
         }
+        // KeyCode::Char('u') | KeyCode::Char('U') => {
+        //     if let Some(sess) = session {
+        //         net::toggle_flag(sess, &mut app.page_emails, app.selected_index, "\\Seen");
+        //     }
+        //     let max_visible = app.page_emails.len().min(rows.saturating_sub(3) as usize);
+        //     if app.selected_index + 1 < max_visible { app.selected_index += 1; }
+        // }
         KeyCode::Char('c') | KeyCode::Char('C') => {
             if !app.accounts.is_empty() {
                 // Notice the extra `None` passed for default_cc
@@ -991,16 +1023,19 @@ fn handle_email_list_events(k: KeyEvent, app: &mut App, session: &mut Option<Mai
                     let (t_body, h_body, atts) = net::fetch_email_body(sess, &fetch_seq);
 
                     if !app.page_emails[app.selected_index].is_read {
-                        match sess {
-                            MailSession::Imap(imap_sess) => {
-                                let _ = imap_sess.store(&fetch_seq, "+FLAGS (\\Seen)");
-                            }
-                            MailSession::Graph { .. } => {
-                                net::toggle_flag(sess, &mut app.page_emails, app.selected_index, "\\Seen");
-                            }
-                        }
-                        app.page_emails[app.selected_index].is_read = true;
+                        net::toggle_flag(sess, app, "\\Seen");
                     }
+                    // if !app.page_emails[app.selected_index].is_read {
+                    //     match sess {
+                    //         MailSession::Imap(imap_sess) => {
+                    //             let _ = imap_sess.store(&fetch_seq, "+FLAGS (\\Seen)");
+                    //         }
+                    //         MailSession::Graph { .. } => {
+                    //             net::toggle_flag(sess, &mut app.page_emails, app.selected_index, "\\Seen");
+                    //         }
+                    //     }
+                    //     app.page_emails[app.selected_index].is_read = true;
+                    // }
 
                     app.mode = AppMode::EmailRead { text_body: t_body, html_body: h_body, attachments: atts };
                 }
@@ -1010,6 +1045,7 @@ fn handle_email_list_events(k: KeyEvent, app: &mut App, session: &mut Option<Mai
             let _ = theme_provider.show_help("email_list");
         }
         KeyCode::Char('q')  => {
+            net::flush_pending_flags(session, app);
             check_and_expunge_outlook(app, session, theme_provider);
             *quit = true;
         },

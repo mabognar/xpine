@@ -135,6 +135,18 @@ fn main() {
             }
         }
 
+        let imap_flush_delay = Duration::from_millis(500);
+        if !app.pending_imap_flags.is_empty() {
+            if let Some(last_flag_time) = app.last_imap_flag_time {
+                let elapsed = last_flag_time.elapsed();
+                if elapsed >= imap_flush_delay {
+                    net::flush_pending_flags(&mut session, &mut app);
+                } else {
+                    timeout = timeout.min(imap_flush_delay - elapsed);
+                }
+            }
+        }
+
         if event::poll(timeout).unwrap() {
             let ev = event::read().unwrap();
             let handle_start = Instant::now();
@@ -151,6 +163,8 @@ fn main() {
 
     execute!(stdout, cursor::Show, LeaveAlternateScreen).unwrap();
     disable_raw_mode().expect("Failed to disable raw mode");
+
+    net::flush_pending_flags(&mut session, &mut app);
 
     if let Some(s) = session {
         match s {

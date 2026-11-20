@@ -17,6 +17,11 @@ use crossterm::{
 use std::net::{TcpListener};
 use std::io::{Read, Write};
 
+use std::collections::HashMap;
+use std::sync::{mpsc, Mutex, OnceLock};
+use std::time::Instant;
+
+
 pub type RawImapSession = Session<native_tls::TlsStream<TcpStream>>;
 
 pub enum MailSession {
@@ -511,6 +516,7 @@ pub fn fetch_emails(
     sort_newest_first: bool,
     use_dmy_dates: bool) {
     let old_date_fmt = if use_dmy_dates { "%d/%m/%y" } else { "%m/%d/%y" };
+    flush_pending_flags_with_session(session, app);
     match session {
         MailSession::Imap(imap_sess) => {
             app.page_emails.clear();
@@ -967,7 +973,7 @@ pub fn fetch_emails(
                                 } else {
                                     ("Unknown Date".to_string(), msg.received_date_time.clone())
                                 };
-                            
+
                             macro_rules! format_graph_addrs {
                                 ($addrs:expr) => {{
                                     let mut result = Vec::new();
@@ -1083,75 +1089,223 @@ pub fn fetch_emails(
     }
 }
 
-pub fn toggle_flag(session: &mut MailSession, emails: &mut [EmailMeta], selected_index: usize, flag_name: &str) {
-    if emails.is_empty() { return; }
+enum GraphFlagOp {
+    Patch {
+        access_token: String,
+        message_id: String,
+        body: String,
+    },
+    Sync(mpsc::Sender<()>),
+}
 
-    match session {
-        MailSession::Imap(imap_sess) => {
-            let uid = emails[selected_index].uid.to_string();
-            let is_set = match flag_name {
-                "\\Flagged" => emails[selected_index].is_flagged,
-                "\\Deleted" => emails[selected_index].is_deleted,
-                "\\Seen"    => emails[selected_index].is_read,
-                "\\Answered"=> emails[selected_index].is_answered,
-                _ => false,
-            };
-            let op = if is_set { format!("-FLAGS.SILENT ({})", flag_name) } else { format!("+FLAGS.SILENT ({})", flag_name) };
-            if imap_sess.uid_store(&uid, &op).is_ok() {
-                let new_val = !is_set;
-                match flag_name {
-                    "\\Flagged" => emails[selected_index].is_flagged = new_val,
-                    "\\Deleted" => emails[selected_index].is_deleted = new_val,
-                    "\\Seen"    => emails[selected_index].is_read = new_val,
-                    "\\Answered"=> emails[selected_index].is_answered = new_val,
-                    _ => {}
-                }
-            }
-        },
-        MailSession::Graph { access_token } => {
-            let id = &emails[selected_index].id;
-            let (requires_network, is_set, body_str) = match flag_name {
-                "\\Seen" => {
-                    let current = emails[selected_index].is_read;
-                    (true, current, format!(r#"{{"isRead": {}}}"#, !current))
-                },
-                "\\Flagged" => {
-                    let current = emails[selected_index].is_flagged;
-                    let status = if !current { "flagged" } else { "notFlagged" };
-                    (true, current, format!(r#"{{"flag": {{"flagStatus": "{}"}}}}"#, status))
-                },
-                "\\Answered" => {
-                    let current = emails[selected_index].is_answered;
-                    // Setting 102 (Replied) to indicate answered
-                    let val = if !current { "102" } else { "0" };
-                    (true, current, format!(r#"{{"singleValueExtendedProperties": [{{"id": "Integer 0x1081", "value": "{}"}}]}}"#, val))
-                },
-                _ => (false, false, String::new()),
-            };
+// Mutex is required because mpsc::Sender is Send but not Sync
+static GRAPH_FLAG_TX: OnceLock<Mutex<mpsc::Sender<GraphFlagOp>>> = OnceLock::new();
 
-            if requires_network {
-                let url = format!("https://graph.microsoft.com/v1.0/me/messages/{}", id);
-                let client = reqwest::blocking::Client::new();
-                if client.patch(&url)
-                    .header("Authorization", format!("Bearer {}", access_token))
-                    .header("Content-Type", "application/json")
-                    .body(body_str)
-                    .send().is_ok() {
+fn graph_flag_sender() -> &'static Mutex<mpsc::Sender<GraphFlagOp>> {
+    GRAPH_FLAG_TX.get_or_init(|| {
+        let (tx, rx) = mpsc::channel::<GraphFlagOp>();
+        thread::spawn(move || {
+            let client = reqwest::blocking::Client::builder()
+                .timeout(Duration::from_secs(15))
+                .build()
+                .unwrap_or_else(|_| reqwest::blocking::Client::new());
 
-                    let new_val = !is_set;
-                    match flag_name {
-                        "\\Seen" => emails[selected_index].is_read = new_val,
-                        "\\Flagged" => emails[selected_index].is_flagged = new_val,
-                        "\\Answered" => emails[selected_index].is_answered = new_val,
-                        _ => {}
+            while let Ok(op) = rx.recv() {
+                match op {
+                    GraphFlagOp::Patch { access_token, message_id, body } => {
+                        let url = format!("https://graph.microsoft.com/v1.0/me/messages/{}", message_id);
+                        let _ = client
+                            .patch(&url)
+                            .header("Authorization", format!("Bearer {}", access_token))
+                            .header("Content-Type", "application/json")
+                            .body(body)
+                            .send();
+                    }
+                    GraphFlagOp::Sync(done_tx) => {
+                        let _ = done_tx.send(());
                     }
                 }
+            }
+        });
+        Mutex::new(tx)
+    })
+}
+
+pub fn flush_graph_flags() {
+    if let Some(tx_mutex) = GRAPH_FLAG_TX.get() {
+        let (done_tx, done_rx) = mpsc::channel();
+        if let Ok(tx) = tx_mutex.lock() {
+            if tx.send(GraphFlagOp::Sync(done_tx)).is_ok() {
+                drop(tx);
+                let _ = done_rx.recv_timeout(Duration::from_secs(5));
             }
         }
     }
 }
 
+pub fn flush_pending_flags_with_session(session: &mut MailSession, app: &mut App) {
+    match session {
+        MailSession::Imap(imap_sess) => {
+            if app.pending_imap_flags.is_empty() {
+                app.last_imap_flag_time = None;
+                return;
+            }
+
+            let pending = std::mem::take(&mut app.pending_imap_flags);
+            app.last_imap_flag_time = None;
+
+            // Group UIDs by (flag, set/unset) so rapid keypresses become 1 UID STORE per group
+            let mut grouped: HashMap<(&'static str, bool), Vec<String>> = HashMap::new();
+            for ((uid, flag_name), is_set) in pending {
+                if uid > 0 {
+                    grouped.entry((flag_name, is_set)).or_default().push(uid.to_string());
+                }
+            }
+
+            for ((flag_name, is_set), uids) in grouped {
+                let uid_set = uids.join(",");
+                let op = if is_set {
+                    format!("+FLAGS.SILENT ({})", flag_name)
+                } else {
+                    format!("-FLAGS.SILENT ({})", flag_name)
+                };
+                let _ = imap_sess.uid_store(&uid_set, &op);
+            }
+        }
+        MailSession::Graph { .. } => {
+            flush_graph_flags();
+        }
+    }
+}
+
+pub fn flush_pending_flags(session: &mut Option<MailSession>, app: &mut App) {
+    if let Some(sess) = session.as_mut() {
+        flush_pending_flags_with_session(sess, app);
+    }
+}
+
+pub fn toggle_flag(session: &MailSession, app: &mut App, flag_name: &'static str) {
+    if app.page_emails.is_empty() || app.selected_index >= app.page_emails.len() {
+        return;
+    }
+
+    let email = &mut app.page_emails[app.selected_index];
+
+    // 1. Flip locally right away so the UI responds with zero delay
+    let new_val = match flag_name {
+        "\\Flagged"  => { email.is_flagged = !email.is_flagged; email.is_flagged }
+        "\\Deleted"  => { email.is_deleted = !email.is_deleted; email.is_deleted }
+        "\\Seen"     => { email.is_read = !email.is_read; email.is_read }
+        "\\Answered" => { email.is_answered = !email.is_answered; email.is_answered }
+        _ => return,
+    };
+
+    let uid = email.uid;
+    let id = email.id.clone();
+
+    // 2. Queue IMAP flush or dispatch Graph PATCH in the background
+    match session {
+        MailSession::Imap(_) => {
+            app.pending_imap_flags.insert((uid, flag_name), new_val);
+            app.last_imap_flag_time = Some(Instant::now());
+        }
+        MailSession::Graph { access_token } => {
+            let body_str = match flag_name {
+                "\\Seen" => format!(r#"{{"isRead": {}}}"#, new_val),
+                "\\Flagged" => {
+                    let status = if new_val { "flagged" } else { "notFlagged" };
+                    format!(r#"{{"flag": {{"flagStatus": "{}"}}}}"#, status)
+                }
+                "\\Answered" => {
+                    let val = if new_val { "102" } else { "0" };
+                    format!(
+                        r#"{{"singleValueExtendedProperties": [{{"id": "Integer 0x1081", "value": "{}"}}]}}"#,
+                        val
+                    )
+                }
+                _ => return,
+            };
+
+            if let Ok(tx) = graph_flag_sender().lock() {
+                let _ = tx.send(GraphFlagOp::Patch {
+                    access_token: access_token.clone(),
+                    message_id: id,
+                    body: body_str,
+                });
+            }
+        }
+    }
+}
+// pub fn toggle_flag(session: &mut MailSession, emails: &mut [EmailMeta], selected_index: usize, flag_name: &str) {
+//     if emails.is_empty() { return; }
+//
+//     match session {
+//         MailSession::Imap(imap_sess) => {
+//             let uid = emails[selected_index].uid.to_string();
+//             let is_set = match flag_name {
+//                 "\\Flagged" => emails[selected_index].is_flagged,
+//                 "\\Deleted" => emails[selected_index].is_deleted,
+//                 "\\Seen"    => emails[selected_index].is_read,
+//                 "\\Answered"=> emails[selected_index].is_answered,
+//                 _ => false,
+//             };
+//             let op = if is_set { format!("-FLAGS.SILENT ({})", flag_name) } else { format!("+FLAGS.SILENT ({})", flag_name) };
+//             if imap_sess.uid_store(&uid, &op).is_ok() {
+//                 let new_val = !is_set;
+//                 match flag_name {
+//                     "\\Flagged" => emails[selected_index].is_flagged = new_val,
+//                     "\\Deleted" => emails[selected_index].is_deleted = new_val,
+//                     "\\Seen"    => emails[selected_index].is_read = new_val,
+//                     "\\Answered"=> emails[selected_index].is_answered = new_val,
+//                     _ => {}
+//                 }
+//             }
+//         },
+//         MailSession::Graph { access_token } => {
+//             let id = &emails[selected_index].id;
+//             let (requires_network, is_set, body_str) = match flag_name {
+//                 "\\Seen" => {
+//                     let current = emails[selected_index].is_read;
+//                     (true, current, format!(r#"{{"isRead": {}}}"#, !current))
+//                 },
+//                 "\\Flagged" => {
+//                     let current = emails[selected_index].is_flagged;
+//                     let status = if !current { "flagged" } else { "notFlagged" };
+//                     (true, current, format!(r#"{{"flag": {{"flagStatus": "{}"}}}}"#, status))
+//                 },
+//                 "\\Answered" => {
+//                     let current = emails[selected_index].is_answered;
+//                     // Setting 102 (Replied) to indicate answered
+//                     let val = if !current { "102" } else { "0" };
+//                     (true, current, format!(r#"{{"singleValueExtendedProperties": [{{"id": "Integer 0x1081", "value": "{}"}}]}}"#, val))
+//                 },
+//                 _ => (false, false, String::new()),
+//             };
+//
+//             if requires_network {
+//                 let url = format!("https://graph.microsoft.com/v1.0/me/messages/{}", id);
+//                 let client = reqwest::blocking::Client::new();
+//                 if client.patch(&url)
+//                     .header("Authorization", format!("Bearer {}", access_token))
+//                     .header("Content-Type", "application/json")
+//                     .body(body_str)
+//                     .send().is_ok() {
+//
+//                     let new_val = !is_set;
+//                     match flag_name {
+//                         "\\Seen" => emails[selected_index].is_read = new_val,
+//                         "\\Flagged" => emails[selected_index].is_flagged = new_val,
+//                         "\\Answered" => emails[selected_index].is_answered = new_val,
+//                         _ => {}
+//                     }
+//                 }
+//             }
+//         }
+//     }
+// }
+
 pub fn expunge_deleted(session: &mut MailSession, app: &mut App) -> Result<(), String> {
+    flush_pending_flags_with_session(session, app);
     match session {
         MailSession::Imap(imap_sess) => {
             imap_sess.expunge().map_err(|e| format!("Expunge failed: {}", e))?;
@@ -1451,6 +1605,9 @@ pub fn reconnect(app: &mut App, session: &mut Option<MailSession>) {
     if !app.accounts.is_empty() {
         app.active_account = app.accounts[app.current_account_idx].clone();
 
+        app.pending_imap_flags.clear();
+        app.last_imap_flag_time = None;
+        
         if let Some(s) = session.take() {
             match s {
                 MailSession::Imap(mut imap_sess) => { let _ = imap_sess.logout(); }

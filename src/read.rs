@@ -549,16 +549,19 @@ pub fn view_email(
 
                                 // Mark as seen
                                 if !app.page_emails[app.selected_index].is_read {
-                                    match sess {
-                                        MailSession::Imap(imap_sess) => {
-                                            let _ = imap_sess.store(&fetch_seq, "+FLAGS (\\Seen)");
-                                        }
-                                        MailSession::Graph { .. } => {
-                                            net::toggle_flag(sess, &mut app.page_emails, app.selected_index, "\\Seen");
-                                        }
-                                    }
-                                    app.page_emails[app.selected_index].is_read = true;
+                                    net::toggle_flag(sess, app, "\\Seen");
                                 }
+                                // if !app.page_emails[app.selected_index].is_read {
+                                //     match sess {
+                                //         MailSession::Imap(imap_sess) => {
+                                //             let _ = imap_sess.store(&fetch_seq, "+FLAGS (\\Seen)");
+                                //         }
+                                //         MailSession::Graph { .. } => {
+                                //             net::toggle_flag(sess, &mut app.page_emails, app.selected_index, "\\Seen");
+                                //         }
+                                //     }
+                                //     app.page_emails[app.selected_index].is_read = true;
+                                // }
 
                                 // Inform user of the active network operation
                                 reader.set_status("Fetching email...".to_string());
@@ -705,8 +708,8 @@ pub fn view_email(
                         } else {
                             if let Some(sess) = session.as_mut() {
                                 if !app.page_emails.is_empty() {
-                                    net::toggle_flag(sess, &mut app.page_emails, app.selected_index, "\\Deleted");
-
+                                    // net::toggle_flag(sess, &mut app.page_emails, app.selected_index, "\\Deleted");
+                                    net::toggle_flag(sess, app, "\\Deleted");
                                     // Sync tracking set for IMAP too!
                                     let idx = app.selected_index;
                                     let email_id = app.page_emails[idx].id.clone();

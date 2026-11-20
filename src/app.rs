@@ -1,7 +1,7 @@
 use crate::config::Account;
 use crate::mail::EmailMeta;
 use std::time::{Duration, Instant};
-use std::collections::HashSet;
+use std::collections::{HashSet, HashMap};
 
 pub enum AppMode {
     AddressBook {
@@ -62,6 +62,8 @@ pub struct App {
     pub search_query: Option<String>,
     pub latest_version: Option<String>,
     pub graph_pending_deleted: HashSet<String>,
+    pub pending_imap_flags: HashMap<(u32, &'static str), bool>,
+    pub last_imap_flag_time: Option<Instant>,
 }
 
 impl App {
@@ -111,6 +113,8 @@ impl App {
             search_query: None,
             latest_version: None,
             graph_pending_deleted: HashSet::new(),
+            pending_imap_flags: HashMap::new(),
+            last_imap_flag_time: None,
         };
 
         if is_empty {

@@ -988,9 +988,13 @@ fn draw_email_list(stdout: &mut std::io::Stdout, app: &App, cols: u16, rows: u16
 
         let size_color = Color::Rgb { r: (base_r + (hot_r - base_r) * heat) as u8, g: (base_g + (hot_g - base_g) * heat) as u8, b: (base_b + (hot_b - base_b) * heat) as u8 };
 
-        let from_width = 23; let from_str = format!("{:<width$}", email.from.chars().take(from_width).collect::<String>(), width = from_width);
-        let date_width = 9; let date_str = format!("{:<width$}", email.date, width = date_width);
-
+        let from_width = 23;
+        let from_str = format!("{:<width$}", email.from.chars().take(from_width).collect::<String>(), width = from_width);
+        // let date_width = 9;
+        // let date_str = format!("{:<width$}", email.date, width = date_width);
+        let date_width = 9;
+        let date_str = format!("{:>width$}", email.date, width = date_width);
+        
         let fixed_width = 44;
 
         let subject_width = (cols as usize).saturating_sub(fixed_width);
