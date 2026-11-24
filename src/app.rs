@@ -1,7 +1,22 @@
+use std::collections::{HashMap, HashSet};
+use std::time::{Duration, Instant};
+
 use crate::config::Account;
 use crate::mail::EmailMeta;
-use std::time::{Duration, Instant};
-use std::collections::{HashSet, HashMap};
+
+const DEFAULT_STATUS_DURATION: Duration = Duration::from_secs(3);
+const DEFAULT_AUTO_REFRESH_INTERVAL: Duration = Duration::from_secs(60);
+
+pub struct CachedAccountView {
+    pub page_emails: Vec<EmailMeta>,
+    pub total_messages: u32,
+    pub current_folder: String,
+    pub current_page: u32,
+    pub selected_index: usize,
+    pub search_query: Option<String>,
+    pub graph_pending_deleted: HashSet<String>,
+    pub last_fetched: Instant,
+}
 
 pub enum AppMode {
     AddressBook {
@@ -30,16 +45,6 @@ pub enum AppMode {
     },
 }
 
-#[derive(Clone)]
-pub enum _BrowserAction {
-    SaveEmail(String), // Holds the text_body to save
-}
-
-// #[derive(Deserialize)]
-// struct GithubRelease {
-//     tag_name: String,
-// }
-
 pub struct App {
     pub mode: AppMode,
     pub current_account_idx: usize,
@@ -64,14 +69,16 @@ pub struct App {
     pub graph_pending_deleted: HashSet<String>,
     pub pending_imap_flags: HashMap<(u32, &'static str), bool>,
     pub last_imap_flag_time: Option<Instant>,
+    pub account_cache: HashMap<String, CachedAccountView>,
+    pub cache_ready: bool,
 }
 
 impl App {
     pub fn new(accounts: Vec<Account>) -> Self {
         let is_empty = accounts.is_empty();
-
-        let (active_account, mode, needs_fetch) = if is_empty {
-            (
+        let (active_account, mode, needs_fetch) = match accounts.first().cloned() {
+            Some(first) => (first, AppMode::EmailList, true),
+            None => (
                 Account {
                     email: String::new(),
                     name: None,
@@ -85,10 +92,8 @@ impl App {
                     smtp_port: 587,
                 },
                 AppMode::MainMenu { selected_idx: 3 },
-                false, // Don't fetch if no accounts exist
-            )
-        } else {
-            (accounts[0].clone(), AppMode::EmailList, true)
+                false,
+            ),
         };
 
         let mut app = Self {
@@ -105,9 +110,9 @@ impl App {
             restore_index_from_end: Some(0),
             list_status: String::new(),
             list_status_time: None,
-            list_status_duration: Duration::from_secs(3),
+            list_status_duration: DEFAULT_STATUS_DURATION,
             last_fetch_time: Instant::now(),
-            auto_refresh_interval: Duration::from_secs(60),
+            auto_refresh_interval: DEFAULT_AUTO_REFRESH_INTERVAL,
             accounts,
             menu_page: 1,
             search_query: None,
@@ -115,10 +120,14 @@ impl App {
             graph_pending_deleted: HashSet::new(),
             pending_imap_flags: HashMap::new(),
             last_imap_flag_time: None,
+            account_cache: HashMap::new(),
+            cache_ready: false,
         };
 
         if is_empty {
-            app.update_status("No email account specified. Press 'E' to add email account.".to_string());
+            app.update_status(
+                "No email account specified. Press 'E' to add email account.".to_string(),
+            );
         }
 
         app
@@ -127,6 +136,6 @@ impl App {
     pub fn update_status(&mut self, msg: String) {
         self.list_status = msg;
         self.list_status_time = Some(Instant::now());
-        self.list_status_duration = Duration::from_millis(3000);
+        self.list_status_duration = DEFAULT_STATUS_DURATION;
     }
 }

@@ -1,17 +1,19 @@
-use crate::editor::Editor;
-use crossterm::style::Color;
-use serde::{Deserialize, Serialize};
-use std::env;
-use std::fs;
+use std::collections::HashMap;
+use std::fs::{self, OpenOptions};
+use std::io::Write;
 use std::path::{Path, PathBuf};
-use crate::syntax::SyntaxExt;
+use std::time::Instant;
 
 use aes_gcm::{
     aead::{Aead, KeyInit},
-    Aes256Gcm, Key, Nonce
+    Aes256Gcm, Key, Nonce,
 };
+use crossterm::style::Color;
 use rand::{rngs::OsRng, RngCore};
-use std::collections::HashMap;
+use serde::{Deserialize, Serialize};
+
+use crate::editor::Editor;
+use crate::syntax::SyntaxExt;
 
 pub trait ConfigExt {
     fn get_base_dir() -> Option<PathBuf>;
@@ -87,8 +89,6 @@ pub struct Account {
     pub smtp_port: u16,
 }
 
-// ENCRYPTION
-
 #[derive(Serialize, Deserialize, Default)]
 struct SecretStore {
     accounts: HashMap<String, SecretData>,
@@ -101,11 +101,21 @@ struct SecretData {
     client_secret: Option<String>,
 }
 
-fn default_imap() -> String { "imap.gmail.com".to_string() }
-fn default_imap_port() -> u16 { 993 }
-fn default_smtp() -> String { "smtp.gmail.com".to_string() }
-fn default_smtp_port() -> u16 { 587 }
-fn default_theme() -> String { "Default-Dark".to_string() }
+fn default_imap() -> String {
+    "imap.gmail.com".to_string()
+}
+fn default_imap_port() -> u16 {
+    993
+}
+fn default_smtp() -> String {
+    "smtp.gmail.com".to_string()
+}
+fn default_smtp_port() -> u16 {
+    587
+}
+fn default_theme() -> String {
+    "Default-Dark".to_string()
+}
 
 impl Default for EditorSettings {
     fn default() -> Self {
@@ -120,17 +130,46 @@ impl Default for EditorSettings {
     }
 }
 
+fn xpine_dir() -> PathBuf {
+    dirs::home_dir()
+        .expect("Could not find home directory.")
+        .join(".xpine")
+}
+
+fn xpine_path(filename: &str) -> PathBuf {
+    xpine_dir().join(filename)
+}
+
+fn write_private_file(path: &Path, bytes: &[u8]) {
+    if let Some(parent) = path.parent() {
+        let _ = fs::create_dir_all(parent);
+    }
+
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        if let Ok(mut file) = OpenOptions::new()
+            .write(true)
+            .create(true)
+            .truncate(true)
+            .mode(0o600)
+            .open(path)
+        {
+            let _ = file.write_all(bytes);
+            return;
+        }
+    }
+
+    let _ = fs::write(path, bytes);
+}
 
 impl ConfigExt for Editor {
     fn get_base_dir() -> Option<PathBuf> {
-        let home = env::var("HOME").or_else(|_| env::var("USERPROFILE")).unwrap_or_default();
-        if home.is_empty() {
-            None
-        } else {
-            let path = Path::new(&home).join(".xpine");
+        dirs::home_dir().map(|home| {
+            let path = home.join(".xpine");
             let _ = fs::create_dir_all(&path);
-            Some(path)
-        }
+            path
+        })
     }
 
     fn get_settings_path() -> Option<PathBuf> {
@@ -146,30 +185,18 @@ impl ConfigExt for Editor {
     }
 
     fn load_settings() -> (String, bool, bool, bool, bool, bool) {
-        let default_settings = EditorSettings::default();
-
-        if let Some(path) = Self::get_settings_path() {
-            if let Ok(content) = fs::read_to_string(path) {
-                if let Ok(settings) = toml::from_str::<EditorSettings>(&content) {
-                    return (
-                        settings.theme,
-                        settings.line_numbers,
-                        settings.soft_wrap,
-                        settings.sort_newest_first,
-                        settings.spellcheck_before_send,
-                        settings.use_dmy_dates,
-                    );
-                }
-            }
-        }
+        let settings = Self::get_settings_path()
+            .and_then(|path| fs::read_to_string(path).ok())
+            .and_then(|content| toml::from_str::<EditorSettings>(&content).ok())
+            .unwrap_or_default();
 
         (
-            default_settings.theme,
-            default_settings.line_numbers,
-            default_settings.soft_wrap,
-            default_settings.sort_newest_first,
-            default_settings.spellcheck_before_send,
-            default_settings.use_dmy_dates,
+            settings.theme,
+            settings.line_numbers,
+            settings.soft_wrap,
+            settings.sort_newest_first,
+            settings.spellcheck_before_send,
+            settings.use_dmy_dates,
         )
     }
 
@@ -189,195 +216,123 @@ impl ConfigExt for Editor {
             }
         }
     }
-    // fn load_settings() -> (String, bool, bool, bool, bool, bool) {
-    //     let default_settings = EditorSettings::default();
-    //
-    //     if let Some(path) = Self::get_settings_path() {
-    //         if let Ok(content) = fs::read_to_string(path) {
-    //             // Parse the TOML, falling back to defaults if parsing fails
-    //             if let Ok(settings) = toml::from_str::<EditorSettings>(&content) {
-    //                 return (
-    //                     settings.theme,
-    //                     settings.line_numbers,
-    //                     settings.soft_wrap,
-    //                     settings.sort_newest_first,
-    //                     settings.spellcheck_before_send,
-    //                     settings.use_dmy_dates,
-    //                 );
-    //             }
-    //         }
-    //     }
-    //
-    //     // Return defaults if the file doesn't exist or couldn't be parsed
-    //     (
-    //         default_settings.theme,
-    //         default_settings.line_numbers,
-    //         default_settings.soft_wrap,
-    //         default_settings.sort_newest_first,
-    //         default_settings.spellcheck_before_send,
-    //         default_settings.use_dmy_dates,
-    //     )
-    // }
-    //
-    // fn save_settings(&self) {
-    //     if let Some(path) = Self::get_settings_path() {
-    //         let settings = EditorSettings {
-    //             theme: self.current_theme.clone(),
-    //             line_numbers: self.show_line_numbers,
-    //             soft_wrap: self.soft_wrap,
-    //             sort_newest_first: self.sort_newest_first,
-    //             spellcheck_before_send: self.spellcheck_before_send,
-    //             use_dmy_dates: self.use_dmy_dates,
-    //         };
-    //
-    //         if let Ok(toml_string) = toml::to_string_pretty(&settings) {
-    //             let _ = fs::write(path, toml_string);
-    //         }
-    //     }
-    // }
 
     fn cycle_theme(&mut self) {
         let mut themes: Vec<String> = self.theme_set.themes.keys().cloned().collect();
         themes.sort();
 
         if let Some(current_idx) = themes.iter().position(|t| t == &self.current_theme) {
-            let next_idx = (current_idx + 1) % themes.len();
-            self.current_theme = themes[next_idx].clone();
-
+            self.current_theme = themes[(current_idx + 1) % themes.len()].clone();
             self.save_settings();
             self.clear_cache();
 
             self.status_message = format!("Theme changed to: {}", self.current_theme);
-            self.status_time = Some(std::time::Instant::now());
-
+            self.status_time = Some(Instant::now());
             self.update_cursor_color();
         }
     }
 
     fn update_cursor_color(&self) {
         print!("\x1b]12;#888888\x07");
-        let _ = std::io::Write::flush(&mut std::io::stdout());
+        let _ = std::io::stdout().flush();
     }
 }
 
 pub fn load_signature() -> String {
-    let home = dirs::home_dir().expect("Could not find home directory.");
-    let path = home.join(".xpine").join("signature");
-    std::fs::read_to_string(path).unwrap_or_default()
+    fs::read_to_string(xpine_path("signature")).unwrap_or_default()
 }
 
 pub fn save_signature(sig: &str) {
-    let home = dirs::home_dir().expect("Could not find home directory.");
-    let path = home.join(".xpine").join("signature");
-    let _ = std::fs::write(path, sig);
+    let _ = fs::create_dir_all(xpine_dir());
+    let _ = fs::write(xpine_path("signature"), sig);
 }
 
 pub fn get_provider_defaults(email: &str) -> Option<ProviderDefaults> {
-    if email.ends_with("@gmail.com") {
-        Some(ProviderDefaults { imap: "imap.gmail.com", smtp: "smtp.gmail.com", port: 993 })
-    } else if email.ends_with("@yahoo.com") {
-        Some(ProviderDefaults { imap: "imap.mail.yahoo.com", smtp: "smtp.mail.yahoo.com", port: 993 })
+    let lower = email.trim().to_lowercase();
+    if lower.ends_with("@gmail.com") {
+        Some(ProviderDefaults {
+            imap: "imap.gmail.com",
+            smtp: "smtp.gmail.com",
+            port: 993,
+        })
+    } else if lower.ends_with("@yahoo.com") {
+        Some(ProviderDefaults {
+            imap: "imap.mail.yahoo.com",
+            smtp: "smtp.mail.yahoo.com",
+            port: 993,
+        })
     } else {
         None
     }
 }
 
 fn get_or_create_key() -> Key<Aes256Gcm> {
-    let key_path = dirs::home_dir().unwrap().join(".xpine").join(".master.key");
+    let key_path = xpine_path(".master.key");
 
-    // If the key exists, read it
-    if key_path.exists() {
-        if let Ok(key_bytes) = fs::read(&key_path) {
-            if key_bytes.len() == 32 {
-                return *Key::<Aes256Gcm>::from_slice(&key_bytes);
-            }
+    if let Ok(key_bytes) = fs::read(&key_path) {
+        if key_bytes.len() == 32 {
+            return *Key::<Aes256Gcm>::from_slice(&key_bytes);
         }
     }
 
-    // Otherwise, generate a secure random 32-byte key
     let key = Aes256Gcm::generate_key(OsRng);
-
-    // Save it securely. On macOS/Linux, enforce strict 0600 permissions.
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::OpenOptionsExt;
-        let mut options = fs::OpenOptions::new();
-        options.write(true).create_new(true).mode(0o600);
-        if let Ok(mut file) = options.open(&key_path) {
-            use std::io::Write;
-            let _ = file.write_all(&key);
-        } else {
-            let _ = fs::write(&key_path, &key); // Fallback
-        }
-    }
-    #[cfg(not(unix))]
-    {
-        let _ = fs::write(&key_path, &key);
-    }
-
+    write_private_file(&key_path, &key);
     key
 }
 
 fn load_secrets() -> SecretStore {
-    let path = dirs::home_dir().unwrap().join(".xpine").join("secrets.enc");
-    if !path.exists() {
+    let Ok(encrypted_data) = fs::read(xpine_path("secrets.enc")) else {
+        return SecretStore::default();
+    };
+    if encrypted_data.len() < 12 {
         return SecretStore::default();
     }
 
-    let encrypted_data = fs::read(path).unwrap_or_default();
-    if encrypted_data.len() < 12 { return SecretStore::default(); }
-
     let (nonce_bytes, ciphertext) = encrypted_data.split_at(12);
-    let key = get_or_create_key();
-    let cipher = Aes256Gcm::new(&key);
+    let cipher = Aes256Gcm::new(&get_or_create_key());
     let nonce = Nonce::from_slice(nonce_bytes);
 
-    match cipher.decrypt(nonce, ciphertext) {
-        Ok(plaintext) => serde_json::from_slice(&plaintext).unwrap_or_default(),
-        Err(_) => SecretStore::default(), // If decryption fails, start fresh
-    }
+    cipher
+        .decrypt(nonce, ciphertext)
+        .ok()
+        .and_then(|plaintext| serde_json::from_slice(&plaintext).ok())
+        .unwrap_or_default()
 }
 
 fn save_secrets(store: &SecretStore) {
-    let path = dirs::home_dir().unwrap().join(".xpine").join("secrets.enc");
     let plaintext = serde_json::to_vec(store).unwrap_or_default();
-
-    let key = get_or_create_key();
-    let cipher = Aes256Gcm::new(&key);
+    let cipher = Aes256Gcm::new(&get_or_create_key());
 
     let mut nonce_bytes = [0u8; 12];
     OsRng.fill_bytes(&mut nonce_bytes);
     let nonce = Nonce::from_slice(&nonce_bytes);
 
     if let Ok(ciphertext) = cipher.encrypt(nonce, plaintext.as_ref()) {
-        let mut output = nonce_bytes.to_vec();
+        let mut output = Vec::with_capacity(nonce_bytes.len() + ciphertext.len());
+        output.extend_from_slice(&nonce_bytes);
         output.extend_from_slice(&ciphertext);
-        let _ = fs::write(path, output);
+        write_private_file(&xpine_path("secrets.enc"), &output);
     }
 }
 
 pub fn load_config() -> AppConfig {
-    let home = dirs::home_dir().expect("Could not find home directory.");
-    let config_dir = home.join(".xpine");
+    let config_dir = xpine_dir();
     let config_path = config_dir.join("xpinerc");
 
     if !config_path.exists() {
         fs::create_dir_all(&config_dir).expect("Failed to create .xpine directory.");
-        let template = "[[accounts]]\nemail = \"\"\n";
-        fs::write(&config_path, template).expect("Failed to write xpinerc.");
-        return AppConfig { accounts: Vec::new() };
+        fs::write(&config_path, "[[accounts]]\nemail = \"\"\n").expect("Failed to write xpinerc.");
+        return AppConfig::default();
     }
 
     let contents = fs::read_to_string(&config_path).expect("Failed to read xpinerc");
-
     let mut config: AppConfig = toml::from_str(&contents).unwrap_or_else(|e| {
         eprintln!("Failed to parse xpinerc: {}", e);
-        AppConfig { accounts: Vec::new() }
+        AppConfig::default()
     });
 
-    // Merge the encrypted secrets back into the config in memory
     let secrets = load_secrets();
-    let mut needs_migration = false; // <--- NEW
+    let mut needs_migration = false;
 
     for account in &mut config.accounts {
         let mut vault_has_secret = false;
@@ -386,20 +341,17 @@ pub fn load_config() -> AppConfig {
             account.password = secret_data.password.clone();
             account.refresh_token = secret_data.refresh_token.clone();
 
-            // Override TOML if the vault has the secret
             if secret_data.client_secret.is_some() {
                 account.client_secret = secret_data.client_secret.clone();
                 vault_has_secret = true;
             }
         }
 
-        // If TOML had a cleartext secret, but the secure vault didn't, trigger a migration
         if account.client_secret.is_some() && !vault_has_secret {
             needs_migration = true;
         }
     }
 
-    // rewrite the files immediately to secure the secret and scrub xpinerc
     if needs_migration {
         save_config(&config.accounts);
     }
@@ -408,26 +360,29 @@ pub fn load_config() -> AppConfig {
 }
 
 pub fn save_config(accounts: &[Account]) {
-    let home = dirs::home_dir().expect("Could not find home directory.");
-    let config_path = home.join(".xpine").join("xpinerc");
+    let config_dir = xpine_dir();
+    let _ = fs::create_dir_all(&config_dir);
 
-    // write the safe TOML file (#[serde(skip)] ensures no passwords go here)
-    let config = AppConfig { accounts: accounts.to_vec() };
+    let config = AppConfig {
+        accounts: accounts.to_vec(),
+    };
     if let Ok(toml_string) = toml::to_string_pretty(&config) {
-        fs::write(config_path, toml_string).expect("Failed to write config file.");
+        fs::write(config_dir.join("xpinerc"), toml_string).expect("Failed to write config file.");
     }
 
-    // encrypt and save the passwords/keys to the secure binary file
     let mut secrets = SecretStore::default();
     for account in accounts {
-        if !account.email.is_empty() && (account.password.is_some() || account.refresh_token.is_some() || account.client_secret.is_some()) {
+        let has_secret = account.password.is_some()
+            || account.refresh_token.is_some()
+            || account.client_secret.is_some();
+        if !account.email.is_empty() && has_secret {
             secrets.accounts.insert(
                 account.email.clone(),
                 SecretData {
                     password: account.password.clone(),
                     refresh_token: account.refresh_token.clone(),
                     client_secret: account.client_secret.clone(),
-                }
+                },
             );
         }
     }

@@ -1,107 +1,117 @@
 use std::collections::HashSet;
 use std::fs::{File, OpenOptions};
 use std::io::{self, BufRead, BufReader, Write};
-use crate::editor::{Editor, MenuState};
-use crate::ui::UiExt;
+use std::path::{Path, PathBuf};
+
 use crate::config::ConfigExt;
-use crate::syntax::SyntaxExt; 
+use crate::editor::{Editor, MenuState};
 use crate::prompt::PromptExt;
+use crate::syntax::SyntaxExt;
+use crate::ui::UiExt;
 
 pub trait SpellExt {
     fn load_dictionary() -> HashSet<String>;
     fn find_next_misspelled(&self, start_idx: usize) -> Option<(String, usize, usize)>;
-    // fn spell_check(&mut self) -> io::Result<()>;
     fn spell_check(&mut self) -> io::Result<bool>;
     fn get_suggestions(word: &str, dict: &HashSet<String>) -> Vec<String>;
+}
+
+fn custom_dict_path() -> Option<PathBuf> {
+    Editor::get_base_dir().map(|dir| dir.join("custom_dict.txt"))
+}
+
+fn load_words_from_file(path: &Path, dict: &mut HashSet<String>) -> bool {
+    let Ok(file) = File::open(path) else {
+        return false;
+    };
+    for line in BufReader::new(file).lines().map_while(Result::ok) {
+        dict.insert(line.trim().to_lowercase());
+    }
+    true
+}
+
+fn apply_casing(template: &str, suggestions: &mut [String]) {
+    if template.chars().all(char::is_uppercase) {
+        for sugg in suggestions {
+            *sugg = sugg.to_uppercase();
+        }
+    } else if template.chars().next().is_some_and(char::is_uppercase) {
+        for sugg in suggestions {
+            let mut chars = sugg.chars();
+            if let Some(first_char) = chars.next() {
+                *sugg = first_char.to_uppercase().collect::<String>() + chars.as_str();
+            }
+        }
+    }
 }
 
 impl SpellExt for Editor {
     fn load_dictionary() -> HashSet<String> {
         let mut dict = HashSet::new();
 
-        let dict_paths = ["/usr/share/dict/words", "/usr/dict/words"];
-        for path in dict_paths {
-            if let Ok(file) = File::open(path) {
-                let reader = BufReader::new(file);
-                for line in reader.lines().map_while(Result::ok) {
-                    dict.insert(line.trim().to_lowercase());
-                }
+        for path in ["/usr/share/dict/words", "/usr/dict/words"] {
+            if load_words_from_file(Path::new(path), &mut dict) {
                 break;
             }
         }
 
-        if let Some(mut custom_path) = Self::get_base_dir() {
-            custom_path.push("custom_dict.txt");
-            if let Ok(file) = File::open(&custom_path) {
-                let reader = BufReader::new(file);
-                for line in reader.lines().map_while(Result::ok) {
-                    dict.insert(line.trim().to_lowercase());
-                }
-            }
+        if let Some(custom_path) = custom_dict_path() {
+            load_words_from_file(&custom_path, &mut dict);
         }
 
         dict
     }
-    
+
     fn find_next_misspelled(&self, start_idx: usize) -> Option<(String, usize, usize)> {
-        let dict = self.dictionary.as_ref().unwrap();
+        let dict = self.dictionary.as_ref()?;
+        if start_idx >= self.buffer.len_chars() {
+            return None;
+        }
 
         let start_line = self.buffer.char_to_line(start_idx);
-        let num_lines = self.buffer.len_lines();
 
-        for line_idx in start_line..num_lines {
+        for line_idx in start_line..self.buffer.len_lines() {
             let line = self.buffer.line(line_idx);
             let line_str = line.to_string();
+            let trimmed = line_str.trim_end();
 
-            // --- NEW: Skip quoted replies and stop at forwarded messages ---
-            if line_str.starts_with('>') {
-                continue; // Skip this line and move to the next one
-            }
-            if line_str.starts_with("On ") && line_str.ends_with(" wrote:") {
+            // Skip quoted replies and stop at forwarded messages
+            if line_str.starts_with('>')
+                || (trimmed.starts_with("On ") && trimmed.ends_with(" wrote:"))
+            {
                 continue;
             }
             if line_str.contains("--- Forwarded message ---") {
-                return None; // Stop checking the rest of the buffer entirely
+                return None;
             }
-            // --------------------------------------------------------------
 
             let line_start_char = self.buffer.line_to_char(line_idx);
-
-            // If we are resuming mid-line after a correction, calculate the offset
             let char_offset = if line_idx == start_line {
                 start_idx.saturating_sub(line_start_char)
             } else {
                 0
             };
 
-            let mut in_word = false;
             let mut word_start = 0;
             let mut word = String::new();
 
             for (i, c) in line.chars().enumerate().skip(char_offset) {
                 let actual_idx = line_start_char + i;
-
                 if c.is_alphabetic() {
-                    if !in_word {
-                        in_word = true;
+                    if word.is_empty() {
                         word_start = actual_idx;
                     }
                     word.push(c);
-                } else {
-                    if in_word {
-                        if !dict.contains(&word.to_lowercase()) {
-                            return Some((word, word_start, actual_idx));
-                        }
-                        in_word = false;
-                        word.clear();
+                } else if !word.is_empty() {
+                    if !dict.contains(&word.to_lowercase()) {
+                        return Some((word, word_start, actual_idx));
                     }
+                    word.clear();
                 }
             }
 
-            // Check if the line ends with a misspelled word just before the newline
-            if in_word && !dict.contains(&word.to_lowercase()) {
-                let actual_idx = line_start_char + line.chars().count();
-                return Some((word, word_start, actual_idx));
+            if !word.is_empty() && !dict.contains(&word.to_lowercase()) {
+                return Some((word, word_start, line_start_char + line.len_chars()));
             }
         }
 
@@ -110,17 +120,13 @@ impl SpellExt for Editor {
 
     fn spell_check(&mut self) -> io::Result<bool> {
         let previous_state = self.menu_state;
-
-        if self.dictionary.is_none() {
-            self.dictionary = Some(Self::load_dictionary());
-        }
+        self.dictionary.get_or_insert_with(Self::load_dictionary);
 
         let mut current_idx = 0;
         let mut corrections = 0;
 
         while let Some((word, start, end)) = self.find_next_misspelled(current_idx) {
             let lower_word = word.to_lowercase();
-
             if self.ignored_words.contains(&lower_word) {
                 current_idx = end;
                 continue;
@@ -135,104 +141,89 @@ impl SpellExt for Editor {
             self.highlight_match = Some((self.cursor_y, self.cursor_x, self.cursor_x + word_len));
 
             let dict = self.dictionary.as_ref().unwrap();
-
-            // make the suggestions vector mutable
             let mut suggestions = Self::get_suggestions(&lower_word, dict);
+            apply_casing(&word, &mut suggestions);
+            suggestions.truncate(5);
 
-            // check the casing of the original misspelled word
-            let is_all_caps = word.chars().all(char::is_uppercase);
-            let is_first_upper = word.chars().next().map(char::is_uppercase).unwrap_or(false);
-
-            // format suggestions to match the original word's casing
-            if is_all_caps {
-                for sugg in suggestions.iter_mut() {
-                    *sugg = sugg.to_uppercase();
-                }
-            } else if is_first_upper {
-                for sugg in suggestions.iter_mut() {
-                    let mut chars = sugg.chars();
-                    if let Some(first_char) = chars.next() {
-                        // Uppercase the first character, keep the rest lowercase
-                        *sugg = first_char.to_uppercase().collect::<String>() + chars.as_str();
-                    }
-                }
-            }
-
-            // Populate current suggestions and transition state context
-            self.current_suggestions = suggestions.into_iter().take(5).collect();
-
+            self.current_suggestions = suggestions;
             self.menu_state = MenuState::SpellCheck;
-
-            // Draw screen ONLY after suggestions and layout states are fully prepared
             self.draw_screen()?;
 
             let choice_result = self.prompt("Replace with: ", false)?;
+            let suggestions = std::mem::take(&mut self.current_suggestions);
 
-            let current_suggs_copy = self.current_suggestions.clone();
-            self.current_suggestions.clear();
-
-            if let Some(choice) = choice_result {
-                let choice_clean = choice.trim().to_lowercase();
-
-                if choice_clean == "i" {
-                    self.ignored_words.insert(lower_word);
-                    current_idx = end;
-                } else if choice_clean == "a" {
-                    self.dictionary.as_mut().unwrap().insert(lower_word.clone());
-
-                    if let Some(mut custom_path) = Self::get_base_dir() {
-                        custom_path.push("custom_dict.txt");
-                        if let Ok(mut file) = OpenOptions::new().create(true).append(true).open(custom_path) {
-                            let _ = writeln!(file, "{}", lower_word);
-                        }
-                    }
-
-                    current_idx = end;
-                } else if let Ok(num) = choice_clean.parse::<usize>() {
-                    if num > 0 && num <= current_suggs_copy.len() {
-                        let replacement = &current_suggs_copy[num - 1];
-                        self.buffer.remove(start..end);
-                        self.buffer.insert(start, replacement);
-                        current_idx = start + replacement.chars().count();
-                        corrections += 1;
-                        self.mark_modified();
-                    } else {
-                        current_idx = end;
-                    }
-                } else if !choice.is_empty() {
-                    self.buffer.remove(start..end);
-                    self.buffer.insert(start, &choice);
-                    current_idx = start + choice.chars().count();
-                    corrections += 1;
-                    self.mark_modified();
-                } else {
-                    current_idx = end;
-                }
-            } else {
+            let Some(choice) = choice_result else {
                 self.highlight_match = None;
                 self.set_status(String::from("Spell check cancelled"));
                 self.menu_state = previous_state;
-
-                // 3. Return false when cancelled
                 return Ok(false);
+            };
+
+            let choice_clean = choice.trim().to_lowercase();
+            let replacement: Option<&str> = match choice_clean.as_str() {
+                "i" => {
+                    self.ignored_words.insert(lower_word);
+                    None
+                }
+                "a" => {
+                    if let Some(dict) = self.dictionary.as_mut() {
+                        dict.insert(lower_word.clone());
+                    }
+                    if let Some(custom_path) = custom_dict_path() {
+                        if let Ok(mut file) = OpenOptions::new()
+                            .create(true)
+                            .append(true)
+                            .open(custom_path)
+                        {
+                            let _ = writeln!(file, "{}", lower_word);
+                        }
+                    }
+                    None
+                }
+                _ => {
+                    if let Ok(num) = choice_clean.parse::<usize>() {
+                        num.checked_sub(1)
+                            .and_then(|i| suggestions.get(i))
+                            .map(String::as_str)
+                    } else if !choice.is_empty() {
+                        Some(choice.as_str())
+                    } else {
+                        None
+                    }
+                }
+            };
+
+            if let Some(rep) = replacement {
+                self.buffer.remove(start..end);
+                self.buffer.insert(start, rep);
+                current_idx = start + rep.chars().count();
+                corrections += 1;
+                self.mark_modified();
+            } else {
+                current_idx = end;
             }
 
             self.highlight_match = None;
         }
 
-        self.set_status(format!("Spell check complete. {} corrections made.", corrections));
+        self.set_status(format!(
+            "Spell check complete. {} corrections made.",
+            corrections
+        ));
         self.menu_state = previous_state;
-
         self.draw_screen()?;
 
         Ok(true)
     }
 
     fn get_suggestions(word: &str, dict: &HashSet<String>) -> Vec<String> {
-        let mut scored: Vec<(&String, usize)> = dict.iter()
-            .filter(|w| (w.len() as isize - word.len() as isize).abs() <= 2)
-            .map(|w| (w, edit_distance(word, w)))
-            .filter(|(_, dist)| *dist <= 3)
+        let mut scored: Vec<(&String, usize)> = dict
+            .iter()
+            .filter(|w| w.len().abs_diff(word.len()) <= 2)
+            .filter_map(|w| {
+                let dist = edit_distance(word, w);
+                (dist <= 3).then_some((w, dist))
+            })
             .collect();
 
         scored.sort_by_key(|&(_, dist)| dist);
@@ -240,20 +231,19 @@ impl SpellExt for Editor {
     }
 }
 
-// metric to measure 'distance' of misspelled word from dictionary words
 pub fn edit_distance(a: &str, b: &str) -> usize {
     let a: Vec<char> = a.chars().collect();
     let b: Vec<char> = b.chars().collect();
-    let mut cache: Vec<usize> = (0..=b.len()).collect();
-    let mut result = cache.clone();
+    let mut prev: Vec<usize> = (0..=b.len()).collect();
+    let mut curr = vec![0; b.len() + 1];
 
     for (i, &a_char) in a.iter().enumerate() {
-        result[0] = i + 1;
+        curr[0] = i + 1;
         for (j, &b_char) in b.iter().enumerate() {
-            let cost = if a_char == b_char { 0 } else { 1 };
-            result[j + 1] = (result[j] + 1).min(cache[j + 1] + 1).min(cache[j] + cost);
+            let cost = usize::from(a_char != b_char);
+            curr[j + 1] = (curr[j] + 1).min(prev[j + 1] + 1).min(prev[j] + cost);
         }
-        cache.copy_from_slice(&result);
+        std::mem::swap(&mut prev, &mut curr);
     }
-    result[b.len()]
+    prev[b.len()]
 }

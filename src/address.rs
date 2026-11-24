@@ -1,16 +1,66 @@
-use std::fs;
-use std::io::BufRead;
+use std::fs::{self, File, OpenOptions};
+use std::io::{self, BufRead, BufReader, Write};
 use std::path::PathBuf;
+
+fn has_display_name(addr: &str) -> bool {
+    addr.contains('<') && addr.contains('>')
+}
+
+fn sort_and_separate_teams(addresses: &mut Vec<String>) {
+    addresses.sort_by(|a, b| {
+        a.contains(':')
+            .cmp(&b.contains(':'))
+            .then_with(|| a.cmp(b))
+    });
+
+    if let Some(first_team_idx) = addresses.iter().position(|a| a.contains(':')) {
+        if first_team_idx > 0 {
+            addresses.insert(first_team_idx, String::new());
+        }
+    }
+}
+
+fn format_team_entry(team_name: &str, emails: &str, address_book: &[String]) -> String {
+    let expanded_emails = expand_address_lists(emails, address_book);
+    format!(
+        "{}: {};",
+        team_name.trim(),
+        expanded_emails.trim_end_matches(';')
+    )
+}
+
+fn split_unquoted_commas(input: &str) -> Vec<String> {
+    let mut parts = Vec::new();
+    let mut current = String::new();
+    let mut in_quotes = false;
+
+    for c in input.chars() {
+        if c == '"' {
+            in_quotes = !in_quotes;
+        }
+        if c == ',' && !in_quotes {
+            let trimmed = current.trim();
+            if !trimmed.is_empty() {
+                parts.push(trimmed.to_string());
+            }
+            current.clear();
+        } else {
+            current.push(c);
+        }
+    }
+
+    let trimmed = current.trim();
+    if !trimmed.is_empty() {
+        parts.push(trimmed.to_string());
+    }
+    parts
+}
 
 pub fn enforce_quotes(address: &str) -> String {
     let trimmed = address.trim();
     if let Some(start) = trimmed.find('<') {
         let name_part = trimmed[..start].trim();
-        if name_part.is_empty() {
-            return trimmed.to_string();
-        }
-
-        if name_part.starts_with('"') && name_part.ends_with('"') {
+        if name_part.is_empty() || (name_part.starts_with('"') && name_part.ends_with('"')) {
             return trimmed.to_string();
         }
 
@@ -30,103 +80,58 @@ pub fn get_address_book_path() -> PathBuf {
 }
 
 pub fn load_address_book() -> Vec<String> {
-    let path = get_address_book_path();
-    let mut addresses = Vec::new();
+    let mut addresses = File::open(get_address_book_path())
+        .map(|file| {
+            BufReader::new(file)
+                .lines()
+                .flatten()
+                .map(|line| line.trim().to_string())
+                .filter(|line| !line.is_empty())
+                .collect()
+        })
+        .unwrap_or_default();
 
-    if let Ok(file) = fs::File::open(path) {
-        let reader = std::io::BufReader::new(file);
-        for line in reader.lines() {
-            if let Ok(addr) = line {
-                let trimmed = addr.trim().to_string();
-                if !trimmed.is_empty() {
-                    addresses.push(trimmed);
-                }
-            }
-        }
-    }
-
-    addresses.sort_by(|a, b| {
-        let a_is_team = a.contains(':');
-        let b_is_team = b.contains(':');
-        if a_is_team == b_is_team {
-            a.cmp(b) // Sort alphabetically within their respective groups
-        } else if a_is_team {
-            std::cmp::Ordering::Greater // Teams go to the bottom
-        } else {
-            std::cmp::Ordering::Less    // Individuals go to the top
-        }
-    });
-
-    if let Some(first_team_idx) = addresses.iter().position(|a| a.contains(':')) {
-        if first_team_idx > 0 {
-            addresses.insert(first_team_idx, String::new());
-        }
-    }
-
+    sort_and_separate_teams(&mut addresses);
     addresses
 }
 
-pub fn add_to_address_book(address: &str) -> std::io::Result<bool> {
+pub fn add_to_address_book(address: &str) -> io::Result<bool> {
     let mut addresses = load_address_book();
+    let trimmed = address.trim();
 
-    let mut final_address = address.trim().to_string();
-    if let Some((team_name, emails)) = final_address.clone().split_once(':') {
-        let expanded_emails = expand_address_lists(emails, &addresses);
-        final_address = format!("{}: {};", team_name.trim(), expanded_emails.trim_end_matches(';'));
-
-        if addresses.iter().any(|a| a.trim() == final_address) {
+    let final_address = if let Some((team_name, emails)) = trimmed.split_once(':') {
+        let formatted = format_team_entry(team_name, emails, &addresses);
+        if addresses.iter().any(|a| a.trim() == formatted) {
             return Ok(false);
         }
+        formatted
     } else {
-        // NEW: Enforce quotes before checking or saving
-        final_address = enforce_quotes(&final_address);
+        let quoted = enforce_quotes(trimmed);
+        let new_raw = crate::mail::extract_email(&quoted).to_lowercase();
 
-        // --- Individual Email Upgrade Logic ---
-        let new_raw = crate::mail::extract_email(&final_address).to_lowercase();
-        let new_has_name = final_address.contains('<') && final_address.contains('>');
-        let mut replaced = false;
-
-        for existing_addr in addresses.iter_mut() {
-            if existing_addr.contains(':') { continue; }
-
-            let existing_raw = crate::mail::extract_email(existing_addr).to_lowercase();
-
-            if new_raw == existing_raw {
-                let existing_has_name = existing_addr.contains('<') && existing_addr.contains('>');
-
-                if new_has_name && !existing_has_name {
-                    // Upgrade: Replace the raw email with the formatted named version
-                    *existing_addr = final_address.clone();
-                    replaced = true;
-                    break;
-                } else {
-                    return Ok(false);
-                }
+        if let Some(existing) = addresses.iter_mut().find(|a| {
+            !a.contains(':') && crate::mail::extract_email(a).to_lowercase() == new_raw
+        }) {
+            if has_display_name(&quoted) && !has_display_name(existing) {
+                *existing = quoted;
+                save_address_book(&addresses)?;
+                return Ok(true);
             }
+            return Ok(false);
         }
+        quoted
+    };
 
-        if replaced {
-            save_address_book(&addresses)?;
-            return Ok(true);
-        }
-    }
-
-    let path = get_address_book_path();
-    let mut file = fs::OpenOptions::new()
+    let mut file = OpenOptions::new()
         .create(true)
         .append(true)
-        .open(path)?;
-
-    use std::io::Write;
+        .open(get_address_book_path())?;
     writeln!(file, "{}", final_address)?;
-
     Ok(true)
 }
 
-pub fn save_address_book(addresses: &[String]) -> std::io::Result<()> {
-    use std::io::Write;
-    let path = get_address_book_path();
-    let mut file = fs::File::create(path)?;
+pub fn save_address_book(addresses: &[String]) -> io::Result<()> {
+    let mut file = File::create(get_address_book_path())?;
     for addr in addresses {
         let trimmed = addr.trim();
         if !trimmed.is_empty() {
@@ -141,40 +146,16 @@ pub fn clean_and_save_address_book(addresses: &mut Vec<String>) {
 
     let current_book = addresses.clone();
     for a in addresses.iter_mut() {
-        if let Some((team_name, emails)) = a.clone().split_once(':') {
-            let expanded_emails = expand_address_lists(emails, &current_book);
-            *a = format!("{}: {};", team_name.trim(), expanded_emails.trim_end_matches(';'));
+        let normalized = if let Some((team_name, emails)) = a.split_once(':') {
+            format_team_entry(team_name, emails, &current_book)
         } else {
-            // NEW: Enforce quotes on individual emails saved via the Editor
-            *a = enforce_quotes(a);
-        }
+            enforce_quotes(a)
+        };
+        *a = normalized;
     }
 
-    // sort: individuals first, Teams (containing ':') at bottom
-    addresses.sort_by(|a, b| {
-        let a_is_team = a.contains(':');
-        let b_is_team = b.contains(':');
-
-        if a_is_team == b_is_team {
-            a.cmp(b) // sort within groups
-        } else if a_is_team {
-            std::cmp::Ordering::Greater // push Teams to bottom
-        } else {
-            std::cmp::Ordering::Less    // push individuals to top
-        }
-    });
-
-    // insert the blank line before first Team
-    if let Some(first_team_idx) = addresses.iter().position(|a| a.contains(':')) {
-        if first_team_idx > 0 {
-            addresses.insert(first_team_idx, String::new());
-        }
-    }
-
-    // Save
-    let mut save_list = addresses.clone();
-    save_list.retain(|a| !a.trim().is_empty());
-    let _ = save_address_book(&save_list);
+    sort_and_separate_teams(addresses);
+    let _ = save_address_book(addresses);
 }
 
 pub fn expand_address_lists(input: &str, address_book: &[String]) -> String {
@@ -185,60 +166,23 @@ pub fn expand_address_lists(input: &str, address_book: &[String]) -> String {
         }
     }
 
-    // let mut expanded = Vec::new();
-    //
-    // // split by comma
-    // for part in processed_input.split(',') {
-    //     let part = part.trim();
-    //
-    //     // strip out the " (Team)" suffix
-    //     let clean_part = part.strip_suffix(" (Team)").unwrap_or(part).trim();
-    //     let mut matched_list = false;
-
     let mut expanded = Vec::new();
+    for part in split_unquoted_commas(&processed_input) {
+        let clean_part = part.strip_suffix(" (Team)").unwrap_or(&part).trim();
+        let clean_lower = clean_part.to_lowercase();
 
-    // Safely split by comma, ignoring commas inside quotes
-    let mut parts = Vec::new();
-    let mut current_part = String::new();
-    let mut in_quotes = false;
+        let matched = address_book.iter().find_map(|addr| {
+            let (list_name, emails) = addr.split_once(':')?;
+            (clean_lower == list_name.trim().to_lowercase())
+                .then(|| emails.trim().trim_end_matches(';').to_string())
+        });
 
-    for c in processed_input.chars() {
-        if c == '"' { in_quotes = !in_quotes; }
-        if c == ',' && !in_quotes {
-            parts.push(current_part.trim().to_string());
-            current_part.clear();
-        } else {
-            current_part.push(c);
-        }
-    }
-    if !current_part.trim().is_empty() {
-        parts.push(current_part.trim().to_string());
-    }
-
-    for part in parts {
-        let part = part.as_str();
-
-        // strip out the " (Team)" suffix
-        let clean_part = part.strip_suffix(" (Team)").unwrap_or(part).trim();
-        let mut matched_list = false;
-
-        // check if cleaned name matches a team in address book
-        for addr in address_book {
-            if let Some((list_name, emails)) = addr.split_once(':') {
-                if clean_part.to_lowercase() == list_name.trim().to_lowercase() {
-                    expanded.push(emails.trim().trim_end_matches(';').to_string());
-                    matched_list = true;
-                    break;
-                }
-            }
-        }
-
-        if !matched_list && !clean_part.is_empty() {
-            // if not a team, enforce quotes and push clean_part
+        if let Some(team_emails) = matched {
+            expanded.push(team_emails);
+        } else if !clean_part.is_empty() {
             expanded.push(enforce_quotes(clean_part));
         }
     }
 
     expanded.join(", ")
 }
-
