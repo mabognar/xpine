@@ -29,7 +29,7 @@ fn format_team_entry(team_name: &str, emails: &str, address_book: &[String]) -> 
     )
 }
 
-fn split_unquoted_commas(input: &str) -> Vec<String> {
+pub fn split_unquoted_commas(input: &str) -> Vec<String> {
     let mut parts = Vec::new();
     let mut current = String::new();
     let mut in_quotes = false;

@@ -809,7 +809,7 @@ impl UiExt for Editor {
                         ("^X", " Save"),
                         ("^C", " Cancel"),
                         ("^P", " Prev"),
-                        ("^Y", "Prev Pg"),
+                        ("^Y", " Prev Pg"),
                         ("^A", " Add Email"),
                         ("", ""),
                     ],
@@ -1100,7 +1100,7 @@ pub fn draw_app(
             ResetColor
         )?;
     }
-    
+
     stdout.flush()?;
     Ok(())
 }
@@ -1150,7 +1150,7 @@ fn draw_address_book(
         )?;
 
         if let Some((team_name, emails)) = display_str.split_once(':') {
-            let member_count = emails.split(',').filter(|e| !e.trim().is_empty()).count();
+            let member_count = crate::address::split_unquoted_commas(emails).len();
             let team_name_with_count = format!("{} ({})", team_name, member_count);
             let prefix_len = padding.len() + team_name_with_count.chars().count() + 1;
             let available_len = (cols as usize).saturating_sub(prefix_len);

@@ -235,13 +235,29 @@ fn format_contact(name: &str, email: &str) -> Option<String> {
     )
 }
 
-fn dedupe_emails(raw: &str) -> Vec<&str> {
+fn dedupe_emails(raw: &str) -> Vec<String> {
     let mut unique = Vec::new();
-    for email in raw.split([',', '\n', ';']) {
-        let trimmed = email.trim();
-        if !trimmed.is_empty() && !unique.contains(&trimmed) {
-            unique.push(trimmed);
+    let mut current = String::new();
+    let mut in_quotes = false;
+
+    for c in raw.chars() {
+        if c == '"' {
+            in_quotes = !in_quotes;
         }
+        if matches!(c, ',' | '\n' | ';') && !in_quotes {
+            let trimmed = current.trim();
+            if !trimmed.is_empty() && !unique.iter().any(|u: &String| u == trimmed) {
+                unique.push(trimmed.to_string());
+            }
+            current.clear();
+        } else {
+            current.push(c);
+        }
+    }
+
+    let trimmed = current.trim();
+    if !trimmed.is_empty() && !unique.iter().any(|u: &String| u == trimmed) {
+        unique.push(trimmed.to_string());
     }
     unique
 }
@@ -607,13 +623,8 @@ fn handle_address_book_events(k: KeyEvent, app: &mut App, theme_provider: &mut E
                     let prefix = &current_val[..colon_idx];
                     let emails_part = current_val[colon_idx + 1..].trim_end_matches(';').trim();
 
-                    let multiline_emails = emails_part
-                        .split(',')
-                        .map(str::trim)
-                        .filter(|s| !s.is_empty())
-                        .collect::<Vec<_>>()
-                        .join("\n");
-
+                    let multiline_emails = crate::address::split_unquoted_commas(emails_part).join("\n");
+                    
                     let title = format!("Edit Team: {}", prefix);
                     let _ = execute!(std::io::stdout(), Clear(ClearType::All));
                     let edit_result =

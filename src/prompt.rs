@@ -40,6 +40,19 @@ const NO_MENU: [(&str, &str); 6] = [
     ("", ""),
 ];
 
+fn find_last_unquoted_comma(s: &str) -> Option<usize> {
+    let mut last_comma = None;
+    let mut in_quotes = false;
+    for (idx, c) in s.char_indices() {
+        if c == '"' {
+            in_quotes = !in_quotes;
+        } else if c == ',' && !in_quotes {
+            last_comma = Some(idx);
+        }
+    }
+    last_comma
+}
+
 pub trait PromptExt {
     fn prompt(&mut self, prompt_text: &str, allow_browser: bool) -> io::Result<Option<String>>;
     fn prompt_yn(&mut self, prompt_text: &str) -> io::Result<Option<bool>>;
@@ -430,7 +443,12 @@ impl PromptExt for Editor {
             let (hint, matched_suggestion) = if !matches.is_empty() {
                 suggestion_idx %= matches.len();
                 let current_match = &matches[suggestion_idx];
-                let last_part = input.split(',').last().unwrap_or("").trim_start();
+
+                let last_part = match find_last_unquoted_comma(&input) {
+                    Some(idx) => input[idx + 1..].trim_start(),
+                    None => input.trim_start(),
+                };
+
                 let hint = format_suggestion_hint(
                     last_part,
                     current_match,
@@ -519,7 +537,7 @@ impl PromptExt for Editor {
                 KeyCode::Right | KeyCode::Tab => {
                     if let Some(suggestion) = matched_suggestion {
                         let clean_suggestion = suggestion.trim_end_matches(';');
-                        if let Some(last_comma_idx) = input.rfind(',') {
+                        if let Some(last_comma_idx) = find_last_unquoted_comma(&input) {
                             input.truncate(last_comma_idx + 1);
                             input.push(' ');
                             input.push_str(clean_suggestion);
@@ -838,7 +856,10 @@ impl PromptExt for Editor {
 }
 
 pub fn find_email_suggestions(input: &str, address_book: &[String]) -> Vec<String> {
-    let last_part = input.split(',').last().unwrap_or("").trim_start();
+    let last_part = match find_last_unquoted_comma(input) {
+        Some(idx) => input[idx + 1..].trim_start(),
+        None => input.trim_start(),
+    };
     if last_part.is_empty() {
         return Vec::new();
     }
