@@ -151,6 +151,77 @@ fn print_highlighted(
     Ok(())
 }
 
+fn compute_field_colors(
+    val: &str,
+    base_color: Color,
+    name_color: Color,
+    accent_color: Color,
+) -> Vec<Color> {
+    let clean = strip_newlines(Some(val));
+    let mut colors = vec![base_color; clean.chars().count()];
+
+    // Colorize the display name once a full <...> address is entered
+    let mut current_idx = 0;
+    while let Some(start) = clean[current_idx..].find('<') {
+        let absolute_start = current_idx + start;
+        let Some(end) = clean[absolute_start..].find('>') else {
+            break;
+        };
+
+        let chunk = &clean[current_idx..absolute_start];
+        let split_pos = if let Some(last_at) = chunk.rfind('@') {
+            chunk[last_at..]
+                .find(',')
+                .map_or(0, |comma_offset| last_at + comma_offset + 1)
+        } else if chunk.trim_start().starts_with(',') {
+            chunk.find(',').unwrap() + 1
+        } else {
+            0
+        };
+
+        let name_start_byte = current_idx + split_pos;
+        let name_part = &clean[name_start_byte..absolute_start];
+        let trimmed = name_part.trim();
+        if !trimmed.is_empty() {
+            let ws_offset = name_part.find(|c: char| !c.is_whitespace()).unwrap_or(0);
+            let char_start = clean[..name_start_byte + ws_offset].chars().count();
+            let char_len = trimmed.chars().count();
+            for c in &mut colors[char_start..char_start + char_len] {
+                *c = name_color;
+            }
+        }
+
+        current_idx = absolute_start + end + 1;
+    }
+
+    // Keep "(Team)" highlighted in accent_color
+    let mut search_from = 0;
+    while let Some(pos) = clean[search_from..].find("(Team)") {
+        let abs_pos = search_from + pos;
+        let char_start = clean[..abs_pos].chars().count();
+        for c in &mut colors[char_start..char_start + 6] {
+            *c = accent_color;
+        }
+        search_from = abs_pos + 6;
+    }
+
+    colors
+}
+
+fn print_colored_chars(out: &mut Stdout, chars: &[char], colors: &[Color]) -> io::Result<()> {
+    let mut i = 0;
+    while i < chars.len() {
+        let color = colors[i];
+        let start = i;
+        while i < chars.len() && colors[i] == color {
+            i += 1;
+        }
+        let run: String = chars[start..i].iter().collect();
+        queue!(out, SetForegroundColor(color), Print(run))?;
+    }
+    Ok(())
+}
+
 fn build_autocomplete_hint(val: &str, address_book: &[String], suggestion_idx: usize) -> String {
     let suggestions = crate::prompt::find_email_suggestions(val, address_book);
     if suggestions.is_empty() {
@@ -499,6 +570,13 @@ pub fn compose_email(
 
         for (i, label) in HEADER_LABELS.iter().enumerate() {
             let val = state.field(i).unwrap_or("");
+            let clean_chars: Vec<char> = strip_newlines(Some(val)).chars().collect();
+            let field_colors = if i < 3 {
+                compute_field_colors(val, colors.fg, colors.date_color, colors.accent)
+            } else {
+                vec![colors.fg; clean_chars.len()]
+            };
+
             queue!(
                 stdout,
                 cursor::MoveTo(0, current_y),
@@ -528,6 +606,17 @@ pub fn compose_email(
                     state.scroll_offset = cursor_row - viewport_height + 1;
                 }
 
+                // Map each wrapped line back to its starting char index in clean_chars
+                let mut line_starts = Vec::with_capacity(wrapped_lines.len());
+                let mut char_cursor = 0;
+                for (idx, line) in wrapped_lines.iter().enumerate() {
+                    if idx > 0 && char_cursor < clean_chars.len() {
+                        char_cursor += 1; // Skip the single space consumed by wrap_text
+                    }
+                    line_starts.push(char_cursor);
+                    char_cursor += line.chars().count();
+                }
+
                 let end_idx = (state.scroll_offset + viewport_height).min(wrapped_lines.len());
                 for (line_idx, line) in wrapped_lines[state.scroll_offset..end_idx]
                     .iter()
@@ -549,7 +638,11 @@ pub fn compose_email(
                         SetBackgroundColor(colors.menu_bg)
                     )
                         .unwrap();
-                    print_highlighted(&mut stdout, line, colors.fg, colors.accent).unwrap();
+
+                    let start = line_starts[state.scroll_offset + line_idx];
+                    let end = (start + line.chars().count()).min(clean_chars.len());
+                    print_colored_chars(&mut stdout, &clean_chars[start..end], &field_colors[start..end])
+                        .unwrap();
                 }
 
                 if !hint_str.is_empty() {
@@ -588,22 +681,132 @@ pub fn compose_email(
                 active_cursor_y = current_y + (cursor_row - state.scroll_offset) as u16;
                 current_y += viewport_height as u16;
             } else {
-                let display_text = if val.chars().count() > available_width {
-                    let take = available_width.saturating_sub(3);
-                    format!("{}...", val.chars().take(take).collect::<String>())
-                } else {
-                    val.to_string()
-                };
                 queue!(
                     stdout,
                     cursor::MoveTo(LABEL_WIDTH, current_y),
                     SetBackgroundColor(colors.menu_bg)
                 )
                     .unwrap();
-                print_highlighted(&mut stdout, &display_text, colors.fg, colors.accent).unwrap();
+
+                if clean_chars.len() > available_width {
+                    let take = available_width.saturating_sub(3);
+                    print_colored_chars(&mut stdout, &clean_chars[..take], &field_colors[..take])
+                        .unwrap();
+                    queue!(stdout, SetForegroundColor(colors.fg), Print("...")).unwrap();
+                } else {
+                    print_colored_chars(&mut stdout, &clean_chars, &field_colors).unwrap();
+                }
                 current_y += 1;
             }
         }
+        
+        // for (i, label) in HEADER_LABELS.iter().enumerate() {
+        //     let val = state.field(i).unwrap_or("");
+        //     queue!(
+        //         stdout,
+        //         cursor::MoveTo(0, current_y),
+        //         SetBackgroundColor(colors.menu_bg),
+        //         Clear(ClearType::UntilNewLine),
+        //         SetForegroundColor(colors.accent),
+        //         Print(format!("{:>8}", label)),
+        //         SetForegroundColor(colors.fg),
+        //         Print(" ")
+        //     )
+        //         .unwrap();
+        //
+        //     if i == state.active_idx {
+        //         let hint_str = if i < 3 {
+        //             build_autocomplete_hint(val, &address_book, suggestion_idx)
+        //         } else {
+        //             String::new()
+        //         };
+        //
+        //         let (wrapped_lines, cursor_row, cursor_col) =
+        //             wrap_text(val, available_width, hint_str.chars().count(), cursor_pos);
+        //         let viewport_height = wrapped_lines.len().min(8);
+        //
+        //         if cursor_row < state.scroll_offset {
+        //             state.scroll_offset = cursor_row;
+        //         } else if cursor_row >= state.scroll_offset + viewport_height {
+        //             state.scroll_offset = cursor_row - viewport_height + 1;
+        //         }
+        //
+        //         let end_idx = (state.scroll_offset + viewport_height).min(wrapped_lines.len());
+        //         for (line_idx, line) in wrapped_lines[state.scroll_offset..end_idx]
+        //             .iter()
+        //             .enumerate()
+        //         {
+        //             let row_y = current_y + line_idx as u16;
+        //             if line_idx > 0 {
+        //                 queue!(
+        //                     stdout,
+        //                     cursor::MoveTo(0, row_y),
+        //                     SetBackgroundColor(colors.menu_bg),
+        //                     Clear(ClearType::UntilNewLine)
+        //                 )
+        //                     .unwrap();
+        //             }
+        //             queue!(
+        //                 stdout,
+        //                 cursor::MoveTo(LABEL_WIDTH, row_y),
+        //                 SetBackgroundColor(colors.menu_bg)
+        //             )
+        //                 .unwrap();
+        //             print_highlighted(&mut stdout, line, colors.fg, colors.accent).unwrap();
+        //         }
+        //
+        //         if !hint_str.is_empty() {
+        //             let last_line_idx = wrapped_lines.len().saturating_sub(1);
+        //             if last_line_idx >= state.scroll_offset
+        //                 && last_line_idx < state.scroll_offset + viewport_height
+        //             {
+        //                 let relative_row = (last_line_idx - state.scroll_offset) as u16;
+        //                 let last_line_len = wrapped_lines[last_line_idx].chars().count();
+        //                 let screen_space =
+        //                     (cols as usize).saturating_sub(LABEL_WIDTH as usize + last_line_len);
+        //
+        //                 if screen_space > 0 {
+        //                     let hint_color = if colors.is_dark {
+        //                         Color::DarkGrey
+        //                     } else {
+        //                         Color::Grey
+        //                     };
+        //                     let hint_disp: String = hint_str.chars().take(screen_space).collect();
+        //                     queue!(
+        //                         stdout,
+        //                         cursor::MoveTo(
+        //                             LABEL_WIDTH + last_line_len as u16,
+        //                             current_y + relative_row
+        //                         ),
+        //                         SetBackgroundColor(colors.menu_bg)
+        //                     )
+        //                         .unwrap();
+        //                     print_highlighted(&mut stdout, &hint_disp, hint_color, colors.accent)
+        //                         .unwrap();
+        //                 }
+        //             }
+        //         }
+        //
+        //         active_cursor_x = LABEL_WIDTH + cursor_col as u16;
+        //         active_cursor_y = current_y + (cursor_row - state.scroll_offset) as u16;
+        //         current_y += viewport_height as u16;
+        //     } else {
+        //         let display_text = if val.chars().count() > available_width {
+        //             let take = available_width.saturating_sub(3);
+        //             format!("{}...", val.chars().take(take).collect::<String>())
+        //         } else {
+        //             val.to_string()
+        //         };
+        //         queue!(
+        //             stdout,
+        //             cursor::MoveTo(LABEL_WIDTH, current_y),
+        //             SetBackgroundColor(colors.menu_bg)
+        //         )
+        //             .unwrap();
+        //         print_highlighted(&mut stdout, &display_text, colors.fg, colors.accent).unwrap();
+        //         current_y += 1;
+        //     }
+        // }
 
         queue!(
             stdout,

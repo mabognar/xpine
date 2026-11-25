@@ -22,9 +22,10 @@ use std::time::{Duration, Instant};
 
 use crossterm::{
     cursor, event, execute,
+    style::SetBackgroundColor,
     terminal::{
-        disable_raw_mode, enable_raw_mode, size as term_size, EnterAlternateScreen,
-        LeaveAlternateScreen,
+        disable_raw_mode, enable_raw_mode, size as term_size, Clear, ClearType,
+        EnterAlternateScreen, LeaveAlternateScreen,
     },
 };
 
@@ -121,19 +122,27 @@ fn main() {
 
     let update_rx = spawn_update_check();
 
+    let mut needs_redraw = true;
+    let mut needs_clear = true;
+    let mut last_mode_disc = std::mem::discriminant(&app.mode); // Track current view mode
+    let mut last_theme = settings_provider.current_theme.clone();
+
     loop {
         if let Ok(version) = update_rx.try_recv() {
             app.latest_version = Some(version);
             app.needs_fetch = true;
+            needs_redraw = true;
         }
 
         if app.needs_reconnect {
             net::reconnect(&mut app, &mut session, &mut session_pool);
+            needs_redraw = true;
         }
 
         if app.last_fetch_time.elapsed() >= app.auto_refresh_interval {
             app.needs_fetch = true;
             app.last_fetch_time = Instant::now();
+            needs_redraw = true;
         }
 
         let (_, rows) = term_size().unwrap_or((80, 24));
@@ -143,6 +152,7 @@ fn main() {
         if app.current_page >= total_pages {
             app.current_page = total_pages - 1;
             app.needs_fetch = true;
+            needs_redraw = true;
         }
 
         if app.needs_fetch && matches!(app.mode, AppMode::EmailList) {
@@ -153,6 +163,7 @@ fn main() {
                 &settings_provider,
                 items_per_page,
             );
+            needs_redraw = true;
         }
 
         if matches!(app.mode, AppMode::EmailRead { .. }) {
@@ -176,10 +187,34 @@ fn main() {
             );
 
             app.last_fetch_time = Instant::now();
+            needs_redraw = true;
+            needs_clear = true;
+            last_mode_disc = std::mem::discriminant(&app.mode);
             continue;
         }
 
-        ui::draw_app(&mut stdout, &app, &settings_provider).unwrap();
+        let current_mode_disc = std::mem::discriminant(&app.mode);
+        if current_mode_disc != last_mode_disc {
+            needs_redraw = true;
+            needs_clear = true;
+            last_mode_disc = current_mode_disc;
+        }
+        if settings_provider.current_theme != last_theme {
+            needs_redraw = true;
+            needs_clear = true;
+            last_theme = settings_provider.current_theme.clone();
+        }
+
+        if needs_redraw {
+            if needs_clear {
+                let theme = &settings_provider.theme_set.themes[&settings_provider.current_theme];
+                let colors = theme::derive_ui_colors(theme);
+                execute!(stdout, SetBackgroundColor(colors.bg), Clear(ClearType::All)).unwrap();
+                needs_clear = false;
+            }
+            ui::draw_app(&mut stdout, &app, &settings_provider).unwrap();
+            needs_redraw = false;
+        }
 
         let mut timeout = app
             .auto_refresh_interval
@@ -192,6 +227,7 @@ fn main() {
                 app.list_status.clear();
                 app.list_status_time = None;
                 timeout = Duration::from_millis(1);
+                needs_redraw = true;
             } else {
                 timeout = timeout.min(app.list_status_duration - elapsed);
             }
@@ -213,6 +249,9 @@ fn main() {
 
         if event::poll(timeout).unwrap() {
             let ev = event::read().unwrap();
+            if matches!(ev, event::Event::Resize(_, _)) {
+                needs_clear = true;
+            }
             let is_key_event = matches!(ev, event::Event::Key(_));
             let handle_start = Instant::now();
 
@@ -226,6 +265,8 @@ fn main() {
             ) {
                 break;
             }
+
+            needs_redraw = true;
 
             if is_key_event && !app.pending_imap_flags.is_empty() {
                 app.last_imap_flag_time = Some(Instant::now());

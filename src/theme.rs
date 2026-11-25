@@ -93,8 +93,8 @@ pub fn derive_ui_colors(theme: &Theme) -> UiColors {
     let raw_fg = theme.settings.foreground.unwrap_or(DEFAULT_FG);
 
     let is_dark = (raw_bg.r as u32 + raw_bg.g as u32 + raw_bg.b as u32) < 384;
-
-    let accent = find_scope_color(theme, &["entity.name.function", "variable"]).unwrap_or(
+    
+    let mut accent = find_scope_color(theme, &["entity.name.function", "variable"]).unwrap_or(
         if is_dark {
             Color::Rgb {
                 r: 100,
@@ -110,20 +110,24 @@ pub fn derive_ui_colors(theme: &Theme) -> UiColors {
         },
     );
 
-    let date_color = find_scope_color(theme, &["comment", "punctuation.definition.comment"])
-        .unwrap_or(if is_dark {
-            Color::Rgb {
-                r: 120,
-                g: 120,
-                b: 120,
-            }
-        } else {
-            Color::Rgb {
-                r: 140,
-                g: 140,
-                b: 140,
-            }
-        });
+    if let Some(name) = &theme.name {
+        let lower_name = name.to_lowercase();
+        if lower_name.contains("catppuccin") {
+            accent = if is_dark {
+                Color::Rgb { r: 249, g: 226, b: 175 }
+            } else {
+                Color::Rgb { r: 223, g: 142, b: 29 }
+            };
+        } else if lower_name.contains("base16") {
+            accent = if is_dark {
+                Color::Rgb { r: 250, g: 188, b: 45 }
+            } else {
+                Color::Rgb { r: 200, g: 60, b: 20 }
+            };
+        }
+    }
+
+    let date_color = shift_brightness(raw_fg, 0.20, !is_dark);
 
     UiColors {
         bg: to_crossterm_color(raw_bg),
@@ -164,3 +168,22 @@ pub fn ensure_themes_unpacked() -> io::Result<PathBuf> {
 
     Ok(xpine_themes_dir)
 }
+
+fn shift_brightness(c: SyntectColor, percent: f32, lighten: bool) -> Color {
+    let shift = |ch: u8| -> u8 {
+        let v = ch as f32;
+        let adjusted = if lighten {
+            v + (255.0 - v) * percent
+        } else {
+            v * (1.0 - percent)
+        };
+        adjusted.round().clamp(0.0, 255.0) as u8
+    };
+
+    Color::Rgb {
+        r: shift(c.r),
+        g: shift(c.g),
+        b: shift(c.b),
+    }
+}
+

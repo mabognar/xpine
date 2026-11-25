@@ -2,13 +2,8 @@ use std::io::{self, stdout, Write};
 use std::path::Path;
 use std::time::{Duration, Instant};
 
-use crossterm::{
-    cursor,
-    event::{self, Event, KeyCode, KeyEventKind},
-    queue,
-    style::{Color, Print, ResetColor, SetBackgroundColor, SetForegroundColor},
-    terminal::{self, size as term_size, ClearType},
-};
+use crossterm::{cursor, event::{self, Event, KeyCode, KeyEventKind}, execute, queue, style::{Color, Print, ResetColor, SetBackgroundColor, SetForegroundColor}, terminal::{self, size as term_size, ClearType}};
+use crossterm::terminal::Clear;
 use syntect::easy::HighlightLines;
 
 use crate::app::{App, AppMode};
@@ -321,6 +316,11 @@ fn help_lines_for(context: &str) -> Vec<HelpLine> {
             Cmd1("", "      online and use \"Basic IMAP\" when adding "),
             Cmd1("", "      account"),
             Cmd1("D", "Delete the currently selected account"),
+            Cmd1("+, Shift+Up", "Move selected account up in list"),
+            Cmd1("-, Shift+Down", "Move selected account down in list"),
+            Cmd1("", "Note: Account 1 opens by default on startup. Press"),
+            Cmd1("", "      1, 2, ... in the Email List to switch accounts."),
+            Cmd1("", ""),
         ],
         "folders_list" => vec![
             Title("xpine - Folders List Help"),
@@ -999,6 +999,8 @@ impl UiExt for Editor {
                 }
             }
         }
+        execute!(stdout, SetBackgroundColor(colors.bg), Clear(ClearType::All))?;
+        // execute!(stdout, Clear(ClearType::All))?;
         Ok(())
     }
 
@@ -1022,11 +1024,11 @@ pub fn draw_app(
     let theme = &theme_provider.theme_set.themes[&theme_provider.current_theme];
     let colors = derive_ui_colors(theme);
 
+    // REMOVE Clear(ClearType::All) from here:
     queue!(
         stdout,
         cursor::Hide,
-        SetBackgroundColor(colors.bg),
-        terminal::Clear(ClearType::All)
+        SetBackgroundColor(colors.bg)
     )?;
 
     match &app.mode {
@@ -1061,6 +1063,20 @@ pub fn draw_app(
         AppMode::EmailRead { .. } => {} // Rendered completely in src/read.rs
     }
 
+    // if !theme_provider.status_message.is_empty()
+    //     && theme_provider
+    //     .status_time
+    //     .is_some_and(|t| t.elapsed() < Duration::from_secs(3))
+    // {
+    //     draw_status_bar(
+    //         stdout,
+    //         rows,
+    //         &format!(" {} ", theme_provider.status_message),
+    //         colors.menu_bg,
+    //         colors.accent,
+    //     )?;
+    // }
+
     if !theme_provider.status_message.is_empty()
         && theme_provider
         .status_time
@@ -1073,8 +1089,18 @@ pub fn draw_app(
             colors.menu_bg,
             colors.accent,
         )?;
+    } else if !matches!(app.mode, AppMode::EmailList)
+        && !(matches!(app.mode, AppMode::MainMenu { .. }) && app.accounts.is_empty())
+    {
+        queue!(
+            stdout,
+            cursor::MoveTo(0, rows.saturating_sub(3)),
+            SetBackgroundColor(colors.bg),
+            terminal::Clear(ClearType::CurrentLine),
+            ResetColor
+        )?;
     }
-
+    
     stdout.flush()?;
     Ok(())
 }
@@ -1210,6 +1236,22 @@ fn draw_email_accounts(
     for i in 0..items_per_page {
         let actual_idx = start_idx + i;
         let row_y = (i + 1) as u16;
+        // if let Some(acc) = app.accounts.get(actual_idx) {
+        //     let bg_color = if actual_idx == selected_idx {
+        //         colors.selected_bg
+        //     } else {
+        //         colors.bg
+        //     };
+        //     queue!(
+        //         stdout,
+        //         cursor::MoveTo(0, row_y),
+        //         SetBackgroundColor(bg_color),
+        //         terminal::Clear(ClearType::CurrentLine),
+        //         SetForegroundColor(colors.fg),
+        //         Print(format!("  {}", acc.email)),
+        //         ResetColor
+        //     )?;
+        // }
         if let Some(acc) = app.accounts.get(actual_idx) {
             let bg_color = if actual_idx == selected_idx {
                 colors.selected_bg
@@ -1221,8 +1263,10 @@ fn draw_email_accounts(
                 cursor::MoveTo(0, row_y),
                 SetBackgroundColor(bg_color),
                 terminal::Clear(ClearType::CurrentLine),
+                SetForegroundColor(colors.accent),
+                Print(format!("  {}. ", actual_idx + 1)),
                 SetForegroundColor(colors.fg),
-                Print(format!("  {}", acc.email)),
+                Print(&acc.email),
                 ResetColor
             )?;
         } else {
@@ -1235,12 +1279,36 @@ fn draw_email_accounts(
         }
     }
 
+    // draw_menu_pair(
+    //     stdout,
+    //     rows,
+    //     cols,
+    //     &[("<", " Back"), ("A", " Add Acct"), ("P", " Prev"), ("", ""), ("", ""), ("", "")],
+    //     &[("M", " Main Menu"), ("D", " Del Acct"), ("N", " Next"), ("", ""), ("", ""), ("", "")],
+    //     colors.menu_bg,
+    //     colors.accent,
+    //     colors.fg,
+    // )?;
     draw_menu_pair(
         stdout,
         rows,
         cols,
-        &[("<", " Back"), ("A", " Add Acct"), ("P", " Prev"), ("", ""), ("", ""), ("", "")],
-        &[("M", " Main Menu"), ("D", " Del Acct"), ("N", " Next"), ("", ""), ("", ""), ("", "")],
+        &[
+            ("<", " Back"),
+            ("A", " Add Acct"),
+            ("P", " Prev"),
+            ("+", " Move Up"),
+            ("", ""),
+            ("H", " Help"),
+        ],
+        &[
+            ("M", " Main Menu"),
+            ("D", " Del Acct"),
+            ("N", " Next"),
+            ("-", " Move Dn"),
+            ("", ""),
+            ("", ""),
+        ],
         colors.menu_bg,
         colors.accent,
         colors.fg,
@@ -1408,6 +1476,16 @@ fn draw_email_list(
             cursor::MoveTo(cols.saturating_sub(4), row_y),
             SetForegroundColor(size_color),
             Print(format!("{:>4}", size_str))
+        )?;
+    }
+
+    let rendered = app.page_emails.len().min(visible_capacity);
+    for i in rendered..visible_capacity {
+        queue!(
+            stdout,
+            cursor::MoveTo(0, (i + 1) as u16),
+            SetBackgroundColor(colors.bg),
+            terminal::Clear(ClearType::CurrentLine)
         )?;
     }
 

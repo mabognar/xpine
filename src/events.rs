@@ -67,13 +67,18 @@ fn check_and_expunge_outlook(
         return;
     }
 
-    let has_pending =
-        app.page_emails.iter().any(|e| e.is_deleted) || !app.graph_pending_deleted.is_empty();
-    if !has_pending {
+    // let has_pending =
+    //     app.page_emails.iter().any(|e| e.is_deleted) || !app.graph_pending_deleted.is_empty();
+    // if !has_pending {
+    //     return;
+    // }
+
+    let delete_count = count_pending_expunge(app);
+    if delete_count == 0 {
         return;
     }
 
-    if let Ok(Some(yes)) = theme_provider.prompt_yn("Expunge emails marked for deletion?") {
+    if let Ok(Some(yes)) = theme_provider.prompt_yn(&expunge_prompt_text(delete_count)) {
         if yes {
             if let Some(sess) = session {
                 stage_outlook_imap_deletes(sess, app);
@@ -710,6 +715,54 @@ fn handle_email_accounts_events(k: KeyEvent, app: &mut App, theme_provider: &mut
     let mut next_mode = None;
 
     match k.code {
+        KeyCode::Up if k.modifiers.contains(KeyModifiers::SHIFT) => {
+            if selected_idx > 0 && selected_idx < app.accounts.len() {
+                app.accounts.swap(selected_idx, selected_idx - 1);
+                if app.current_account_idx == selected_idx {
+                    app.current_account_idx = selected_idx - 1;
+                } else if app.current_account_idx == selected_idx - 1 {
+                    app.current_account_idx = selected_idx;
+                }
+                selected_idx -= 1;
+                crate::config::save_config(&app.accounts);
+            }
+        }
+        KeyCode::Down if k.modifiers.contains(KeyModifiers::SHIFT) => {
+            if selected_idx + 1 < app.accounts.len() {
+                app.accounts.swap(selected_idx, selected_idx + 1);
+                if app.current_account_idx == selected_idx {
+                    app.current_account_idx = selected_idx + 1;
+                } else if app.current_account_idx == selected_idx + 1 {
+                    app.current_account_idx = selected_idx;
+                }
+                selected_idx += 1;
+                crate::config::save_config(&app.accounts);
+            }
+        }
+        KeyCode::Char('+' | '=') => {
+            if selected_idx > 0 && selected_idx < app.accounts.len() {
+                app.accounts.swap(selected_idx, selected_idx - 1);
+                if app.current_account_idx == selected_idx {
+                    app.current_account_idx = selected_idx - 1;
+                } else if app.current_account_idx == selected_idx - 1 {
+                    app.current_account_idx = selected_idx;
+                }
+                selected_idx -= 1;
+                crate::config::save_config(&app.accounts);
+            }
+        }
+        KeyCode::Char('-') => {
+            if selected_idx + 1 < app.accounts.len() {
+                app.accounts.swap(selected_idx, selected_idx + 1);
+                if app.current_account_idx == selected_idx {
+                    app.current_account_idx = selected_idx + 1;
+                } else if app.current_account_idx == selected_idx + 1 {
+                    app.current_account_idx = selected_idx;
+                }
+                selected_idx += 1;
+                crate::config::save_config(&app.accounts);
+            }
+        }
         KeyCode::Up | KeyCode::Char('p' | 'P') => selected_idx = selected_idx.saturating_sub(1),
         KeyCode::Down | KeyCode::Char('n' | 'N') => {
             selected_idx = (selected_idx + 1).min(app.accounts.len().saturating_sub(1));
@@ -930,6 +983,31 @@ fn handle_email_list_events(
                 app.selected_index += 1;
             }
         }
+        // KeyCode::Char('x' | 'X') => {
+        //     if app.page_emails.is_empty() {
+        //         return;
+        //     }
+        //     let Some(sess) = session else {
+        //         return;
+        //     };
+        //
+        //     let has_deleted = app.page_emails.iter().any(|e| e.is_deleted)
+        //         || !app.graph_pending_deleted.is_empty();
+        //     if !has_deleted {
+        //         app.update_status(
+        //             "Nothing to expunge - no messages marked for deletion".to_string(),
+        //         );
+        //         return;
+        //     }
+        //
+        //     if is_outlook_account(&app.active_account) {
+        //         stage_outlook_imap_deletes(sess, app);
+        //     }
+        //
+        //     if let Ok(Some(true)) = theme_provider.prompt_yn("Expunge?") {
+        //         app.update_status("Expunging messages...".to_string());
+        //         let _ = crate::ui::draw_app(stdout, app, theme_provider);
+
         KeyCode::Char('x' | 'X') => {
             if app.page_emails.is_empty() {
                 return;
@@ -938,9 +1016,8 @@ fn handle_email_list_events(
                 return;
             };
 
-            let has_deleted = app.page_emails.iter().any(|e| e.is_deleted)
-                || !app.graph_pending_deleted.is_empty();
-            if !has_deleted {
+            let delete_count = count_pending_expunge(app);
+            if delete_count == 0 {
                 app.update_status(
                     "Nothing to expunge - no messages marked for deletion".to_string(),
                 );
@@ -951,7 +1028,10 @@ fn handle_email_list_events(
                 stage_outlook_imap_deletes(sess, app);
             }
 
-            if let Ok(Some(true)) = theme_provider.prompt_yn("Expunge?") {
+            if let Ok(Some(true)) = theme_provider.prompt_yn(&expunge_prompt_text(delete_count)) {
+                app.update_status("Expunging messages...".to_string());
+                let _ = crate::ui::draw_app(stdout, app, theme_provider);
+
                 if net::expunge_deleted(sess, app).is_ok() {
                     app.graph_pending_deleted.clear();
 
@@ -1483,4 +1563,21 @@ fn handle_settings_events(k: KeyEvent, app: &mut App, theme_provider: &mut Edito
     }
 
     app.mode = next_mode.unwrap_or(AppMode::Settings { selected_idx });
+}
+
+fn count_pending_expunge(app: &App) -> usize {
+    let page_only_deleted = app
+        .page_emails
+        .iter()
+        .filter(|e| e.is_deleted && !app.graph_pending_deleted.contains(&e.id))
+        .count();
+    app.graph_pending_deleted.len() + page_only_deleted
+}
+
+fn expunge_prompt_text(count: usize) -> String {
+    if count == 1 {
+        "Expunge 1 message?".to_string()
+    } else {
+        format!("Expunge {} messages?", count)
+    }
 }
