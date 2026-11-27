@@ -5,7 +5,7 @@ edition = "2024"
 license = "MIT"
 keywords = ["email", "client", "terminal"]
 categories = ["email"]
-description = "Terminal email client. Easy-to-use, modern features. Tested with MacOS & Linux."
+description = "Terminal email client. Polished, easy-to-use, very fast, modern features. Tested on MacOS, Linux."
 readme = true
 repository = "https://github.com/mabognar/xpine"
 
@@ -41,7 +41,7 @@ copyright = "2024-2026, Matthew Bognar"
 license-file = ["LICENSE", "4"]
 depends = "$auto"
 extended-description = """
-Terminal email client. Easy-to-use, modern features. Tested with MacOS & Linux.
+Terminal email client. Polished, easy-to-use, very fast, modern features. Tested on MacOS, Linux.
 """
 section = "utility"
 priority = "optional"
